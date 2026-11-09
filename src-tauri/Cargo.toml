@@ -1,0 +1,50 @@
+[package]
+name = "envelope"
+version = "0.1.0"
+description = "Client mail desktop ultra-rapide avec serveur MCP intégré"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "envelope_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# --- Tauri ---
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+
+# --- Async & erreurs ---
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# --- Sérialisation ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "0.8"        # Rust types -> JSON Schema (outils MCP, étape 3)
+
+# --- Stockage local ---
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono", "uuid"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# --- Moteur mail (utilisé à partir de l'étape 2) ---
+mail-parser = "0.11"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "tokio1", "hostname"] }
+async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+tokio-rustls = "0.26"
+keyring = "3"           # secrets (mots de passe / tokens OAuth2) dans le trousseau OS
+oauth2 = "5"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
+panic = "abort"
