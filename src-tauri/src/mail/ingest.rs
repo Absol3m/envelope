@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use chrono::{DateTime, SecondsFormat, Utc};
+use envelope_core::addr::{self, Addr};
 use mail_parser::{Address, HeaderValue, MessageParser, MimeHeaders};
-use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::error::Result;
@@ -17,12 +17,6 @@ use crate::error::Result;
 pub struct Flags {
     pub seen: bool,
     pub flagged: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct Addr {
-    name: Option<String>,
-    address: String,
 }
 
 #[derive(Debug)]
@@ -65,7 +59,7 @@ fn addrs(a: Option<&Address<'_>>) -> String {
                 .collect()
         })
         .unwrap_or_default();
-    serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())
+    addr::encode(&list)
 }
 
 fn header_ids(v: &HeaderValue<'_>) -> Vec<String> {

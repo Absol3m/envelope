@@ -10,7 +10,7 @@ use crate::error::Result;
 
 /// Chemin du fichier de base dans le dossier de données de l'application.
 pub fn db_path(data_dir: &Path) -> PathBuf {
-    data_dir.join("envelope.db")
+    data_dir.join(envelope_core::db::DB_FILE)
 }
 
 /// Ouvre (et crée si besoin) la base, active WAL + clés étrangères, applique les migrations.
@@ -42,4 +42,15 @@ pub async fn init_memory() -> Result<SqlitePool> {
         .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(pool)
+}
+
+#[cfg(test)]
+mod tests {
+    /// Le serveur MCP retrouve la base grâce à cet identifiant : il doit suivre `tauri.conf.json`.
+    #[test]
+    fn app_id_matches_tauri_conf() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], envelope_core::db::APP_ID);
+    }
 }

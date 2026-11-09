@@ -2,25 +2,11 @@
 
 use serde_json::{json, Value};
 
-/// Ce qu'un outil peut faire, pour les invites d'approbation du client (annotations MCP).
-/// Les clients qui approuvent automatiquement sur ces indices ne doivent jamais en savoir moins
-/// que la vérité.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Effect {
-    /// Ne fait que lire.
-    ReadOnly,
-    /// Modifie les données locales, de façon réversible.
-    Edits,
-    /// Action visible à l'extérieur ou irréversible (envoi, suppression).
-    External,
-}
-
-pub fn tool(name: &str, title: &str, desc: &str, schema: Value, effect: Effect) -> Value {
-    let (read_only, destructive, open_world) = match effect {
-        Effect::ReadOnly => (true, false, false),
-        Effect::Edits => (false, false, false),
-        Effect::External => (false, true, true),
-    };
+/// Définition d'un outil **en lecture seule** (temps 1). Les annotations servent aux clients qui
+/// demandent confirmation ou approuvent automatiquement : elles ne doivent jamais en dire moins
+/// que la vérité. Les outils d'écriture (temps 2) devront dire `readOnlyHint: false` et, pour
+/// envoi/suppression, `destructiveHint` + `openWorldHint` : ajouter alors un paramètre d'effet.
+pub fn tool(name: &str, title: &str, desc: &str, schema: Value) -> Value {
     json!({
         "name": name,
         "title": title,
@@ -28,10 +14,10 @@ pub fn tool(name: &str, title: &str, desc: &str, schema: Value, effect: Effect) 
         "inputSchema": schema,
         "annotations": {
             "title": title,
-            "readOnlyHint": read_only,
-            "destructiveHint": destructive,
-            "idempotentHint": read_only,
-            "openWorldHint": open_world,
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": false,
         },
     })
 }

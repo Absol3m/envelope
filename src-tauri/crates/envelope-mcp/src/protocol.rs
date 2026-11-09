@@ -10,7 +10,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use crate::schema::check_arguments;
 
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
-pub const SUPPORTED_VERSIONS: &[&str] = &[PROTOCOL_VERSION, "2025-03-26", "2024-11-05"];
+const SUPPORTED_VERSIONS: [&str; 3] = [PROTOCOL_VERSION, "2025-03-26", "2024-11-05"];
 
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;
@@ -22,7 +22,7 @@ pub trait Tools {
     /// Ce que tout client reçoit à `initialize`.
     fn instructions(&self) -> String;
     /// Définitions des outils (voir [`crate::schema::tool`]).
-    fn list(&self) -> Vec<Value>;
+    fn list(&self) -> &[Value];
     /// Exécute l'outil `name`. Appelé après validation des arguments contre [`Tools::list`].
     /// Les échecs sont des résultats `isError: true`, jamais des panics.
     fn call(&self, name: &str, args: &Value) -> impl Future<Output = Value>;
@@ -40,7 +40,6 @@ pub struct Info {
 pub struct Server<T: Tools> {
     info: Info,
     tools: T,
-    initialized: bool,
 }
 
 fn response(id: Value, result: Value) -> Value {
@@ -96,15 +95,7 @@ async fn read_line<R: AsyncBufRead + Unpin>(input: &mut R, max: usize) -> io::Re
 
 impl<T: Tools> Server<T> {
     pub fn new(info: Info, tools: T) -> Self {
-        Self {
-            info,
-            tools,
-            initialized: false,
-        }
-    }
-
-    pub fn is_initialized(&self) -> bool {
-        self.initialized
+        Self { info, tools }
     }
 
     /// Sert jusqu'à la fermeture de l'entrée. Seuls des messages de protocole vont sur `output` ;
@@ -171,12 +162,8 @@ impl<T: Tools> Server<T> {
             });
         };
         let params = o.get("params").cloned().unwrap_or(Value::Null);
-        let Some(id) = id else {
-            if method == "notifications/initialized" {
-                self.initialized = true;
-            }
-            return None;
-        };
+        // Notification (`notifications/initialized`, …) : pas de réponse, rien à retenir.
+        let id = id?;
         Some(match self.request(method, &params).await {
             Ok(r) => response(id, r),
             Err((code, m)) => error(id, code, m),
@@ -219,8 +206,7 @@ impl<T: Tools> Server<T> {
                     None | Some(Value::Null) => json!({}),
                     Some(a) => a.clone(),
                 };
-                check_arguments(&self.tools.list(), name, &args)
-                    .map_err(|e| (INVALID_PARAMS, e))?;
+                check_arguments(self.tools.list(), name, &args).map_err(|e| (INVALID_PARAMS, e))?;
                 Ok(self.tools.call(name, &args).await)
             }
             _ => Err((METHOD_NOT_FOUND, format!("method `{method}` not found"))),

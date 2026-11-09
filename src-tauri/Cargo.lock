@@ -1194,7 +1194,9 @@ dependencies = [
 name = "envelope-core"
 version = "0.1.0"
 dependencies = [
+ "dirs 6.0.0",
  "serde",
+ "serde_json",
  "sqlx",
 ]
 
@@ -1202,8 +1204,8 @@ dependencies = [
 name = "envelope-mcp"
 version = "0.1.0"
 dependencies = [
- "dirs 6.0.0",
  "envelope-core",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",

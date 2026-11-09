@@ -62,7 +62,12 @@ pub struct Thread {
 
 /// Une conversation, messages du plus ancien au plus récent. Une même copie présente dans deux
 /// dossiers (ex. Envoyés + Reçus) n'apparaît qu'une fois (dédoublonnage sur Message-ID).
-pub async fn get_thread(pool: &SqlitePool, thread_id: i64) -> Result<Option<Thread>> {
+/// `body_chars` borne chaque corps côté SQL : un long fil ne charge pas des Mo en mémoire.
+pub async fn get_thread(
+    pool: &SqlitePool,
+    thread_id: i64,
+    body_chars: i64,
+) -> Result<Option<Thread>> {
     let head: Option<(String, String)> =
         sqlx::query_as("SELECT account_id, subject FROM threads WHERE id = ?")
             .bind(thread_id)
@@ -73,12 +78,13 @@ pub async fn get_thread(pool: &SqlitePool, thread_id: i64) -> Result<Option<Thre
     };
 
     let messages = sqlx::query_as(
-        "SELECT id, subject, from_name, from_addr, to_addrs, cc_addrs, date, snippet, body_text, is_read \
+        "SELECT id, subject, from_name, from_addr, to_addrs, cc_addrs, date, snippet, substr(body_text, 1, ?2) AS body_text, is_read \
          FROM messages WHERE id IN ( \
              SELECT MIN(id) FROM messages WHERE thread_id = ?1 GROUP BY COALESCE(message_id, 'id:' || id)) \
          ORDER BY date, id",
     )
     .bind(thread_id)
+    .bind(body_chars)
     .fetch_all(pool)
     .await?;
     let attachments = sqlx::query_as(

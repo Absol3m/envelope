@@ -6,4 +6,6 @@ description = "Requêtes de lecture SQLite partagées entre l'application Envelo
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "derive"] }

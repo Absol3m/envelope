@@ -1,6 +1,8 @@
 //! Lecture de la base Envelope : recherche plein texte, dossiers, comptes, conversations.
 //! Aucune écriture ici : le schéma et les migrations appartiennent à l'application.
 
+pub mod addr;
+pub mod db;
 pub mod search;
 pub mod thread;
 

@@ -48,6 +48,8 @@ async fn fixture() -> (Server<EnvelopeTools>, PathBuf) {
            VALUES (2,'a',1,1,2,'m2','m1','Re: Budget trimestriel','me@x.fr','[{\"name\":\"Alice\",\"address\":\"alice@x.fr\"}]','2026-03-02T11:00:00Z','Oui, demain.','Oui, demain.\n\n> Peut-on parler du budget ?\n> Merci\n\nÀ 10h ?',0)",
         "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read,has_attachments)
            VALUES (3,'a',1,2,3,'m3','Facture','carol@x.fr','[]','2026-03-03T09:00:00Z','Voir pièce jointe.','Voir pièce jointe.',0,1)",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
+           VALUES (4,'a',1,2,4,'m4','Facture','carol@x.fr','[]','2026-03-03T10:00:00Z','long',replace(hex(zeroblob(1500)),'0','é'),1)",
         "INSERT INTO attachments (message_id,filename,mime_type,size,storage_path) VALUES (3,'facture.pdf','application/pdf',5,'/secret/chemin/facture.pdf')",
     ] {
         sqlx::query(sql).execute(&rw).await.unwrap();
@@ -92,7 +94,6 @@ async fn initialize_and_tool_list() {
         .handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
         .await
         .is_none());
-    assert!(s.is_initialized());
 
     let tools = rpc(
         &mut s,
@@ -166,6 +167,33 @@ async fn get_thread_truncates_and_hides_attachment_paths() {
     )
     .await;
     assert!(short.contains("Peut-on parler"));
+    // Corps de 3000 caractères (accentués : octets ≠ caractères) : borné à 2000 par défaut, signalé tronqué.
+    let (r, _) = call(&mut s, "get_thread", json!({"thread_id": 2})).await;
+    let data: Value =
+        serde_json::from_str(r["result"]["content"][1]["text"].as_str().unwrap()).unwrap();
+    let long = data["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == 4)
+        .unwrap();
+    assert_eq!(long["truncated"], true);
+    assert_eq!(
+        long["body"].as_str().unwrap().chars().count(),
+        2001,
+        "2000 caractères + …"
+    );
+    let short = data["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == 3)
+        .unwrap();
+    assert!(
+        short.get("truncated").is_none() && short.get("to").is_none(),
+        "valeurs vides omises"
+    );
+
     let (r, _) = call(&mut s, "get_thread", json!({"thread_id": 999})).await;
     assert_eq!(r["result"]["isError"], true);
 }

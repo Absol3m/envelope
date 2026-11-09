@@ -6,14 +6,11 @@ use std::time::Duration;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 
-/// Identifiant Tauri de l'application : le dossier de données en porte le nom.
-const APP_ID: &str = "dev.envelope.app";
-
 /// `--db`, sinon `ENVELOPE_DB`, sinon le dossier de données de l'application.
 pub fn default_path() -> Option<PathBuf> {
     std::env::var_os("ENVELOPE_DB")
         .map(PathBuf::from)
-        .or_else(|| dirs::data_dir().map(|d| d.join(APP_ID).join("envelope.db")))
+        .or_else(envelope_core::db::default_path)
 }
 
 /// Ouvre la base sans pouvoir y écrire (le mode WAL permet de lire pendant que l'application synchronise).
