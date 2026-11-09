@@ -312,6 +312,15 @@ pub async fn store(
     Ok(thread_id)
 }
 
+/// Recalcule le compteur de non lus d'un dossier.
+pub async fn refresh_folder_unread(pool: &SqlitePool, folder_id: i64) -> Result<()> {
+    sqlx::query("UPDATE folders SET unread_count = (SELECT COUNT(*) FROM messages WHERE folder_id = ?1 AND is_read = 0) WHERE id = ?1")
+        .bind(folder_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Recalcule les agrégats des conversations touchées ; supprime celles devenues vides.
 pub async fn refresh_threads(pool: &SqlitePool, ids: &HashSet<i64>) -> Result<()> {
     let mut tx = pool.begin().await?;
@@ -486,6 +495,90 @@ mod tests {
             .await
             .unwrap();
         assert!(has);
+
+        // Liste de conversations : tri, filtres, participants.
+        use envelope_core::thread::{list_threads, ThreadQuery};
+        let q = |f: fn(&mut ThreadQuery)| {
+            let mut q = ThreadQuery {
+                folder_id: Some(folder),
+                ..Default::default()
+            };
+            f(&mut q);
+            q
+        };
+        let all = list_threads(&pool, &q(|_| {})).await.unwrap();
+        assert_eq!(
+            all.iter().map(|t| t.subject.as_str()).collect::<Vec<_>>(),
+            ["Facture", "Réunion budget"],
+            "récent d'abord"
+        );
+        assert_eq!(all[1].participants.as_deref(), Some("Alice, Bob"));
+        assert_eq!(
+            all[1].from_addr.as_deref(),
+            Some("bob@example.com"),
+            "dernier expéditeur"
+        );
+        assert!(all[0].has_attachments && !all[1].has_attachments);
+        assert_eq!(
+            list_threads(&pool, &q(|q| q.with_attachments = true))
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            list_threads(&pool, &q(|q| q.unread_only = true))
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            list_threads(&pool, &q(|q| q.query = Some("budg".into())))
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            list_threads(&pool, &q(|q| q.query = Some("\"; DROP".into())))
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(
+            list_threads(
+                &pool,
+                &ThreadQuery {
+                    role: Some("inbox".into()),
+                    ..Default::default()
+                }
+            )
+            .await
+            .unwrap()
+            .len(),
+            2
+        );
+        assert_eq!(
+            list_threads(
+                &pool,
+                &ThreadQuery {
+                    role: Some("sent".into()),
+                    ..Default::default()
+                }
+            )
+            .await
+            .unwrap()
+            .len(),
+            0
+        );
+        let detail = envelope_core::thread::get_thread_detail(&pool, t1)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.messages.len(), 2);
+        assert_eq!(detail.messages[0].to[0].address, "bob@example.com");
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -446,8 +446,7 @@ async fn sync_folder(
         }
     }
 
-    sqlx::query("UPDATE folders SET unread_count = (SELECT COUNT(*) FROM messages WHERE folder_id = ?1 AND is_read = 0) WHERE id = ?1")
-        .bind(f.id).execute(&ctx.pool).await?;
+    ingest::refresh_folder_unread(&ctx.pool, f.id).await?;
     Ok(count)
 }
 

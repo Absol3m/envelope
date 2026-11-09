@@ -7,11 +7,13 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
+use crate::mail::actions::{self, Action};
 use crate::mail::imap;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::AppState;
 use envelope_core::search::{self, FolderRow, MessageSummary};
+use envelope_core::thread::{self, ThreadDetail, ThreadQuery, ThreadSummary};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,4 +196,143 @@ pub async fn send_email(
     let acct = account::get(&state.db, &account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
     smtp::send(&acct, &cred, &message).await
+}
+
+// ---------- Conversations (interface) ----------
+
+#[tauri::command]
+pub async fn list_threads(
+    state: State<'_, AppState>,
+    query: ThreadQuery,
+) -> Result<Vec<ThreadSummary>> {
+    Ok(thread::list_threads(&state.db, &query).await?)
+}
+
+#[tauri::command]
+pub async fn get_thread_detail(state: State<'_, AppState>, thread_id: i64) -> Result<ThreadDetail> {
+    thread::get_thread_detail(&state.db, thread_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("conversation {thread_id}")))
+}
+
+/// Actions : le verrou sérialise les connexions IMAP (des raccourcis enchaînés ne doivent pas
+/// ouvrir autant de connexions simultanées que de touches).
+async fn run_action(state: &AppState, thread_id: i64, action: Action) -> Result<()> {
+    let _guard = state.actions.lock().await;
+    actions::apply(&state.db, thread_id, action).await
+}
+
+#[tauri::command]
+pub async fn set_thread_read(state: State<'_, AppState>, thread_id: i64, read: bool) -> Result<()> {
+    run_action(&state, thread_id, Action::SetRead(read)).await
+}
+
+#[tauri::command]
+pub async fn set_thread_starred(
+    state: State<'_, AppState>,
+    thread_id: i64,
+    starred: bool,
+) -> Result<()> {
+    run_action(&state, thread_id, Action::SetStarred(starred)).await
+}
+
+#[tauri::command]
+pub async fn archive_thread(
+    state: State<'_, AppState>,
+    thread_id: i64,
+    folder_id: i64,
+) -> Result<()> {
+    run_action(&state, thread_id, Action::Archive { folder_id }).await
+}
+
+// ---------- Pièces jointes ----------
+
+/// Chemin d'une pièce jointe, uniquement si elle est bien dans le dossier des pièces jointes
+/// (une base altérée ne doit pas permettre d'ouvrir un fichier arbitraire).
+async fn attachment_path(state: &AppState, attachment_id: i64) -> Result<std::path::PathBuf> {
+    let stored: Option<String> =
+        sqlx::query_scalar("SELECT storage_path FROM attachments WHERE id = ?")
+            .bind(attachment_id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
+    let path = tokio::fs::canonicalize(
+        stored.ok_or_else(|| AppError::NotFound(format!("pièce jointe {attachment_id}")))?,
+    )
+    .await?;
+    let root = tokio::fs::canonicalize(&state.attachments_dir).await?;
+    if !path.starts_with(&root) {
+        return Err(AppError::Invalid(
+            "pièce jointe hors du dossier autorisé".into(),
+        ));
+    }
+    Ok(path)
+}
+
+#[tauri::command]
+pub async fn open_attachment(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    attachment_id: i64,
+) -> Result<()> {
+    let path = attachment_path(&state, attachment_id).await?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|e| AppError::Invalid(e.to_string()))
+}
+
+/// Images « inline » d'un message (`cid:`), en data URLs, pour l'affichage hors-ligne.
+/// Bornées en taille : une image géante ne doit pas gonfler la réponse.
+#[tauri::command]
+pub async fn inline_images(
+    state: State<'_, AppState>,
+    message_id: i64,
+) -> Result<std::collections::HashMap<String, String>> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    const MAX_INLINE_BYTES: i64 = 2 * 1024 * 1024;
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT id, content_id, mime_type FROM attachments \
+         WHERE message_id = ? AND content_id IS NOT NULL AND mime_type LIKE 'image/%' AND size <= ?",
+    )
+    .bind(message_id)
+    .bind(MAX_INLINE_BYTES)
+    .fetch_all(&state.db)
+    .await?;
+    let mut out = std::collections::HashMap::new();
+    for (id, cid, mime) in rows {
+        let bytes = tokio::fs::read(attachment_path(&state, id).await?).await?;
+        out.insert(
+            cid,
+            format!("data:{mime};base64,{}", STANDARD.encode(bytes)),
+        );
+    }
+    Ok(out)
+}
+
+// ---------- Serveur MCP (panneau de réglages) ----------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpInfo {
+    /// Binaire `envelope-mcp` à côté de l'application, s'il existe.
+    binary_path: Option<String>,
+    db_path: String,
+}
+
+#[tauri::command]
+pub fn mcp_info(state: State<'_, AppState>) -> McpInfo {
+    let name = if cfg!(windows) {
+        "envelope-mcp.exe"
+    } else {
+        "envelope-mcp"
+    };
+    let binary_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|d| d.join(name)))
+        .filter(|p| p.exists())
+        .map(|p| p.display().to_string());
+    McpInfo {
+        binary_path,
+        db_path: state.db_path.display().to_string(),
+    }
 }

@@ -13,6 +13,7 @@
 //! ```
 
 pub mod account;
+pub mod actions;
 pub mod imap;
 pub mod ingest;
 pub mod oauth;

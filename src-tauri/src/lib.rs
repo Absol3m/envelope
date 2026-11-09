@@ -21,6 +21,8 @@ pub struct AppState {
     pub db_path: PathBuf,
     pub attachments_dir: PathBuf,
     pub sync: Arc<mail::sync::SyncManager>,
+    /// Sérialise les actions IMAP (archiver, marquer lu…).
+    pub actions: tokio::sync::Mutex<()>,
 }
 
 pub fn run() {
@@ -52,6 +54,7 @@ pub fn run() {
                 db_path,
                 attachments_dir,
                 sync: sync.clone(),
+                actions: tokio::sync::Mutex::new(()),
             });
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = sync.start_all().await {
@@ -71,6 +74,14 @@ pub fn run() {
             commands::list_messages,
             commands::search_emails,
             commands::send_email,
+            commands::list_threads,
+            commands::get_thread_detail,
+            commands::set_thread_read,
+            commands::set_thread_starred,
+            commands::archive_thread,
+            commands::open_attachment,
+            commands::inline_images,
+            commands::mcp_info,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");
