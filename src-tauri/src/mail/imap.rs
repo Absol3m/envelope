@@ -21,12 +21,16 @@ pub type ImapSession = async_imap::Session<Box<dyn Io>>;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
-pub fn tls_config() -> Arc<ClientConfig> {
+fn tls_config() -> Arc<ClientConfig> {
     static CFG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
     CFG.get_or_init(|| {
         let mut roots = RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        Arc::new(ClientConfig::builder().with_root_certificates(roots).with_no_client_auth())
+        Arc::new(
+            ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth(),
+        )
     })
     .clone()
 }
@@ -50,14 +54,20 @@ impl async_imap::Authenticator for XOAuth2 {
 
 pub async fn connect(account: &Account, cred: &Credential) -> Result<ImapSession> {
     if Security::parse(&account.imap_security) != Security::Tls {
-        return Err(AppError::Invalid("IMAP : seul le TLS implicite (port 993) est supporté".into()));
+        return Err(AppError::Invalid(
+            "IMAP : seul le TLS implicite (port 993) est supporté".into(),
+        ));
     }
     let host = account.imap_host.as_str();
-    let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host, account.imap_port as u16)))
-        .await
-        .map_err(|_| AppError::Invalid(format!("délai de connexion dépassé : {host}")))??;
+    let tcp = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        TcpStream::connect((host, account.imap_port as u16)),
+    )
+    .await
+    .map_err(|_| AppError::Invalid(format!("délai de connexion dépassé : {host}")))??;
     tcp.set_nodelay(true)?;
-    let name = ServerName::try_from(host.to_string()).map_err(|e| AppError::Invalid(format!("hôte invalide : {e}")))?;
+    let name = ServerName::try_from(host.to_string())
+        .map_err(|e| AppError::Invalid(format!("hôte invalide : {e}")))?;
     let tls = TlsConnector::from(tls_config()).connect(name, tcp).await?;
 
     let mut client = async_imap::Client::new(Box::new(tls) as Box<dyn Io>);
@@ -67,7 +77,15 @@ pub async fn connect(account: &Account, cred: &Credential) -> Result<ImapSession
         Credential::Password { user, password } => client.login(user, password).await,
         Credential::OAuth { user, access_token } => {
             let payload = format!("user={user}\x01auth=Bearer {access_token}\x01\x01");
-            client.authenticate("XOAUTH2", XOAuth2 { payload, sent: false }).await
+            client
+                .authenticate(
+                    "XOAUTH2",
+                    XOAuth2 {
+                        payload,
+                        sent: false,
+                    },
+                )
+                .await
         }
     };
     session.map_err(|(e, _client)| AppError::Auth(format!("connexion IMAP refusée : {e}")))

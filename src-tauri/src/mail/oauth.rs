@@ -69,10 +69,20 @@ impl OAuthProvider {
     }
     fn client_id(self) -> Result<String> {
         let env = self.config().client_id_env;
-        std::env::var(env).map_err(|_| AppError::Auth(format!("variable d'environnement {env} manquante")))
+        std::env::var(env)
+            .map_err(|_| AppError::Auth(format!("variable d'environnement {env} manquante")))
     }
-    fn client_secret(self) -> Option<String> {
-        self.config().client_secret_env.and_then(|e| std::env::var(e).ok())
+    /// Champs d'identification d'application communs aux échanges de jetons.
+    fn client_auth(self) -> Result<Vec<(&'static str, String)>> {
+        let mut v = vec![("client_id", self.client_id()?)];
+        if let Some(secret) = self
+            .config()
+            .client_secret_env
+            .and_then(|e| std::env::var(e).ok())
+        {
+            v.push(("client_secret", secret));
+        }
+        Ok(v)
     }
 }
 
@@ -96,14 +106,20 @@ fn now() -> i64 {
 }
 
 fn random_token() -> String {
-    format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple())
+    format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    )
 }
 
 /// Lance le flux complet. `open_browser` reçoit l'URL d'autorisation à ouvrir.
-pub async fn authorize(provider: OAuthProvider, open_browser: impl FnOnce(&str) -> Result<()>) -> Result<OAuthTokens> {
+pub async fn authorize(
+    provider: OAuthProvider,
+    open_browser: impl FnOnce(&str) -> Result<()>,
+) -> Result<OAuthTokens> {
     let cfg = provider.config();
     let client_id = provider.client_id()?;
-
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let redirect_uri = format!("http://127.0.0.1:{}", listener.local_addr()?.port());
 
@@ -121,23 +137,23 @@ pub async fn authorize(provider: OAuthProvider, open_browser: impl FnOnce(&str) 
         ("code_challenge_method", "S256"),
     ];
     params.extend_from_slice(cfg.extra_auth_params);
-    let url = reqwest::Url::parse_with_params(cfg.auth_url, &params).map_err(|e| AppError::Auth(e.to_string()))?;
+    let url = reqwest::Url::parse_with_params(cfg.auth_url, &params)
+        .map_err(|e| AppError::Auth(e.to_string()))?;
     open_browser(url.as_str())?;
 
     let code = tokio::time::timeout(Duration::from_secs(300), wait_for_code(&listener, &state))
         .await
-        .map_err(|_| AppError::Auth("délai dépassé : autorisation non terminée dans le navigateur".into()))??;
+        .map_err(|_| {
+            AppError::Auth("délai dépassé : autorisation non terminée dans le navigateur".into())
+        })??;
 
     let mut form = vec![
         ("grant_type", "authorization_code".to_string()),
         ("code", code),
         ("redirect_uri", redirect_uri),
-        ("client_id", client_id),
         ("code_verifier", verifier),
     ];
-    if let Some(secret) = provider.client_secret() {
-        form.push(("client_secret", secret));
-    }
+    form.extend(provider.client_auth()?);
     let resp = token_request(cfg.token_url, &form).await?;
     Ok(OAuthTokens {
         access_token: resp.access_token,
@@ -153,17 +169,34 @@ async fn wait_for_code(listener: &TcpListener, expected_state: &str) -> Result<S
         let mut buf = vec![0u8; 8192];
         let n = sock.read(&mut buf).await?;
         let req = String::from_utf8_lossy(&buf[..n]);
-        let path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/");
-        let url = reqwest::Url::parse(&format!("http://127.0.0.1{path}")).map_err(|e| AppError::Auth(e.to_string()))?;
+        let path = req
+            .lines()
+            .next()
+            .and_then(|l| l.split_whitespace().nth(1))
+            .unwrap_or("/");
+        let url = reqwest::Url::parse(&format!("http://127.0.0.1{path}"))
+            .map_err(|e| AppError::Auth(e.to_string()))?;
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
 
         let (status, body, outcome) = if let Some(err) = q.get("error") {
-            ("400 Bad Request", "Autorisation refusée. Vous pouvez fermer cet onglet.", Some(Err(AppError::Auth(err.clone()))))
+            (
+                "400 Bad Request",
+                "Autorisation refusée. Vous pouvez fermer cet onglet.",
+                Some(Err(AppError::Auth(err.clone()))),
+            )
         } else if let Some(code) = q.get("code") {
             if q.get("state").map(String::as_str) != Some(expected_state) {
-                ("400 Bad Request", "État invalide.", Some(Err(AppError::Auth("state OAuth2 invalide (CSRF ?)".into()))))
+                (
+                    "400 Bad Request",
+                    "État invalide.",
+                    Some(Err(AppError::Auth("state OAuth2 invalide (CSRF ?)".into()))),
+                )
             } else {
-                ("200 OK", "Envelope est autorisé. Vous pouvez fermer cet onglet.", Some(Ok(code.clone())))
+                (
+                    "200 OK",
+                    "Envelope est autorisé. Vous pouvez fermer cet onglet.",
+                    Some(Ok(code.clone())),
+                )
             }
         } else {
             ("404 Not Found", "", None) // favicon, etc.
@@ -178,12 +211,20 @@ async fn wait_for_code(listener: &TcpListener, expected_state: &str) -> Result<S
     }
 }
 
+/// Client HTTP partagé (pool de connexions + racines TLS chargés une seule fois).
+fn http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
 async fn token_request(url: &str, form: &[(&str, String)]) -> Result<TokenResponse> {
-    let resp = reqwest::Client::new().post(url).form(form).send().await?;
+    let resp = http_client().post(url).form(form).send().await?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(AppError::Auth(format!("échange de jeton refusé ({status}) : {body}")));
+        return Err(AppError::Auth(format!(
+            "échange de jeton refusé ({status}) : {body}"
+        )));
     }
     Ok(resp.json().await?)
 }
@@ -202,18 +243,14 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
     }
     let refresh = tokens
         .refresh_token
-        .clone()
         .ok_or_else(|| AppError::Auth("pas de refresh_token : reconnectez le compte".into()))?;
     let cfg = provider.config();
     let mut form = vec![
         ("grant_type", "refresh_token".to_string()),
         ("refresh_token", refresh.clone()),
-        ("client_id", provider.client_id()?),
         ("scope", cfg.scope.to_string()),
     ];
-    if let Some(secret) = provider.client_secret() {
-        form.push(("client_secret", secret));
-    }
+    form.extend(provider.client_auth()?);
     let resp = token_request(cfg.token_url, &form).await?;
     let new = OAuthTokens {
         access_token: resp.access_token,

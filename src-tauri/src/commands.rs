@@ -7,10 +7,10 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
+use crate::mail::imap;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::search::{self, FolderRow, MessageSummary};
 use crate::mail::smtp::{self, OutgoingMessage};
-use crate::mail::imap;
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -43,10 +43,26 @@ pub async fn add_account(state: State<'_, AppState>, input: NewAccount) -> Resul
     let found = account::discover(&email)?;
     let imap_cfg = input.imap.unwrap_or(found.imap);
     let smtp_cfg = input.smtp.unwrap_or(found.smtp);
-    let username = input.username.filter(|u| !u.is_empty()).unwrap_or_else(|| email.clone());
+    let username = input
+        .username
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| email.clone());
     let id = Uuid::new_v4().to_string();
 
-    account::insert(&state.db, &id, &email, input.display_name.as_deref(), found.provider, "password", &username, &imap_cfg, &smtp_cfg).await?;
+    account::insert(
+        &state.db,
+        &account::NewAccountRow {
+            id: &id,
+            email: &email,
+            display_name: input.display_name.as_deref(),
+            provider: found.provider,
+            auth_kind: "password",
+            username: &username,
+            imap: &imap_cfg,
+            smtp: &smtp_cfg,
+        },
+    )
+    .await?;
     let finish = async {
         account::store_password(&id, &input.password)?;
         let acct = account::get(&state.db, &id).await?;
@@ -71,24 +87,43 @@ pub async fn add_account(state: State<'_, AppState>, input: NewAccount) -> Resul
 
 /// Ajoute un compte Gmail / Outlook via OAuth2 (ouvre le navigateur système).
 #[tauri::command]
-pub async fn add_oauth_account(app: AppHandle, state: State<'_, AppState>, provider: OAuthProvider, email: String, display_name: Option<String>) -> Result<Account> {
+pub async fn add_oauth_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    provider: OAuthProvider,
+    email: String,
+    display_name: Option<String>,
+) -> Result<Account> {
     let email = email.trim().to_string();
-    let found = account::discover(&email)?;
     let tokens = oauth::authorize(provider, |url| {
-        app.opener().open_url(url, None::<&str>).map_err(|e| AppError::Auth(e.to_string()))
+        app.opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| AppError::Auth(e.to_string()))
     })
     .await?;
 
     // Serveurs fixes du fournisseur choisi (le domaine de l'e-mail peut être personnalisé).
-    let (imap_cfg, smtp_cfg) = match provider {
-        OAuthProvider::Google => account::discover("x@gmail.com")?,
-        OAuthProvider::Microsoft => account::discover("x@outlook.com")?,
-    }
+    let (imap_cfg, smtp_cfg) = account::discover(match provider {
+        OAuthProvider::Google => "x@gmail.com",
+        OAuthProvider::Microsoft => "x@outlook.com",
+    })?
     .into_servers();
-    let _ = found;
 
     let id = Uuid::new_v4().to_string();
-    account::insert(&state.db, &id, &email, display_name.as_deref(), provider.as_str(), "oauth2", &email, &imap_cfg, &smtp_cfg).await?;
+    account::insert(
+        &state.db,
+        &account::NewAccountRow {
+            id: &id,
+            email: &email,
+            display_name: display_name.as_deref(),
+            provider: provider.as_str(),
+            auth_kind: "oauth2",
+            username: &email,
+            imap: &imap_cfg,
+            smtp: &smtp_cfg,
+        },
+    )
+    .await?;
     if let Err(e) = account::store_oauth(&id, &tokens) {
         account::delete(&state.db, &id).await?;
         return Err(e);
@@ -111,22 +146,51 @@ pub fn sync_now(state: State<'_, AppState>, account_id: String) {
 }
 
 #[tauri::command]
-pub async fn list_folders(state: State<'_, AppState>, account_id: Option<String>) -> Result<Vec<FolderRow>> {
+pub async fn list_folders(
+    state: State<'_, AppState>,
+    account_id: Option<String>,
+) -> Result<Vec<FolderRow>> {
     search::list_folders(&state.db, account_id.as_deref()).await
 }
 
 #[tauri::command]
-pub async fn list_messages(state: State<'_, AppState>, folder_id: i64, limit: Option<i64>, offset: Option<i64>) -> Result<Vec<MessageSummary>> {
-    search::list_messages(&state.db, folder_id, limit.unwrap_or(50), offset.unwrap_or(0)).await
+pub async fn list_messages(
+    state: State<'_, AppState>,
+    folder_id: i64,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<Vec<MessageSummary>> {
+    search::list_messages(
+        &state.db,
+        folder_id,
+        limit.unwrap_or(50),
+        offset.unwrap_or(0),
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn search_emails(state: State<'_, AppState>, query: String, account_id: Option<String>, limit: Option<i64>) -> Result<Vec<MessageSummary>> {
-    search::search(&state.db, &query, account_id.as_deref(), limit.unwrap_or(50)).await
+pub async fn search_emails(
+    state: State<'_, AppState>,
+    query: String,
+    account_id: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<MessageSummary>> {
+    search::search(
+        &state.db,
+        &query,
+        account_id.as_deref(),
+        limit.unwrap_or(50),
+    )
+    .await
 }
 
 #[tauri::command]
-pub async fn send_email(state: State<'_, AppState>, account_id: String, message: OutgoingMessage) -> Result<()> {
+pub async fn send_email(
+    state: State<'_, AppState>,
+    account_id: String,
+    message: OutgoingMessage,
+) -> Result<()> {
     let acct = account::get(&state.db, &account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
     smtp::send(&acct, &cred, &message).await

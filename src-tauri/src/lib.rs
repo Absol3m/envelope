@@ -28,7 +28,9 @@ pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
         .init();
 
     tauri::Builder::default()
@@ -40,8 +42,17 @@ pub fn run() {
             tracing::info!("base SQLite prête : {}", db_path.display());
 
             let attachments_dir = data_dir.join("attachments");
-            let sync = mail::sync::SyncManager::new(pool.clone(), app.handle().clone(), attachments_dir.clone());
-            app.manage(AppState { db: pool, db_path, attachments_dir, sync: sync.clone() });
+            let sync = mail::sync::SyncManager::new(
+                pool.clone(),
+                app.handle().clone(),
+                attachments_dir.clone(),
+            );
+            app.manage(AppState {
+                db: pool,
+                db_path,
+                attachments_dir,
+                sync: sync.clone(),
+            });
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = sync.start_all().await {
                     tracing::error!("démarrage de la synchro : {e}");

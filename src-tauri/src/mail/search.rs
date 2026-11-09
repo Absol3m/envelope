@@ -22,7 +22,8 @@ pub struct MessageSummary {
     pub has_attachments: bool,
 }
 
-const SUMMARY_COLS: &str = "m.id, m.account_id, m.folder_id, m.thread_id, m.subject, m.from_name, m.from_addr, \
+const SUMMARY_COLS: &str =
+    "m.id, m.account_id, m.folder_id, m.thread_id, m.subject, m.from_name, m.from_addr, \
     m.date, m.snippet, m.is_read, m.is_starred, m.has_attachments";
 
 /// Transforme une saisie utilisateur en requête FTS5 sûre : chaque mot devient un préfixe entre
@@ -37,8 +38,15 @@ pub fn build_fts_query(input: &str) -> Option<String> {
     (!terms.is_empty()).then(|| terms.join(" "))
 }
 
-pub async fn search(pool: &SqlitePool, query: &str, account_id: Option<&str>, limit: i64) -> Result<Vec<MessageSummary>> {
-    let Some(fts) = build_fts_query(query) else { return Ok(vec![]) };
+pub async fn search(
+    pool: &SqlitePool,
+    query: &str,
+    account_id: Option<&str>,
+    limit: i64,
+) -> Result<Vec<MessageSummary>> {
+    let Some(fts) = build_fts_query(query) else {
+        return Ok(vec![]);
+    };
     Ok(sqlx::query_as(&format!(
         "SELECT {SUMMARY_COLS} FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid \
          WHERE messages_fts MATCH ?1 AND (?2 IS NULL OR m.account_id = ?2) \
@@ -51,7 +59,12 @@ pub async fn search(pool: &SqlitePool, query: &str, account_id: Option<&str>, li
     .await?)
 }
 
-pub async fn list_messages(pool: &SqlitePool, folder_id: i64, limit: i64, offset: i64) -> Result<Vec<MessageSummary>> {
+pub async fn list_messages(
+    pool: &SqlitePool,
+    folder_id: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<MessageSummary>> {
     Ok(sqlx::query_as(&format!(
         "SELECT {SUMMARY_COLS} FROM messages m WHERE m.folder_id = ? ORDER BY m.date DESC LIMIT ? OFFSET ?"
     ))

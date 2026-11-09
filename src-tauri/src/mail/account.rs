@@ -10,6 +10,8 @@ use crate::error::{AppError, Result};
 use crate::mail::oauth::{self, OAuthProvider};
 
 const KEYRING_SERVICE: &str = "dev.envelope.app";
+const PASSWORD: &str = "password";
+const OAUTH: &str = "oauth";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -74,9 +76,15 @@ pub const ACCOUNT_COLUMNS: &str = "id, email, display_name, provider, auth_kind,
 /// Identifiants résolus, prêts à être présentés à IMAP/SMTP.
 #[derive(Debug, Clone)]
 pub enum Credential {
-    Password { user: String, password: String },
+    Password {
+        user: String,
+        password: String,
+    },
     /// Jeton d'accès OAuth2 valide (déjà rafraîchi si nécessaire) — SASL XOAUTH2.
-    OAuth { user: String, access_token: String },
+    OAuth {
+        user: String,
+        access_token: String,
+    },
 }
 
 /// Entrée de `add_account` (authentification par mot de passe / mot de passe d'application).
@@ -104,7 +112,11 @@ impl Discovered {
 }
 
 fn srv(host: &str, port: u16, security: Security) -> ServerConfig {
-    ServerConfig { host: host.into(), port, security }
+    ServerConfig {
+        host: host.into(),
+        port,
+        security,
+    }
 }
 
 /// Table de serveurs connus, avec repli `imap.<domaine>` / `smtp.<domaine>`.
@@ -116,36 +128,78 @@ pub fn discover(email: &str) -> Result<Discovered> {
         .ok_or_else(|| AppError::Invalid(format!("adresse e-mail invalide : {email}")))?;
     use Security::*;
     let (provider, imap, smtp) = match domain.as_str() {
-        "gmail.com" | "googlemail.com" => ("gmail", srv("imap.gmail.com", 993, Tls), srv("smtp.gmail.com", 465, Tls)),
-        "outlook.com" | "hotmail.com" | "hotmail.fr" | "live.com" | "live.fr" | "msn.com" => {
-            ("outlook", srv("outlook.office365.com", 993, Tls), srv("smtp-mail.outlook.com", 587, Starttls))
-        }
-        "icloud.com" | "me.com" | "mac.com" => ("icloud", srv("imap.mail.me.com", 993, Tls), srv("smtp.mail.me.com", 587, Starttls)),
-        "yahoo.com" | "yahoo.fr" => ("yahoo", srv("imap.mail.yahoo.com", 993, Tls), srv("smtp.mail.yahoo.com", 465, Tls)),
-        "fastmail.com" => ("fastmail", srv("imap.fastmail.com", 993, Tls), srv("smtp.fastmail.com", 465, Tls)),
-        "orange.fr" => ("imap", srv("imap.orange.fr", 993, Tls), srv("smtp.orange.fr", 465, Tls)),
-        "free.fr" => ("imap", srv("imap.free.fr", 993, Tls), srv("smtp.free.fr", 465, Tls)),
-        d => ("imap", srv(&format!("imap.{d}"), 993, Tls), srv(&format!("smtp.{d}"), 465, Tls)),
+        "gmail.com" | "googlemail.com" => (
+            "gmail",
+            srv("imap.gmail.com", 993, Tls),
+            srv("smtp.gmail.com", 465, Tls),
+        ),
+        "outlook.com" | "hotmail.com" | "hotmail.fr" | "live.com" | "live.fr" | "msn.com" => (
+            "outlook",
+            srv("outlook.office365.com", 993, Tls),
+            srv("smtp-mail.outlook.com", 587, Starttls),
+        ),
+        "icloud.com" | "me.com" | "mac.com" => (
+            "icloud",
+            srv("imap.mail.me.com", 993, Tls),
+            srv("smtp.mail.me.com", 587, Starttls),
+        ),
+        "yahoo.com" | "yahoo.fr" => (
+            "yahoo",
+            srv("imap.mail.yahoo.com", 993, Tls),
+            srv("smtp.mail.yahoo.com", 465, Tls),
+        ),
+        "fastmail.com" => (
+            "fastmail",
+            srv("imap.fastmail.com", 993, Tls),
+            srv("smtp.fastmail.com", 465, Tls),
+        ),
+        "orange.fr" => (
+            "imap",
+            srv("imap.orange.fr", 993, Tls),
+            srv("smtp.orange.fr", 465, Tls),
+        ),
+        "free.fr" => (
+            "imap",
+            srv("imap.free.fr", 993, Tls),
+            srv("smtp.free.fr", 465, Tls),
+        ),
+        d => (
+            "imap",
+            srv(&format!("imap.{d}"), 993, Tls),
+            srv(&format!("smtp.{d}"), 465, Tls),
+        ),
     };
-    Ok(Discovered { provider, imap, smtp })
+    Ok(Discovered {
+        provider,
+        imap,
+        smtp,
+    })
 }
 
 // ---------- Secrets ----------
 
 fn entry(account_id: &str, kind: &str) -> Result<keyring::Entry> {
-    Ok(keyring::Entry::new(KEYRING_SERVICE, &format!("{account_id}:{kind}"))?)
+    Ok(keyring::Entry::new(
+        KEYRING_SERVICE,
+        &format!("{account_id}:{kind}"),
+    )?)
 }
 pub fn store_password(account_id: &str, password: &str) -> Result<()> {
-    Ok(entry(account_id, "password")?.set_password(password)?)
+    Ok(entry(account_id, PASSWORD)?.set_password(password)?)
+}
+fn load_password(account_id: &str) -> Result<String> {
+    Ok(entry(account_id, PASSWORD)?.get_password()?)
 }
 pub fn store_oauth(account_id: &str, tokens: &oauth::OAuthTokens) -> Result<()> {
-    Ok(entry(account_id, "oauth")?.set_password(&serde_json::to_string(tokens)?)?)
+    Ok(entry(account_id, OAUTH)?.set_password(&serde_json::to_string(tokens)?)?)
 }
 pub fn load_oauth(account_id: &str) -> Result<oauth::OAuthTokens> {
-    Ok(serde_json::from_str(&entry(account_id, "oauth")?.get_password()?)?)
+    Ok(serde_json::from_str(
+        &entry(account_id, OAUTH)?.get_password()?,
+    )?)
 }
 pub fn delete_secrets(account_id: &str) {
-    for kind in ["password", "oauth"] {
+    for kind in [PASSWORD, OAUTH] {
         if let Ok(e) = entry(account_id, kind) {
             let _ = e.delete_credential();
         }
@@ -155,40 +209,50 @@ pub fn delete_secrets(account_id: &str) {
 /// Résout les identifiants d'un compte (rafraîchit le jeton OAuth2 si besoin).
 pub async fn resolve_credential(account: &Account) -> Result<Credential> {
     if account.auth_kind == "oauth2" {
-        let provider = OAuthProvider::parse(&account.provider)
-            .ok_or_else(|| AppError::Auth(format!("fournisseur OAuth2 inconnu : {}", account.provider)))?;
+        let provider = OAuthProvider::parse(&account.provider).ok_or_else(|| {
+            AppError::Auth(format!("fournisseur OAuth2 inconnu : {}", account.provider))
+        })?;
         let access_token = oauth::fresh_access_token(provider, &account.id).await?;
-        Ok(Credential::OAuth { user: account.username.clone(), access_token })
+        Ok(Credential::OAuth {
+            user: account.username.clone(),
+            access_token,
+        })
     } else {
-        let password = entry(&account.id, "password")?.get_password()?;
-        Ok(Credential::Password { user: account.username.clone(), password })
+        let password = load_password(&account.id)?;
+        Ok(Credential::Password {
+            user: account.username.clone(),
+            password,
+        })
     }
 }
 
 // ---------- Persistance ----------
 
-pub async fn insert(
-    pool: &SqlitePool,
-    id: &str,
-    email: &str,
-    display_name: Option<&str>,
-    provider: &str,
-    auth_kind: &str,
-    username: &str,
-    imap: &ServerConfig,
-    smtp: &ServerConfig,
-) -> Result<()> {
+/// Ligne à insérer dans `accounts`.
+pub struct NewAccountRow<'a> {
+    pub id: &'a str,
+    pub email: &'a str,
+    pub display_name: Option<&'a str>,
+    pub provider: &'a str,
+    pub auth_kind: &'a str,
+    pub username: &'a str,
+    pub imap: &'a ServerConfig,
+    pub smtp: &'a ServerConfig,
+}
+
+pub async fn insert(pool: &SqlitePool, r: &NewAccountRow<'_>) -> Result<()> {
+    let (imap, smtp) = (r.imap, r.smtp);
     sqlx::query(
         "INSERT INTO accounts (id, email, display_name, provider, auth_kind, username, \
          imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security) \
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     )
-    .bind(id)
-    .bind(email)
-    .bind(display_name)
-    .bind(provider)
-    .bind(auth_kind)
-    .bind(username)
+    .bind(r.id)
+    .bind(r.email)
+    .bind(r.display_name)
+    .bind(r.provider)
+    .bind(r.auth_kind)
+    .bind(r.username)
     .bind(&imap.host)
     .bind(imap.port as i64)
     .bind(imap.security.as_str())
@@ -201,21 +265,28 @@ pub async fn insert(
 }
 
 pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>> {
-    Ok(sqlx::query_as(&format!("SELECT {ACCOUNT_COLUMNS} FROM accounts ORDER BY created_at"))
-        .fetch_all(pool)
-        .await?)
+    Ok(sqlx::query_as(&format!(
+        "SELECT {ACCOUNT_COLUMNS} FROM accounts ORDER BY created_at"
+    ))
+    .fetch_all(pool)
+    .await?)
 }
 
 pub async fn get(pool: &SqlitePool, id: &str) -> Result<Account> {
-    sqlx::query_as(&format!("SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE id = ?"))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("compte {id}")))
+    sqlx::query_as(&format!(
+        "SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE id = ?"
+    ))
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("compte {id}")))
 }
 
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
-    sqlx::query("DELETE FROM accounts WHERE id = ?").bind(id).execute(pool).await?;
+    sqlx::query("DELETE FROM accounts WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
     delete_secrets(id);
     Ok(())
 }

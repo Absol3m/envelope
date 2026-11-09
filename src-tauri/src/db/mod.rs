@@ -24,7 +24,10 @@ pub async fn init(path: &Path) -> Result<SqlitePool> {
         .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true);
 
-    let pool = SqlitePoolOptions::new().max_connections(5).connect_with(opts).await?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect_with(opts)
+        .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(pool)
 }
@@ -33,7 +36,10 @@ pub async fn init(path: &Path) -> Result<SqlitePool> {
 #[cfg(test)]
 pub async fn init_memory() -> Result<SqlitePool> {
     let opts = SqliteConnectOptions::from_str("sqlite::memory:")?.foreign_keys(true);
-    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(pool)
 }

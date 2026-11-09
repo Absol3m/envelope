@@ -30,7 +30,8 @@ fn smtp_err(e: impl std::fmt::Display) -> AppError {
 }
 
 fn mailbox(s: &str) -> Result<Mailbox> {
-    s.parse().map_err(|e| AppError::Invalid(format!("adresse invalide « {s} » : {e}")))
+    s.parse()
+        .map_err(|e| AppError::Invalid(format!("adresse invalide « {s} » : {e}")))
 }
 
 fn bracket(id: &str) -> String {
@@ -42,9 +43,13 @@ pub fn build_message(account: &Account, out: &OutgoingMessage) -> Result<Message
         Some(n) if !n.is_empty() => format!("{n} <{}>", account.email),
         _ => account.email.clone(),
     };
-    let mut b = Message::builder().from(mailbox(&from)?).subject(out.subject.clone());
+    let mut b = Message::builder()
+        .from(mailbox(&from)?)
+        .subject(out.subject.clone());
     if out.to.is_empty() {
-        return Err(AppError::Invalid("au moins un destinataire est requis".into()));
+        return Err(AppError::Invalid(
+            "au moins un destinataire est requis".into(),
+        ));
     }
     for a in &out.to {
         b = b.to(mailbox(a)?);
@@ -59,11 +64,24 @@ pub fn build_message(account: &Account, out: &OutgoingMessage) -> Result<Message
         b = b.in_reply_to(bracket(id));
     }
     if !out.references.is_empty() {
-        b = b.references(out.references.iter().map(|r| bracket(r)).collect::<Vec<_>>().join(" "));
+        b = b.references(
+            out.references
+                .iter()
+                .map(|r| bracket(r))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
     }
     let msg = match &out.body_html {
-        Some(html) => b.multipart(MultiPart::alternative_plain_html(out.body_text.clone(), html.clone())),
-        None => b.singlepart(SinglePart::builder().header(header::ContentType::TEXT_PLAIN).body(out.body_text.clone())),
+        Some(html) => b.multipart(MultiPart::alternative_plain_html(
+            out.body_text.clone(),
+            html.clone(),
+        )),
+        None => b.singlepart(
+            SinglePart::builder()
+                .header(header::ContentType::TEXT_PLAIN)
+                .body(out.body_text.clone()),
+        ),
     };
     msg.map_err(smtp_err)
 }
@@ -72,13 +90,17 @@ fn transport(account: &Account, cred: &Credential) -> Result<AsyncSmtpTransport<
     let host = account.smtp_host.as_str();
     let builder = match Security::parse(&account.smtp_security) {
         Security::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(host).map_err(smtp_err)?,
-        Security::Starttls => AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host).map_err(smtp_err)?,
+        Security::Starttls => {
+            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host).map_err(smtp_err)?
+        }
         Security::None => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host),
     }
     .port(account.smtp_port as u16);
 
     let builder = match cred {
-        Credential::Password { user, password } => builder.credentials(Credentials::new(user.clone(), password.clone())),
+        Credential::Password { user, password } => {
+            builder.credentials(Credentials::new(user.clone(), password.clone()))
+        }
         Credential::OAuth { user, access_token } => builder
             .credentials(Credentials::new(user.clone(), access_token.clone()))
             .authentication(vec![Mechanism::Xoauth2]),
@@ -88,16 +110,24 @@ fn transport(account: &Account, cred: &Credential) -> Result<AsyncSmtpTransport<
 
 pub async fn send(account: &Account, cred: &Credential, out: &OutgoingMessage) -> Result<()> {
     let msg = build_message(account, out)?;
-    transport(account, cred)?.send(msg).await.map_err(smtp_err)?;
+    transport(account, cred)?
+        .send(msg)
+        .await
+        .map_err(smtp_err)?;
     Ok(())
 }
 
 /// Vérifie la connexion + l'authentification SMTP sans envoyer de message.
 pub async fn test(account: &Account, cred: &Credential) -> Result<()> {
-    let ok = transport(account, cred)?.test_connection().await.map_err(smtp_err)?;
+    let ok = transport(account, cred)?
+        .test_connection()
+        .await
+        .map_err(smtp_err)?;
     if ok {
         Ok(())
     } else {
-        Err(AppError::Smtp("le serveur SMTP n'a pas répondu positivement".into()))
+        Err(AppError::Smtp(
+            "le serveur SMTP n'a pas répondu positivement".into(),
+        ))
     }
 }

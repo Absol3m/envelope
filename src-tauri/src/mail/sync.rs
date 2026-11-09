@@ -15,13 +15,16 @@ use std::time::{Duration, Instant};
 
 use async_imap::extensions::idle::IdleResponse;
 use async_imap::types::{Flag, NameAttribute};
-use base64::{alphabet, engine::general_purpose::GeneralPurpose, engine::general_purpose::GeneralPurposeConfig, engine::DecodePaddingMode, Engine};
+use base64::{
+    alphabet, engine::general_purpose::GeneralPurpose,
+    engine::general_purpose::GeneralPurposeConfig, engine::DecodePaddingMode, Engine,
+};
 use futures::TryStreamExt;
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Notify;
-use tauri::async_runtime::JoinHandle;
 
 use crate::error::{AppError, Result};
 use crate::mail::imap::{self, ImapSession};
@@ -71,7 +74,12 @@ struct StatusEvent {
 
 impl SyncManager {
     pub fn new(pool: SqlitePool, app: AppHandle, attachments_dir: PathBuf) -> Arc<Self> {
-        Arc::new(Self { pool, app, attachments_dir, tasks: Mutex::new(HashMap::new()) })
+        Arc::new(Self {
+            pool,
+            app,
+            attachments_dir,
+            tasks: Mutex::new(HashMap::new()),
+        })
     }
 
     pub async fn start_all(self: &Arc<Self>) -> Result<()> {
@@ -93,7 +101,10 @@ impl SyncManager {
             notify: notify.clone(),
         };
         let join = tauri::async_runtime::spawn(run_account(ctx));
-        self.tasks.lock().unwrap().insert(account_id, Task { join, notify });
+        self.tasks
+            .lock()
+            .unwrap()
+            .insert(account_id, Task { join, notify });
     }
 
     pub fn stop(&self, account_id: &str) {
@@ -112,13 +123,20 @@ impl SyncManager {
 
 impl Ctx {
     async fn set_status(&self, status: &'static str, error: Option<String>) {
-        let q = if status == "idle" {
-            "UPDATE accounts SET sync_status = ?, sync_error = ?, last_sync_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?"
-        } else {
-            "UPDATE accounts SET sync_status = ?, sync_error = ? WHERE id = ?"
-        };
-        let _ = sqlx::query(q).bind(status).bind(&error).bind(&self.account_id).execute(&self.pool).await;
-        let _ = self.app.emit("mail:status", StatusEvent { account_id: self.account_id.clone(), status, error });
+        let _ = sqlx::query(
+            "UPDATE accounts SET sync_status = ?1, sync_error = ?2, \
+             last_sync_at = CASE WHEN ?1 = 'idle' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE last_sync_at END \
+             WHERE id = ?3",
+        )
+        .bind(status).bind(&error).bind(&self.account_id).execute(&self.pool).await;
+        let _ = self.app.emit(
+            "mail:status",
+            StatusEvent {
+                account_id: self.account_id.clone(),
+                status,
+                error,
+            },
+        );
     }
 }
 
@@ -141,13 +159,6 @@ async fn run_account(ctx: Ctx) {
     }
 }
 
-#[derive(PartialEq)]
-enum Wake {
-    Idle,
-    Timeout,
-    Manual,
-}
-
 async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
     ctx.set_status("syncing", None).await;
     let acct = account::get(&ctx.pool, &ctx.account_id).await?;
@@ -158,12 +169,19 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
 
     let mut full = true;
     let mut last_full = Instant::now();
+    let mut folders = Vec::new();
     loop {
         ctx.set_status("syncing", None).await;
-        let folders = sync_folder_list(&mut session, ctx).await?;
+        // LIST + upsert des dossiers : seulement sur passe complète (un réveil IDLE ne change pas l'arbre).
+        if full || folders.is_empty() {
+            folders = sync_folder_list(&mut session, ctx).await?;
+        }
         let mut touched = HashSet::new();
         let mut new_messages = 0;
-        for f in folders.iter().filter(|f| full || f.role.as_deref() == Some("inbox")) {
+        for f in folders
+            .iter()
+            .filter(|f| full || f.role.as_deref() == Some("inbox"))
+        {
             new_messages += sync_folder(&mut session, ctx, f, &mut touched).await?;
         }
         ingest::refresh_threads(&ctx.pool, &touched).await?;
@@ -171,53 +189,61 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
             last_full = Instant::now();
         }
         ctx.set_status("idle", None).await;
-        let _ = ctx.app.emit("mail:synced", SyncedEvent { account_id: ctx.account_id.clone(), new_messages });
+        let _ = ctx.app.emit(
+            "mail:synced",
+            SyncedEvent {
+                account_id: ctx.account_id.clone(),
+                new_messages,
+            },
+        );
 
-        let inbox = folders.iter().find(|f| f.role.as_deref() == Some("inbox")).map(|f| f.path.clone()).unwrap_or_else(|| "INBOX".into());
-        let wake;
-        (session, wake) = if idle_supported {
+        let inbox = folders
+            .iter()
+            .find(|f| f.role.as_deref() == Some("inbox"))
+            .map(|f| f.path.clone())
+            .unwrap_or_else(|| "INBOX".into());
+        let forced;
+        (session, forced) = if idle_supported {
             idle_wait(session, &inbox, &ctx.notify).await?
         } else {
             polling_wait(session, &ctx.notify).await?
         };
-        full = wake == Wake::Manual || wake == Wake::Timeout || last_full.elapsed() >= FULL_SYNC_EVERY;
+        full = forced || last_full.elapsed() >= FULL_SYNC_EVERY;
     }
 }
 
-async fn idle_wait(mut session: ImapSession, inbox: &str, notify: &Notify) -> Result<(ImapSession, Wake)> {
+/// Retourne `true` si une passe complète est nécessaire (timeout ou demande manuelle).
+async fn idle_wait(
+    mut session: ImapSession,
+    inbox: &str,
+    notify: &Notify,
+) -> Result<(ImapSession, bool)> {
     session.select(inbox).await?;
     let mut handle = session.idle();
     handle.init().await?;
-    let wake;
-    {
+    let forced = {
         let (fut, stop) = handle.wait_with_timeout(IDLE_TIMEOUT);
         let mut fut = Box::pin(fut);
         tokio::select! {
-            r = &mut fut => {
-                wake = match r? {
-                    IdleResponse::NewData(_) => Wake::Idle,
-                    IdleResponse::Timeout => Wake::Timeout,
-                    IdleResponse::ManualInterrupt => Wake::Manual,
-                };
-            }
+            r = &mut fut => !matches!(r?, IdleResponse::NewData(_)),
             _ = notify.notified() => {
                 drop(stop); // interrompt l'IDLE proprement
                 let _ = fut.await;
-                wake = Wake::Manual;
+                true
             }
         }
-    }
-    Ok((handle.done().await?, wake))
+    };
+    Ok((handle.done().await?, forced))
 }
 
 /// Serveurs sans IDLE : NOOP toutes les 60 s.
-async fn polling_wait(mut session: ImapSession, notify: &Notify) -> Result<(ImapSession, Wake)> {
-    let wake = tokio::select! {
-        _ = tokio::time::sleep(Duration::from_secs(60)) => Wake::Idle,
-        _ = notify.notified() => Wake::Manual,
+async fn polling_wait(mut session: ImapSession, notify: &Notify) -> Result<(ImapSession, bool)> {
+    let forced = tokio::select! {
+        _ = tokio::time::sleep(Duration::from_secs(60)) => false,
+        _ = notify.notified() => true,
     };
     session.noop().await?;
-    Ok((session, wake))
+    Ok((session, forced))
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -232,7 +258,9 @@ struct FolderRec {
 pub fn decode_mutf7(s: &str) -> String {
     let engine = GeneralPurpose::new(
         &alphabet::STANDARD,
-        GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent).with_decode_allow_trailing_bits(true),
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+            .with_decode_allow_trailing_bits(true),
     );
     let mut out = String::new();
     let mut it = s.chars();
@@ -248,7 +276,10 @@ pub fn decode_mutf7(s: &str) -> String {
         }
         match engine.decode(b64.replace(',', "/")) {
             Ok(bytes) => {
-                let units: Vec<u16> = bytes.chunks_exact(2).map(|p| u16::from_be_bytes([p[0], p[1]])).collect();
+                let units: Vec<u16> = bytes
+                    .chunks_exact(2)
+                    .map(|p| u16::from_be_bytes([p[0], p[1]]))
+                    .collect();
                 out.push_str(&String::from_utf16_lossy(&units));
             }
             Err(_) => {
@@ -262,10 +293,17 @@ pub fn decode_mutf7(s: &str) -> String {
 }
 
 async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<FolderRec>> {
-    let names: Vec<_> = session.list(Some(""), Some("*")).await?.try_collect().await?;
+    let names: Vec<_> = session
+        .list(Some(""), Some("*"))
+        .await?
+        .try_collect()
+        .await?;
     let mut paths = Vec::new();
     for n in &names {
-        if n.attributes().iter().any(|a| matches!(a, NameAttribute::NoSelect)) {
+        if n.attributes()
+            .iter()
+            .any(|a| matches!(a, NameAttribute::NoSelect))
+        {
             continue; // conteneur de hiérarchie (ex. « [Gmail] »)
         }
         let path = n.name().to_string();
@@ -303,7 +341,8 @@ async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<Fo
     }
     if !paths.is_empty() {
         // Dossiers supprimés côté serveur (les messages partent en cascade).
-        let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new("DELETE FROM folders WHERE account_id = ");
+        let mut qb: QueryBuilder<Sqlite> =
+            QueryBuilder::new("DELETE FROM folders WHERE account_id = ");
         qb.push_bind(&ctx.account_id).push(" AND path NOT IN (");
         let mut sep = qb.separated(", ");
         for p in &paths {
@@ -323,17 +362,29 @@ async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<Fo
 }
 
 /// Synchronise un dossier ; retourne le nombre de nouveaux messages.
-async fn sync_folder(session: &mut ImapSession, ctx: &Ctx, f: &FolderRec, touched: &mut HashSet<i64>) -> Result<usize> {
+async fn sync_folder(
+    session: &mut ImapSession,
+    ctx: &Ctx,
+    f: &FolderRec,
+    touched: &mut HashSet<i64>,
+) -> Result<usize> {
     let mbox = session.select(&f.path).await?;
     let uid_validity = mbox.uid_validity.map(i64::from);
     let uid_next = mbox.uid_next.map(i64::from);
 
     if f.uid_validity.is_some() && f.uid_validity != uid_validity {
         tracing::info!(folder = %f.path, "UIDVALIDITY changé : purge du cache local");
-        let tids: Vec<i64> = sqlx::query_scalar("SELECT DISTINCT thread_id FROM messages WHERE folder_id = ? AND thread_id IS NOT NULL")
-            .bind(f.id).fetch_all(&ctx.pool).await?;
+        let tids: Vec<i64> = sqlx::query_scalar(
+            "SELECT DISTINCT thread_id FROM messages WHERE folder_id = ? AND thread_id IS NOT NULL",
+        )
+        .bind(f.id)
+        .fetch_all(&ctx.pool)
+        .await?;
         touched.extend(tids);
-        sqlx::query("DELETE FROM messages WHERE folder_id = ?").bind(f.id).execute(&ctx.pool).await?;
+        sqlx::query("DELETE FROM messages WHERE folder_id = ?")
+            .bind(f.id)
+            .execute(&ctx.pool)
+            .await?;
     }
     sqlx::query("UPDATE folders SET uid_validity = ?, uid_next = ?, highest_modseq = ?, total_count = ? WHERE id = ?")
         .bind(uid_validity).bind(uid_next).bind(mbox.highest_modseq.map(|m| m as i64)).bind(mbox.exists as i64).bind(f.id)
@@ -342,18 +393,34 @@ async fn sync_folder(session: &mut ImapSession, ctx: &Ctx, f: &FolderRec, touche
     reconcile(session, ctx, f.id, touched).await?;
 
     // Nouveaux messages.
-    let last_uid: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(uid), 0) FROM messages WHERE folder_id = ?").bind(f.id).fetch_one(&ctx.pool).await?;
-    let start = if last_uid > 0 { last_uid + 1 } else { uid_next.map(|n| (n - INITIAL_WINDOW).max(1)).unwrap_or(1) };
+    let last_uid: i64 =
+        sqlx::query_scalar("SELECT COALESCE(MAX(uid), 0) FROM messages WHERE folder_id = ?")
+            .bind(f.id)
+            .fetch_one(&ctx.pool)
+            .await?;
+    let start = if last_uid > 0 {
+        last_uid + 1
+    } else {
+        uid_next.map(|n| (n - INITIAL_WINDOW).max(1)).unwrap_or(1)
+    };
     let mut count = 0;
     if uid_next.map_or(mbox.exists > 0, |n| start < n) {
-        let mut stream = session.uid_fetch(format!("{start}:*"), "(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[])").await?;
+        let mut stream = session
+            .uid_fetch(
+                format!("{start}:*"),
+                "(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[])",
+            )
+            .await?;
         while let Some(item) = stream.try_next().await? {
-            let Some(uid) = item.uid.map(i64::from) else { continue };
+            let Some(uid) = item.uid.map(i64::from) else {
+                continue;
+            };
             if uid < start {
                 continue; // « n:* » renvoie toujours le dernier message, même plus ancien que n
             }
             let Some(raw) = item.body() else { continue };
-            let Some(parsed) = ingest::parse(raw, item.internal_date().map(|d| d.timestamp())) else {
+            let Some(parsed) = ingest::parse(raw, item.internal_date().map(|d| d.timestamp()))
+            else {
                 tracing::warn!(folder = %f.path, uid, "message illisible ignoré");
                 continue;
             };
@@ -361,7 +428,19 @@ async fn sync_folder(session: &mut ImapSession, ctx: &Ctx, f: &FolderRec, touche
                 seen: item.flags().any(|fl| matches!(fl, Flag::Seen)),
                 flagged: item.flags().any(|fl| matches!(fl, Flag::Flagged)),
             };
-            let tid = ingest::store(&ctx.pool, &ctx.attachments_dir, &ctx.account_id, f.id, uid, item.size.map(i64::from), flags, parsed).await?;
+            let tid = ingest::store(
+                &ctx.pool,
+                &ctx.attachments_dir,
+                ingest::MessageLoc {
+                    account_id: &ctx.account_id,
+                    folder_id: f.id,
+                    uid,
+                    size: item.size.map(i64::from),
+                },
+                flags,
+                parsed,
+            )
+            .await?;
             touched.insert(tid);
             count += 1;
         }
@@ -373,37 +452,67 @@ async fn sync_folder(session: &mut ImapSession, ctx: &Ctx, f: &FolderRec, touche
 }
 
 /// Aligne flags (lu/suivi) et suppressions sur la fenêtre de messages déjà en cache.
-async fn reconcile(session: &mut ImapSession, ctx: &Ctx, folder_id: i64, touched: &mut HashSet<i64>) -> Result<()> {
-    let min_uid: Option<i64> = sqlx::query_scalar("SELECT MIN(uid) FROM messages WHERE folder_id = ?").bind(folder_id).fetch_one(&ctx.pool).await?;
-    let Some(min_uid) = min_uid else { return Ok(()) };
+async fn reconcile(
+    session: &mut ImapSession,
+    ctx: &Ctx,
+    folder_id: i64,
+    touched: &mut HashSet<i64>,
+) -> Result<()> {
+    let min_uid: Option<i64> =
+        sqlx::query_scalar("SELECT MIN(uid) FROM messages WHERE folder_id = ?")
+            .bind(folder_id)
+            .fetch_one(&ctx.pool)
+            .await?;
+    let Some(min_uid) = min_uid else {
+        return Ok(());
+    };
 
     let mut server: HashMap<i64, (bool, bool)> = HashMap::new();
     {
-        let mut stream = session.uid_fetch(format!("{min_uid}:*"), "(UID FLAGS)").await?;
+        let mut stream = session
+            .uid_fetch(format!("{min_uid}:*"), "(UID FLAGS)")
+            .await?;
         while let Some(item) = stream.try_next().await? {
             if let Some(uid) = item.uid {
                 server.insert(
                     uid as i64,
-                    (item.flags().any(|f| matches!(f, Flag::Seen)), item.flags().any(|f| matches!(f, Flag::Flagged))),
+                    (
+                        item.flags().any(|f| matches!(f, Flag::Seen)),
+                        item.flags().any(|f| matches!(f, Flag::Flagged)),
+                    ),
                 );
             }
         }
     }
-    let local: Vec<(i64, i64, bool, bool, Option<i64>)> =
-        sqlx::query_as("SELECT id, uid, is_read, is_starred, thread_id FROM messages WHERE folder_id = ?").bind(folder_id).fetch_all(&ctx.pool).await?;
+    let local: Vec<(i64, i64, bool, bool, Option<i64>)> = sqlx::query_as(
+        "SELECT id, uid, is_read, is_starred, thread_id FROM messages WHERE folder_id = ?",
+    )
+    .bind(folder_id)
+    .fetch_all(&ctx.pool)
+    .await?;
+    let mut tx = ctx.pool.begin().await?;
     for (id, uid, read, starred, thread) in local {
         match server.get(&uid) {
             None => {
-                sqlx::query("DELETE FROM messages WHERE id = ?").bind(id).execute(&ctx.pool).await?;
+                sqlx::query("DELETE FROM messages WHERE id = ?")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
                 touched.extend(thread);
             }
             Some(&(r, s)) if r != read || s != starred => {
-                sqlx::query("UPDATE messages SET is_read = ?, is_starred = ? WHERE id = ?").bind(r).bind(s).bind(id).execute(&ctx.pool).await?;
+                sqlx::query("UPDATE messages SET is_read = ?, is_starred = ? WHERE id = ?")
+                    .bind(r)
+                    .bind(s)
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
                 touched.extend(thread);
             }
             _ => {}
         }
     }
+    tx.commit().await?;
     Ok(())
 }
 
