@@ -15,8 +15,22 @@ pub enum AppError {
     Io(#[from] std::io::Error),
     #[error("tauri : {0}")]
     Tauri(#[from] tauri::Error),
+    #[error("IMAP : {0}")]
+    Imap(#[from] async_imap::error::Error),
+    #[error("SMTP : {0}")]
+    Smtp(String),
+    #[error("trousseau : {0}")]
+    Keyring(#[from] keyring::Error),
+    #[error("réseau : {0}")]
+    Http(#[from] reqwest::Error),
+    #[error("JSON : {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("authentification : {0}")]
+    Auth(String),
+    #[error("introuvable : {0}")]
+    NotFound(String),
     #[error("{0}")]
-    Other(String),
+    Invalid(String),
 }
 
 impl Serialize for AppError {

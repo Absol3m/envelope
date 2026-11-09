@@ -18,7 +18,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 
 # --- Async & erreurs ---
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "fs"] }
 thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
@@ -39,8 +39,12 @@ mail-parser = "0.11"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls", "tokio1", "hostname"] }
 async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
 tokio-rustls = "0.26"
-keyring = "3"           # secrets (mots de passe / tokens OAuth2) dans le trousseau OS
-oauth2 = "5"
+futures = "0.3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }  # échanges de jetons OAuth2
+sha2 = "0.10"           # PKCE (S256)
+base64 = "0.22"
 
 [profile.release]
 lto = true
@@ -48,3 +52,11 @@ codegen-units = 1
 opt-level = "s"
 strip = true
 panic = "abort"
+
+# Secrets (mots de passe / tokens OAuth2) dans le trousseau de l'OS
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }

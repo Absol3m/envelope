@@ -28,3 +28,12 @@ pub async fn init(path: &Path) -> Result<SqlitePool> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(pool)
 }
+
+/// Base SQLite en mémoire (tests). Une seule connexion : chaque connexion `:memory:` est distincte.
+#[cfg(test)]
+pub async fn init_memory() -> Result<SqlitePool> {
+    let opts = SqliteConnectOptions::from_str("sqlite::memory:")?.foreign_keys(true);
+    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(opts).await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
+    Ok(pool)
+}

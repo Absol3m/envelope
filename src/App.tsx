@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Inbox, Archive, Star, Send, Bot } from "lucide-react";
 import { api, type AppInfo } from "@/lib/api";
+import DevPanel from "@/components/DevPanel";
 
 /** Squelette 3 colonnes : navigation | liste des conversations | lecture. (Étape 4 : à développer.) */
 export default function App() {
@@ -20,7 +21,7 @@ export default function App() {
   ];
 
   return (
-    <div className="grid h-full grid-cols-[220px_340px_1fr] text-sm">
+    <div className="grid h-full grid-cols-[220px_460px_1fr] text-sm">
       <aside className="border-r border-border bg-muted p-3 pt-10">
         {nav.map(({ icon: Icon, label }) => (
           <div key={label} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-background">
@@ -28,7 +29,7 @@ export default function App() {
           </div>
         ))}
       </aside>
-      <section className="border-r border-border p-4 pt-10 text-muted-foreground">Conversations</section>
+      <section className="border-r border-border text-muted-foreground"><DevPanel /></section>
       <main className="p-4 pt-10">
         <p className="text-muted-foreground">Sélectionnez une conversation.</p>
         <p className="mt-6 text-xs text-muted-foreground">
