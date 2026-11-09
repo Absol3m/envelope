@@ -1,7 +1,8 @@
 # Envelope — client mail Tauri v2 (Rust + React/TS)
 
 ## Commandes
-- Dev : `pnpm tauri dev` · Front : `pnpm build` (tsc + vite)
+- Dev : `pnpm tauri dev` · Front : `pnpm build` (tsc + vite) · Tests front : `pnpm test` (vitest)
+- Aperçu navigateur sans Tauri : `pnpm dev` → boîte de démonstration (`src/lib/mock.ts`) ; en dev, `?theme=dark&thread=2&settings=agent&palette=1` pour des captures reproductibles.
 - Rust (dans src-tauri/) : `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 - Serveur MCP : `cargo run -p envelope-mcp -- --db <chemin>` (stdio ; lecture seule)
 
