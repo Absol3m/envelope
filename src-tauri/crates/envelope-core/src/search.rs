@@ -3,7 +3,7 @@
 use serde::Serialize;
 use sqlx::SqlitePool;
 
-use crate::error::Result;
+use crate::Result;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -47,7 +47,7 @@ pub async fn search(
     let Some(fts) = build_fts_query(query) else {
         return Ok(vec![]);
     };
-    Ok(sqlx::query_as(&format!(
+    sqlx::query_as(&format!(
         "SELECT {SUMMARY_COLS} FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid \
          WHERE messages_fts MATCH ?1 AND (?2 IS NULL OR m.account_id = ?2) \
          ORDER BY rank LIMIT ?3"
@@ -56,7 +56,7 @@ pub async fn search(
     .bind(account_id)
     .bind(limit.clamp(1, 200))
     .fetch_all(pool)
-    .await?)
+    .await
 }
 
 pub async fn list_messages(
@@ -65,14 +65,14 @@ pub async fn list_messages(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<MessageSummary>> {
-    Ok(sqlx::query_as(&format!(
+    sqlx::query_as(&format!(
         "SELECT {SUMMARY_COLS} FROM messages m WHERE m.folder_id = ? ORDER BY m.date DESC LIMIT ? OFFSET ?"
     ))
     .bind(folder_id)
     .bind(limit.clamp(1, 500))
     .bind(offset.max(0))
     .fetch_all(pool)
-    .await?)
+    .await
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -88,7 +88,7 @@ pub struct FolderRow {
 }
 
 pub async fn list_folders(pool: &SqlitePool, account_id: Option<&str>) -> Result<Vec<FolderRow>> {
-    Ok(sqlx::query_as(
+    sqlx::query_as(
         "SELECT id, account_id, path, name, role, unread_count, total_count FROM folders \
          WHERE (?1 IS NULL OR account_id = ?1) \
          ORDER BY account_id, CASE role WHEN 'inbox' THEN 0 WHEN 'drafts' THEN 1 WHEN 'sent' THEN 2 \
@@ -96,5 +96,5 @@ pub async fn list_folders(pool: &SqlitePool, account_id: Option<&str>) -> Result
     )
     .bind(account_id)
     .fetch_all(pool)
-    .await?)
+    .await
 }

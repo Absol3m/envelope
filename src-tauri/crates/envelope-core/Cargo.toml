@@ -1,0 +1,9 @@
+[package]
+name = "envelope-core"
+version = "0.1.0"
+edition = "2021"
+description = "Requêtes de lecture SQLite partagées entre l'application Envelope et le serveur MCP"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "derive"] }

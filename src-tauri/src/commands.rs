@@ -9,9 +9,9 @@ use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
 use crate::mail::imap;
 use crate::mail::oauth::{self, OAuthProvider};
-use crate::mail::search::{self, FolderRow, MessageSummary};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::AppState;
+use envelope_core::search::{self, FolderRow, MessageSummary};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,7 +150,7 @@ pub async fn list_folders(
     state: State<'_, AppState>,
     account_id: Option<String>,
 ) -> Result<Vec<FolderRow>> {
-    search::list_folders(&state.db, account_id.as_deref()).await
+    Ok(search::list_folders(&state.db, account_id.as_deref()).await?)
 }
 
 #[tauri::command]
@@ -160,13 +160,13 @@ pub async fn list_messages(
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> Result<Vec<MessageSummary>> {
-    search::list_messages(
+    Ok(search::list_messages(
         &state.db,
         folder_id,
         limit.unwrap_or(50),
         offset.unwrap_or(0),
     )
-    .await
+    .await?)
 }
 
 #[tauri::command]
@@ -176,13 +176,13 @@ pub async fn search_emails(
     account_id: Option<String>,
     limit: Option<i64>,
 ) -> Result<Vec<MessageSummary>> {
-    search::search(
+    Ok(search::search(
         &state.db,
         &query,
         account_id.as_deref(),
         limit.unwrap_or(50),
     )
-    .await
+    .await?)
 }
 
 #[tauri::command]

@@ -5,6 +5,10 @@ description = "Client mail desktop ultra-rapide avec serveur MCP intégré"
 edition = "2021"
 rust-version = "1.80"
 
+[workspace]
+members = [".", "crates/envelope-core", "crates/envelope-mcp"]
+default-members = ["."]
+
 [lib]
 name = "envelope_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -13,6 +17,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+envelope-core = { path = "crates/envelope-core" }
+
 # --- Tauri ---
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"

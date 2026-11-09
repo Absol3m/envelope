@@ -1,0 +1,22 @@
+[package]
+name = "envelope-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "Serveur MCP d'Envelope : JSON-RPC 2.0 sur stdio, lecture seule de la base locale"
+
+[lib]
+name = "envelope_mcp"
+
+[[bin]]
+name = "envelope-mcp"
+path = "src/main.rs"
+
+[dependencies]
+envelope-core = { path = "../envelope-core" }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util"] }
+dirs = "6"
+
+[dev-dependencies]
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }

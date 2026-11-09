@@ -346,7 +346,7 @@ pub async fn refresh_threads(pool: &SqlitePool, ids: &HashSet<i64>) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mail::search;
+    use envelope_core::search;
 
     const MSG1: &str = "From: Alice <alice@example.com>\r\nTo: bob@example.com\r\nSubject: Réunion budget\r\nMessage-ID: <m1@example.com>\r\nDate: Mon, 02 Mar 2026 10:00:00 +0000\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nBonjour Bob, peut-on parler du budget trimestriel ?\r\n";
     const MSG2: &str = "From: Bob <bob@example.com>\r\nTo: alice@example.com\r\nSubject: Re: Réunion budget\r\nMessage-ID: <m2@example.com>\r\nIn-Reply-To: <m1@example.com>\r\nReferences: <m1@example.com>\r\nDate: Mon, 02 Mar 2026 11:00:00 +0000\r\n\r\nOui, demain.\r\n";

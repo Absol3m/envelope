@@ -16,6 +16,5 @@ pub mod account;
 pub mod imap;
 pub mod ingest;
 pub mod oauth;
-pub mod search;
 pub mod smtp;
 pub mod sync;
