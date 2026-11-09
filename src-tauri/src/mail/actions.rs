@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use futures::TryStreamExt;
-use sqlx::SqlitePool;
+use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::error::{AppError, Result};
 use crate::mail::imap::ImapSession;
@@ -35,19 +35,18 @@ struct Target {
 
 /// Messages touchés par l'action (ceux dont l'état est déjà la cible sont ignorés).
 async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Vec<Target>> {
-    let filter = match action {
-        Action::SetRead(read) => format!("AND m.is_read <> {}", i32::from(read)),
-        Action::SetStarred(on) => format!("AND m.is_starred <> {}", i32::from(on)),
-        Action::Archive { folder_id } => format!("AND m.folder_id = {folder_id}"),
-    };
-    Ok(sqlx::query_as(&format!(
+    let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
         "SELECT m.id, m.account_id, m.folder_id, f.path AS folder_path, m.uid \
-         FROM messages m JOIN folders f ON f.id = m.folder_id \
-         WHERE m.thread_id = ? {filter} ORDER BY m.account_id, f.path, m.uid"
-    ))
-    .bind(thread_id)
-    .fetch_all(pool)
-    .await?)
+         FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = ",
+    );
+    qb.push_bind(thread_id);
+    match action {
+        Action::SetRead(read) => qb.push(" AND m.is_read <> ").push_bind(read),
+        Action::SetStarred(on) => qb.push(" AND m.is_starred <> ").push_bind(on),
+        Action::Archive { folder_id } => qb.push(" AND m.folder_id = ").push_bind(folder_id),
+    };
+    qb.push(" ORDER BY m.account_id, f.path, m.uid");
+    Ok(qb.build_query_as().fetch_all(pool).await?)
 }
 
 /// Applique l'action sur le serveur puis en base.

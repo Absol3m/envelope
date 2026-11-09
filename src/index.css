@@ -1,30 +1,145 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
 
-/* Tokens de thème (compatibles shadcn/ui). Clair par défaut, sombre via prefers-color-scheme. */
+/* ───────────── Design tokens ─────────────
+   Neutres légèrement froids, un seul accent (indigo), bordures « hairline » en transparence
+   pour rester cohérent sur tous les fonds. Clair par défaut, sombre via [data-theme="dark"]
+   (posé avant le premier rendu, voir main.tsx). */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --border: oklch(0.922 0 0);
-  --accent: oklch(0.55 0.2 260);
+  --bg: #ffffff;
+  --bg-subtle: #fafafb;
+  --sidebar: #f5f5f7;
+  --elevated: #ffffff;
+  --hover: rgb(20 20 40 / 0.045);
+  --active: rgb(20 20 40 / 0.075);
+  --border: rgb(20 20 40 / 0.08);
+  --border-strong: rgb(20 20 40 / 0.15);
+  --fg: #15151a;
+  --fg-muted: #6b6b78;
+  --fg-faint: #9d9da9;
+  --accent: #5a5ad8;
+  --accent-hover: #4b4bc4;
+  --accent-fg: #ffffff;
+  --accent-soft: rgb(90 90 216 / 0.1);
+  --danger: #e5484d;
+  --warn: #e79d13;
+  --success: #2f9e6b;
+  --star: #f0a81c;
+  --shadow-pop: 0 12px 40px rgb(15 15 40 / 0.16), 0 0 0 1px var(--border);
+  --shadow-card: 0 1px 2px rgb(15 15 40 / 0.04), 0 0 0 1px var(--border);
+  color-scheme: light;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --muted: oklch(0.205 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --border: oklch(1 0 0 / 10%);
-  }
+:root[data-theme="dark"] {
+  --bg: #0d0d10;
+  --bg-subtle: #101014;
+  --sidebar: #131317;
+  --elevated: #1a1a20;
+  --hover: rgb(255 255 255 / 0.05);
+  --active: rgb(255 255 255 / 0.085);
+  --border: rgb(255 255 255 / 0.075);
+  --border-strong: rgb(255 255 255 / 0.14);
+  --fg: #ececf1;
+  --fg-muted: #9a9aa8;
+  --fg-faint: #62626d;
+  --accent: #7c7cf4;
+  --accent-hover: #9090ff;
+  --accent-fg: #0d0d10;
+  --accent-soft: rgb(124 124 244 / 0.16);
+  --star: #f5b83d;
+  --shadow-pop: 0 16px 50px rgb(0 0 0 / 0.6), 0 0 0 1px var(--border-strong);
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px var(--border);
+  color-scheme: dark;
 }
+
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-sidebar: var(--sidebar);
+  --color-elevated: var(--elevated);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-faint: var(--fg-faint);
   --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-success: var(--success);
+  --color-star: var(--star);
+  --shadow-pop: var(--shadow-pop);
+  --shadow-card: var(--shadow-card);
 }
+
 html, body, #root { height: 100%; }
-body { background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  font-feature-settings: "cv11", "ss03", "tnum" 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;            /* application, pas page web : on ne sélectionne que le contenu des mails */
+  -webkit-user-select: none;
+}
+.selectable { user-select: text; -webkit-user-select: text; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+::selection { background: var(--accent-soft); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 6px; }
+input:focus-visible { outline: none; }
+
+/* ───────────── Mouvement ─────────────
+   Courts (120–220 ms), courbe « ease-out » douce ; désactivés si l'utilisateur le demande. */
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { from { opacity: 0; transform: translate(-50%, 8px) scale(0.98); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes dialog-in { from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.anim-fade-up { animation: fade-up 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.anim-fade-in { animation: fade-in 0.18s ease-out both; }
+.skeleton {
+  background: linear-gradient(90deg, var(--hover) 30%, var(--active) 50%, var(--hover) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Boutons : retour tactile discret. */
+.press { transition: transform 0.12s ease, background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease; }
+.press:active { transform: scale(0.96); }
+
+[data-radix-popper-content-wrapper] { z-index: 60 !important; }
+
+@keyframes shrink { from { width: 100%; } to { width: 0; } }
+
+/* ───────────── Palette de commandes (cmdk) ───────────── */
+[cmdk-overlay] { position: fixed; inset: 0; z-index: 90; background: rgb(8 8 20 / 0.35); backdrop-filter: blur(3px); animation: fade-in 0.15s ease-out; }
+[cmdk-dialog] {
+  position: fixed; left: 50%; top: 16vh; z-index: 91; width: min(600px, 92vw); transform: translateX(-50%);
+  background: var(--elevated); border-radius: 16px; box-shadow: var(--shadow-pop); overflow: hidden;
+  animation: pop-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+[cmdk-input] { width: 100%; height: 52px; padding: 0 18px; font-size: 15px; background: transparent; border: 0; border-bottom: 1px solid var(--border); outline: none; color: var(--fg); user-select: text; }
+[cmdk-input]::placeholder { color: var(--fg-faint); }
+[cmdk-list] { max-height: 360px; overflow-y: auto; padding: 6px; scroll-padding: 6px; }
+[cmdk-group-heading] { padding: 10px 10px 4px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--fg-faint); }
+[cmdk-item] { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 10px; border-radius: 9px; font-size: 13px; color: var(--fg); cursor: default; }
+[cmdk-item][data-selected="true"] { background: var(--active); }
+[cmdk-item] svg { color: var(--fg-muted); flex-shrink: 0; }
+[cmdk-empty] { padding: 28px 12px; text-align: center; font-size: 13px; color: var(--fg-muted); }
