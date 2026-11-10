@@ -7,10 +7,32 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import StarterKit from "@tiptap/starter-kit";
 import { AlignCenter, AlignLeft, AlignRight, Bold, Heading2, Italic, Link2, List, ListOrdered, Palette, Quote, Redo2, RemoveFormatting, Strikethrough, Underline, Undo2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { isEmail } from "@/lib/compose";
+import { isEmail, isNeutralColor } from "@/lib/compose";
 import { cn } from "@/lib/utils";
 import { isMac } from "@/lib/platform";
 import { btnGhost, IconButton } from "./ui/primitives";
+
+/** Couleur de texte : tout HTML qui entre dans l'éditeur (collage, citation, brouillon) perd ses
+ *  couleurs neutres (le noir ou le blanc de sa source) et prend celle du thème, lisible en sombre
+ *  comme en clair. Les vraies couleurs (rouge, bleu…) sont gardées. */
+export const ThemedColor = Color.extend({
+  addGlobalAttributes() {
+    return (this.parent?.() ?? []).map((g) => {
+      const color = g.attributes.color;
+      const parse = color?.parseHTML;
+      if (!parse) return g;
+      const parseHTML = (el: HTMLElement) => {
+        const v = parse(el);
+        if (typeof v !== "string") return v;
+        // Valeur brute du style (`#000`, `black`…) ramenée à la forme normalisée (`rgb(0, 0, 0)`).
+        const probe = document.createElement("span");
+        probe.style.color = v;
+        return isNeutralColor(probe.style.color) ? null : v;
+      };
+      return { ...g, attributes: { ...g.attributes, color: { ...color, parseHTML } } };
+    });
+  },
+});
 
 const COLORS = ["#15151a", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#2563eb", "#7c3aed", "#6b6b78"];
 
@@ -137,7 +159,7 @@ export function RichEditor({ html, onChange, focusAtStart }: { html: string; onC
       StarterKit.configure({ heading: { levels: [2, 3] }, link: { openOnClick: false, autolink: true, protocols: ["mailto"], HTMLAttributes: { rel: "noopener noreferrer" } } }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       TextStyle,
-      Color,
+      ThemedColor,
       Placeholder.configure({ placeholder: "Écrivez votre message…" }),
     ],
     content: html,
