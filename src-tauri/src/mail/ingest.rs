@@ -586,4 +586,50 @@ mod tests {
     fn subject_normalization() {
         assert_eq!(normalize_subject("Re: RE: Fwd: Hello"), "Hello");
     }
+    #[tokio::test]
+    async fn reply_headers_and_contact_suggestions() {
+        let (pool, folder) = setup().await;
+        let dir = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let mut thread = 0;
+        for (uid, raw) in [(1, MSG1), (2, MSG2)] {
+            let loc = MessageLoc {
+                account_id: "a",
+                folder_id: folder,
+                uid,
+                size: None,
+            };
+            thread = store(
+                &pool,
+                &dir,
+                loc,
+                Flags::default(),
+                parse(raw.as_bytes(), None).unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+        let detail = envelope_core::thread::get_thread_detail(&pool, thread)
+            .await
+            .unwrap()
+            .unwrap();
+        let last = detail.messages.last().unwrap();
+        assert_eq!(last.message_id.as_deref(), Some("m2@example.com"));
+        assert_eq!(last.references, vec!["m1@example.com".to_string()]);
+
+        let found = envelope_core::contacts::suggest(&pool, Some("a"), "ali", &[], 8)
+            .await
+            .unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].address, "alice@example.com");
+        // L'adresse du compte n'est jamais proposée ; % et _ saisis sont littéraux.
+        let own =
+            envelope_core::contacts::suggest(&pool, None, "example", &["alice@example.com"], 8)
+                .await
+                .unwrap();
+        assert!(own.iter().all(|a| a.address != "alice@example.com"));
+        assert!(envelope_core::contacts::suggest(&pool, None, "%", &[], 8)
+            .await
+            .unwrap()
+            .is_empty());
+    }
 }

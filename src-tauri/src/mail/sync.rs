@@ -307,20 +307,7 @@ async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<Fo
             continue; // conteneur de hiérarchie (ex. « [Gmail] »)
         }
         let path = n.name().to_string();
-        let role = if path.eq_ignore_ascii_case("INBOX") {
-            Some("inbox")
-        } else {
-            n.attributes().iter().find_map(|a| match a {
-                NameAttribute::Sent => Some("sent"),
-                NameAttribute::Drafts => Some("drafts"),
-                NameAttribute::Trash => Some("trash"),
-                NameAttribute::Junk => Some("junk"),
-                NameAttribute::Archive => Some("archive"),
-                NameAttribute::All => Some("all"),
-                NameAttribute::Flagged => Some("flagged"),
-                _ => None,
-            })
-        };
+        let role = imap::folder_role(&path, n.delimiter(), n.attributes());
         let delim = n.delimiter();
         let leaf = match delim {
             Some(d) if !d.is_empty() => path.rsplit(d).next().unwrap_or(&path),

@@ -194,6 +194,8 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<Thre
 #[derive(Debug, sqlx::FromRow)]
 struct RawDetailMessage {
     id: i64,
+    message_id: Option<String>,
+    references_ids: Option<String>,
     folder_id: i64,
     subject: String,
     from_name: Option<String>,
@@ -211,6 +213,10 @@ struct RawDetailMessage {
 #[serde(rename_all = "camelCase")]
 pub struct DetailMessage {
     pub id: i64,
+    /// En-tête Message-ID (sert au threading des réponses).
+    pub message_id: Option<String>,
+    /// Message-ID des ancêtres, du plus ancien au plus récent.
+    pub references: Vec<String>,
     pub folder_id: i64,
     pub subject: String,
     pub from_name: Option<String>,
@@ -229,6 +235,11 @@ impl From<RawDetailMessage> for DetailMessage {
     fn from(m: RawDetailMessage) -> Self {
         Self {
             id: m.id,
+            message_id: m.message_id,
+            references: m
+                .references_ids
+                .and_then(|j| serde_json::from_str(&j).ok())
+                .unwrap_or_default(),
             folder_id: m.folder_id,
             subject: m.subject,
             from_name: m.from_name,
@@ -279,7 +290,7 @@ pub async fn get_thread_detail(pool: &SqlitePool, thread_id: i64) -> Result<Opti
     };
 
     let raw: Vec<RawDetailMessage> = sqlx::query_as(
-        "SELECT id, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred \
+        "SELECT id, message_id, references_ids, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred \
          FROM messages WHERE id IN (SELECT MIN(id) FROM messages WHERE thread_id = ?1 GROUP BY COALESCE(message_id, 'id:' || id)) \
          ORDER BY date, id",
     )

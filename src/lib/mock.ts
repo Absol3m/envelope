@@ -31,6 +31,8 @@ const me = (acct: string) => ({ name: "Alex Morel", address: ACCOUNTS.find((a) =
 function msg(p: { from: [string | null, string]; to?: [string | null, string][]; cc?: [string | null, string][]; at: number; text?: string; html?: string; read?: boolean; subject: string; folder?: number }): DetailMessage {
   return {
     id: nextMsg++,
+    messageId: `demo-${nextMsg}@envelope.local`,
+    references: [],
     folderId: p.folder ?? 1,
     subject: p.subject,
     fromName: p.from[0],
@@ -231,6 +233,13 @@ export const demoBackend: Backend = {
         : { provider: "imap", imap: tls(`imap.${domain}`, 993), smtp: tls(`smtp.${domain}`, 465), username: email, oauth: null, source: "guess" },
       150,
     );
+  },
+  sendEmail: () => delay({ savedToSent: null, sentError: null }, 400),
+  suggestContacts: (_account, query) => {
+    const q = query.toLowerCase();
+    const seen = new Map<string, { name: string | null; address: string }>();
+    for (const t of T) for (const m of t.messages) if (!seen.has(m.fromAddr)) seen.set(m.fromAddr, { name: m.fromName, address: m.fromAddr });
+    return delay([...seen.values()].filter((a) => a.address.includes(q) || a.name?.toLowerCase().includes(q)).slice(0, 8), 60);
   },
   oauthStatus: () => delay({ google: false, microsoft: false }, 10),
   setOAuthClient: () => Promise.reject(new Error("Mode démo : configuration désactivée.")),

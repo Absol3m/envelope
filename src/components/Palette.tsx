@@ -1,7 +1,8 @@
 import { Command } from "cmdk";
-import { Archive, Bot, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, RefreshCw, Search, Settings, Star, Sun, Undo2 } from "lucide-react";
+import { Archive, Bot, Forward, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, PenSquare, RefreshCw, Reply, ReplyAll, Search, Settings, Star, Sun, Undo2 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { useState } from "react";
+import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
 import { NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
 import { Kbd } from "./ui/primitives";
@@ -21,6 +22,7 @@ function Item({ icon: Icon, children, hint, onSelect, value }: { icon: Icon; chi
 /** ⌘K : toute action de l'application, et la recherche, au même endroit. */
 export function Palette() {
   const s = useMail();
+  const saved = useComposer((c) => c.saved !== null);
   const [text, setText] = useState("");
   const close = () => { s.setPalette(false); setText(""); };
   const run = (fn: () => void) => () => { close(); fn(); };
@@ -60,8 +62,16 @@ export function Palette() {
           <Item icon={Inbox} onSelect={run(() => s.setDensity(s.density === "compact" ? "comfortable" : "compact"))}>Densité : {s.density === "compact" ? "confortable" : "compacte"}</Item>
         </Command.Group>
 
+        <Command.Group heading="Écrire">
+          <Item icon={PenSquare} hint={["C"]} onSelect={run(() => useComposer.getState().compose())}>Nouveau message</Item>
+          <Item icon={Reply} hint={["R"]} onSelect={run(() => useComposer.getState().respond("reply"))}>Répondre</Item>
+          <Item icon={ReplyAll} hint={["A"]} onSelect={run(() => useComposer.getState().respond("replyAll"))}>Répondre à tous</Item>
+          <Item icon={Forward} hint={["F"]} onSelect={run(() => useComposer.getState().respond("forward"))}>Transférer</Item>
+          {saved && <Item icon={PenSquare} onSelect={run(() => useComposer.getState().resume())}>Reprendre le brouillon</Item>}
+        </Command.Group>
+
         <Command.Group heading="Application">
-          <Item icon={Undo2} hint={["Z"]} onSelect={run(() => s.undo())}>Annuler la dernière archive</Item>
+          <Item icon={Undo2} hint={["Z"]} onSelect={run(() => { if (!useComposer.getState().undoSend()) s.undo(); })}>Annuler (envoi ou archivage)</Item>
           <Item icon={RefreshCw} onSelect={run(() => s.accounts.forEach((a) => void s.backend.syncNow(a.id)))}>Synchroniser maintenant</Item>
           <Item icon={Bot} onSelect={run(() => s.openSettings("agent"))}>Agent IA (serveur MCP)</Item>
           <Item icon={Settings} hint={["⌘", ","]} onSelect={run(() => s.openSettings("accounts"))}>Réglages</Item>

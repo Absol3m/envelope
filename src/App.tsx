@@ -7,10 +7,12 @@ import { Toasts } from "@/components/Toasts";
 import { TooltipProvider } from "@/components/ui/primitives";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { isTauri } from "@/lib/api";
+import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
 
 // Écrans rarement ouverts : chargés à la demande, hors du paquet initial.
 const Onboarding = lazy(() => import("@/components/Onboarding").then((m) => ({ default: m.Onboarding })));
+const Composer = lazy(() => import("@/components/Composer").then((m) => ({ default: m.Composer })));
 const Palette = lazy(() => import("@/components/Palette").then((m) => ({ default: m.Palette })));
 const Settings = lazy(() => import("@/components/Settings").then((m) => ({ default: m.Settings })));
 const ShortcutsHelp = lazy(() => import("@/components/Shortcuts").then((m) => ({ default: m.ShortcutsHelp })));
@@ -19,6 +21,7 @@ export default function App() {
   const { ready, needsOnboarding, density, paletteOpen, settingsOpen, helpOpen } = useMail(
     useShallow((s) => ({ ready: s.ready, needsOnboarding: s.needsOnboarding, density: s.density, paletteOpen: s.paletteOpen, settingsOpen: s.settingsTab !== null, helpOpen: s.helpOpen })),
   );
+  const composing = useComposer((s) => s.draft !== null);
   useShortcuts();
 
   useEffect(() => {
@@ -50,6 +53,7 @@ export default function App() {
         </div>
       )}
       <Suspense fallback={null}>
+        {composing && <Composer />}
         {paletteOpen && <Palette />}
         {settingsOpen && <Settings />}
         {helpOpen && <ShortcutsHelp />}

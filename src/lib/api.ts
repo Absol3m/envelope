@@ -40,6 +40,8 @@ export interface Addr {
 }
 export interface DetailMessage {
   id: number;
+  messageId: string | null;
+  references: string[];
   folderId: number;
   subject: string;
   fromName: string | null;
@@ -103,6 +105,22 @@ export interface Detected {
 }
 export type OAuthProviderId = "google" | "microsoft";
 export type OAuthStatus = Record<OAuthProviderId, boolean>;
+/** Message à envoyer (miroir de `OutgoingMessage` côté Rust). Adresses au format « Nom <adresse> » ou « adresse ». */
+export interface OutgoingMessage {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  bodyText: string;
+  bodyHtml?: string;
+  inReplyTo?: string;
+  references: string[];
+}
+/** `savedToSent` : null si le serveur range lui-même le message (Gmail), false si la copie a échoué. */
+export interface SendReport {
+  savedToSent: boolean | null;
+  sentError: string | null;
+}
 export interface McpInfo {
   binaryPath: string | null;
   dbPath: string;
@@ -125,6 +143,8 @@ export interface Backend {
   oauthStatus(): Promise<OAuthStatus>;
   setOAuthClient(provider: OAuthProviderId, clientId: string, clientSecret?: string): Promise<void>;
   clearOAuthClient(provider: OAuthProviderId): Promise<void>;
+  sendEmail(accountId: string, message: OutgoingMessage): Promise<SendReport>;
+  suggestContacts(accountId: string | null, query: string): Promise<Addr[]>;
   removeAccount(accountId: string): Promise<void>;
   openAttachment(id: number): Promise<void>;
   inlineImages(messageId: number): Promise<Record<string, string>>;
@@ -149,6 +169,8 @@ export const tauriBackend: Backend = {
   oauthStatus: () => invoke("oauth_status"),
   setOAuthClient: (provider, clientId, clientSecret) => invoke("set_oauth_client", { provider, clientId, clientSecret }),
   clearOAuthClient: (provider) => invoke("clear_oauth_client", { provider }),
+  sendEmail: (accountId, message) => invoke("send_email", { accountId, message }),
+  suggestContacts: (accountId, query) => invoke("suggest_contacts", { accountId, query }),
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   inlineImages: (messageId) => invoke("inline_images", { messageId }),

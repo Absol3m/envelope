@@ -78,6 +78,7 @@ pub fn run() {
             commands::list_messages,
             commands::search_emails,
             commands::send_email,
+            commands::suggest_contacts,
             commands::list_threads,
             commands::get_thread_detail,
             commands::set_thread_read,

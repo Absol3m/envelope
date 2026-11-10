@@ -13,6 +13,8 @@ use crate::mail::imap;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::AppState;
+use envelope_core::addr::Addr;
+use envelope_core::contacts;
 use envelope_core::search::{self, FolderRow, MessageSummary};
 use envelope_core::thread::{self, ThreadDetail, ThreadQuery, ThreadSummary};
 
@@ -232,15 +234,71 @@ pub async fn search_emails(
     .await?)
 }
 
+/// Résultat d'un envoi (le message est parti dans tous les cas). `saved_to_sent` : `None` si le
+/// serveur range lui-même le message (Gmail) ; `Some(false)` si la copie dans « Envoyés » a
+/// échoué, avec la cause dans `sent_error`.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendReport {
+    saved_to_sent: Option<bool>,
+    sent_error: Option<String>,
+}
+
 #[tauri::command]
 pub async fn send_email(
     state: State<'_, AppState>,
     account_id: String,
     message: OutgoingMessage,
-) -> Result<()> {
+) -> Result<SendReport> {
     let acct = account::get(&state.db, &account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
-    smtp::send(&acct, &cred, &message).await
+    let raw = smtp::send(&acct, &cred, &message).await?;
+
+    let report = if acct.provider == "gmail" {
+        SendReport {
+            saved_to_sent: None, // Gmail range lui-même les messages envoyés par SMTP
+            sent_error: None,
+        }
+    } else {
+        match file_in_sent(&acct, &cred, &raw).await {
+            Ok(()) => SendReport {
+                saved_to_sent: Some(true),
+                sent_error: None,
+            },
+            Err(e) => {
+                tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
+                SendReport {
+                    saved_to_sent: Some(false),
+                    sent_error: Some(e.to_string()),
+                }
+            }
+        }
+    };
+    state.sync.trigger(&account_id); // la copie (ou le nouveau dossier) apparaît à la synchro
+    Ok(report)
+}
+
+async fn file_in_sent(acct: &Account, cred: &account::Credential, raw: &[u8]) -> Result<()> {
+    let mut session = imap::connect(acct, cred).await?;
+    let res = imap::append_sent(&mut session, raw).await;
+    let _ = session.logout().await;
+    res
+}
+
+/// Adresses déjà vues qui correspondent à la saisie (autocomplétion du destinataire).
+#[tauri::command]
+pub async fn suggest_contacts(
+    state: State<'_, AppState>,
+    account_id: Option<String>,
+    query: String,
+) -> Result<Vec<Addr>> {
+    let own: Vec<String> = account::list(&state.db)
+        .await?
+        .into_iter()
+        .map(|a| a.email)
+        .collect();
+    let own: Vec<&str> = own.iter().map(String::as_str).collect();
+    Ok(contacts::suggest(&state.db, account_id.as_deref(), &query, &own, 8).await?)
 }
 
 // ---------- Conversations (interface) ----------

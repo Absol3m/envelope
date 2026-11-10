@@ -1,11 +1,12 @@
 import { useEffect } from "react";
+import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
 import { GO_VIEWS, isInboxView } from "@/lib/views";
 import type { Category } from "@/lib/categories";
 
 const CATEGORIES: Category[] = ["all", "priority", "newsletters", "notifications"];
 
-/** Raccourcis globaux, style Superhuman : J/K, E, S, U, Z, /, g+lettre, ⌘K. */
+/** Raccourcis globaux, style Superhuman : J/K, E, S, U, C, R, A, F, Z, /, g+lettre, ⌘K. */
 export function useShortcuts() {
   useEffect(() => {
     let goPending = false;
@@ -27,7 +28,7 @@ export function useShortcuts() {
         return;
       }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (st.paletteOpen || st.settingsTab || st.helpOpen) return;
+      if (st.paletteOpen || st.settingsTab || st.helpOpen || useComposer.getState().draft) return;
 
       if (goPending) {
         goPending = false;
@@ -47,7 +48,11 @@ export function useShortcuts() {
         case "e": if (id !== null) st.archive(id); break;
         case "s": if (id !== null) st.toggleStar(id); break;
         case "u": if (id !== null) st.toggleRead(id); break;
-        case "z": st.undo(); break;
+        case "c": e.preventDefault(); useComposer.getState().compose(); break;
+        case "r": e.preventDefault(); useComposer.getState().respond("reply"); break;
+        case "a": e.preventDefault(); useComposer.getState().respond("replyAll"); break;
+        case "f": e.preventDefault(); useComposer.getState().respond("forward"); break;
+        case "z": if (!useComposer.getState().undoSend()) st.undo(); break;
         case "/": e.preventDefault(); window.dispatchEvent(new Event("envelope:focus-search")); break;
         case "?": st.setHelp(true); break;
         case "Escape": if (id !== null) st.select(null); break;
