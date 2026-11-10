@@ -11,6 +11,9 @@ use tokio_rustls::rustls::pki_types::ServerName;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tokio_rustls::TlsConnector;
 
+use async_imap::types::NameAttribute;
+use futures::TryStreamExt;
+
 use crate::error::{AppError, Result};
 use crate::mail::account::{Account, Credential, Security};
 
@@ -89,4 +92,98 @@ pub async fn connect(account: &Account, cred: &Credential) -> Result<ImapSession
         }
     };
     session.map_err(|(e, _client)| AppError::Auth(format!("connexion IMAP refusée : {e}")))
+}
+
+/// Rôle d'un dossier : attribut SPECIAL-USE du serveur, à défaut son nom (« Sent », « Envoyés »…).
+pub fn folder_role(
+    path: &str,
+    delimiter: Option<&str>,
+    attrs: &[NameAttribute],
+) -> Option<&'static str> {
+    if path.eq_ignore_ascii_case("INBOX") {
+        return Some("inbox");
+    }
+    let by_attr = attrs.iter().find_map(|a| match a {
+        NameAttribute::Sent => Some("sent"),
+        NameAttribute::Drafts => Some("drafts"),
+        NameAttribute::Trash => Some("trash"),
+        NameAttribute::Junk => Some("junk"),
+        NameAttribute::Archive => Some("archive"),
+        NameAttribute::All => Some("all"),
+        NameAttribute::Flagged => Some("flagged"),
+        _ => None,
+    });
+    by_attr.or_else(|| {
+        let leaf = match delimiter {
+            Some(d) if !d.is_empty() => path.rsplit(d).next().unwrap_or(path),
+            _ => path,
+        };
+        match leaf.to_lowercase().as_str() {
+            "sent"
+            | "sent items"
+            | "sent messages"
+            | "envoyés"
+            | "envoyes"
+            | "éléments envoyés" => Some("sent"),
+            "drafts" | "draft" | "brouillons" => Some("drafts"),
+            "trash" | "deleted items" | "deleted messages" | "corbeille" | "éléments supprimés" => {
+                Some("trash")
+            }
+            "junk" | "spam" | "junk e-mail" | "courrier indésirable" | "indésirables" => {
+                Some("junk")
+            }
+            "archive" | "archives" => Some("archive"),
+            _ => None,
+        }
+    })
+}
+
+/// Chemin du dossier « Envoyés » sur le serveur ; il est créé (et abonné) s'il n'existe pas encore,
+/// ce qui arrive sur une boîte neuve.
+pub async fn find_or_create_sent(session: &mut ImapSession) -> Result<String> {
+    let names: Vec<_> = session
+        .list(Some(""), Some("*"))
+        .await?
+        .try_collect()
+        .await?;
+    let found = names.iter().find(|n| {
+        !n.attributes()
+            .iter()
+            .any(|a| matches!(a, NameAttribute::NoSelect))
+            && folder_role(n.name(), n.delimiter(), n.attributes()) == Some("sent")
+    });
+    if let Some(n) = found {
+        return Ok(n.name().to_string());
+    }
+    session.create("Sent").await?;
+    let _ = session.subscribe("Sent").await; // non bloquant : certains serveurs l'abonnent d'office
+    Ok("Sent".to_string())
+}
+
+/// Dépose `raw` (message déjà envoyé) dans le dossier « Envoyés », marqué lu.
+pub async fn append_sent(session: &mut ImapSession, raw: &[u8]) -> Result<()> {
+    let path = find_or_create_sent(session).await?;
+    session.append(&path, Some("(\\Seen)"), None, raw).await?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roles_from_attribute_or_name() {
+        assert_eq!(folder_role("inbox", None, &[]), Some("inbox"));
+        assert_eq!(
+            folder_role("Whatever", Some("/"), &[NameAttribute::Sent]),
+            Some("sent")
+        );
+        assert_eq!(
+            folder_role("INBOX.Éléments envoyés", Some("."), &[]),
+            Some("sent")
+        );
+        assert_eq!(folder_role("Sent", Some("/"), &[]), Some("sent"));
+        assert_eq!(folder_role("Brouillons", None, &[]), Some("drafts"));
+        assert_eq!(folder_role("Projets/Sent-2024", Some("/"), &[]), None);
+    }
 }

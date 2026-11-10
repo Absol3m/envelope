@@ -1,4 +1,4 @@
-import { Archive, ChevronDown, ChevronUp, File, FileArchive, FileImage, FileText, ImageOff, Mail, MailOpen, Paperclip, Star } from "lucide-react";
+import { Archive, ChevronDown, ChevronUp, File, FileArchive, FileImage, FileText, Forward, ImageOff, Mail, MailOpen, Paperclip, Reply, ReplyAll, Star } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Account, DetailAttachment, DetailMessage, ThreadDetail, ThreadSummary } from "@/lib/api";
@@ -6,6 +6,7 @@ import { displayName, fileSize, fullDate, listDate } from "@/lib/format";
 import { prepareHtml, trustedSenders, trustSender } from "@/lib/sanitize";
 import { useMail, visibleThreads } from "@/lib/store";
 import { cn, openExternal } from "@/lib/utils";
+import { useComposer } from "@/lib/composer";
 import { Avatar, IconButton, Kbd } from "./ui/primitives";
 
 // ───────────── Corps du message ─────────────
@@ -269,7 +270,7 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
 }
 
 function EmptyReader() {
-  const items: [string, string][] = [["J / K", "Naviguer"], ["E", "Archiver"], ["S", "Suivre"], ["⌘ K", "Palette de commandes"]];
+  const items: [string, string][] = [["C", "Nouveau message"], ["J / K", "Naviguer"], ["E", "Archiver"], ["⌘ K", "Palette de commandes"]];
   return (
     <div className="anim-fade-in flex h-full flex-col items-center justify-center text-center">
       <span className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-accent/15 to-[#8b5cf6]/15 text-accent"><Mail size={28} strokeWidth={1.5} /></span>
@@ -300,6 +301,9 @@ export function Reader() {
       <div data-tauri-drag-region className="flex h-[46px] shrink-0 items-center gap-0.5 border-b border-border bg-bg/80 px-3 backdrop-blur-md">
         {summary ? (
           <>
+            <IconButton label="Répondre" kbd="R" onClick={() => useComposer.getState().respond("reply")}><Reply size={16} /></IconButton>
+            <IconButton label="Répondre à tous" kbd="A" onClick={() => useComposer.getState().respond("replyAll")}><ReplyAll size={16} /></IconButton>
+            <IconButton label="Transférer" kbd="F" onClick={() => useComposer.getState().respond("forward")}><Forward size={16} /></IconButton>
             <IconButton label="Archiver" kbd="E" onClick={() => archive(summary.id)}><Archive size={16} /></IconButton>
             <IconButton label={summary.isStarred ? "Ne plus suivre" : "Suivre"} kbd="S" onClick={() => toggleStar(summary.id)}><Star size={16} className={summary.isStarred ? "fill-star text-star" : ""} /></IconButton>
             <IconButton label={unread ? "Marquer comme lu" : "Marquer comme non lu"} kbd="U" onClick={() => toggleRead(summary.id)}>{unread ? <MailOpen size={16} /> : <Mail size={16} />}</IconButton>

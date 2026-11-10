@@ -108,13 +108,15 @@ fn transport(account: &Account, cred: &Credential) -> Result<AsyncSmtpTransport<
     Ok(builder.build())
 }
 
-pub async fn send(account: &Account, cred: &Credential, out: &OutgoingMessage) -> Result<()> {
+/// Envoie le message et renvoie sa forme brute (pour en garder une copie dans « Envoyés »).
+pub async fn send(account: &Account, cred: &Credential, out: &OutgoingMessage) -> Result<Vec<u8>> {
     let msg = build_message(account, out)?;
+    let raw = msg.formatted();
     transport(account, cred)?
         .send(msg)
         .await
         .map_err(smtp_err)?;
-    Ok(())
+    Ok(raw)
 }
 
 /// Vérifie la connexion + l'authentification SMTP sans envoyer de message.

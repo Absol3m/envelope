@@ -1,11 +1,12 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
-import { Bot, Check, ChevronsUpDown, Inbox, Layers, RefreshCw, Settings } from "lucide-react";
+import { Bot, Check, ChevronsUpDown, Inbox, Layers, PenSquare, RefreshCw, Settings } from "lucide-react";
 import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
+import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
 import { NAV_MAILBOXES, NAV_SMART, sameView, type NavItem as NavItemData } from "@/lib/views";
 import { cn } from "@/lib/utils";
-import { IconButton, Spinner } from "./ui/primitives";
+import { IconButton, Spinner, Tip } from "./ui/primitives";
 
 type Icon = NavItemData["icon"];
 
@@ -80,6 +81,14 @@ export function Sidebar() {
             </Dropdown.Content>
           </Dropdown.Portal>
         </Dropdown.Root>
+      </div>
+
+      <div className="px-2.5 pb-2">
+        <Tip label="Nouveau message" kbd="C" side="right">
+          <button onClick={() => useComposer.getState().compose()} className="press flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-[13px] font-medium text-white shadow-card hover:opacity-90">
+            <PenSquare size={15} /> <span className="max-[1100px]:hidden">Nouveau message</span>
+          </button>
+        </Tip>
       </div>
 
       <nav className="min-h-0 flex-1 space-y-px overflow-y-auto px-2.5 pb-3" aria-label="Dossiers">
