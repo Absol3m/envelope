@@ -25,6 +25,46 @@ pub struct AppState {
     pub actions: tokio::sync::Mutex<()>,
 }
 
+/// Fenêtre principale, aux conventions de chaque système :
+/// - macOS : barre de titre fusionnée avec l'interface, barre latérale en « vibrancy » ;
+/// - Windows 11 : matière Mica sous l'interface (Windows 10 : fenêtre opaque) ;
+/// - Linux : fenêtre opaque et décorations du bureau.
+fn main_window(app: &tauri::App) -> tauri::Result<()> {
+    use envelope_appearance::Material;
+    use tauri::window::{Effect, EffectState, EffectsBuilder};
+
+    let host = envelope_appearance::host();
+    // Palette et matière connues de la page avant son premier affichage (voir lib/theme.ts).
+    let host_json = serde_json::to_string(&host).map_err(|e| tauri::Error::Anyhow(e.into()))?;
+    let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
+        .title("Envelope")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(900.0, 560.0)
+        .disable_drag_drop_handler()
+        .initialization_script(format!("window.__ENVELOPE_HOST__ = {host_json};"));
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true);
+    }
+    if let Some(material) = host.material {
+        let effect = match material {
+            Material::Mica => Effect::Mica,
+            Material::Vibrancy => Effect::Sidebar,
+        };
+        // La matière n'apparaît que là où l'interface laisse le fond transparent (voir index.css).
+        builder = builder.transparent(true).effects(
+            EffectsBuilder::new()
+                .effect(effect)
+                .state(EffectState::FollowsWindowActiveState)
+                .build(),
+        );
+    }
+    builder.build()?;
+    Ok(())
+}
+
 pub fn run() {
     // Un seul fournisseur crypto rustls pour tout le process (IMAP, SMTP, HTTP).
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -38,6 +78,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            main_window(app)?;
             let data_dir = app.path().app_data_dir()?;
             let db_path = db::db_path(&data_dir);
             let pool = tauri::async_runtime::block_on(db::init(&db_path))?;
@@ -65,6 +106,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::system_appearance,
             commands::list_accounts,
             commands::add_account,
             commands::add_oauth_account,

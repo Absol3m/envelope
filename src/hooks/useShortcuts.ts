@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
 import { GO_VIEWS, isInboxView } from "@/lib/views";
+import { isEditable } from "@/lib/platform";
 import type { Category } from "@/lib/categories";
 
 const CATEGORIES: Category[] = ["all", "priority", "newsletters", "notifications"];
@@ -14,8 +15,7 @@ export function useShortcuts() {
 
     const onKey = (e: KeyboardEvent) => {
       const st = useMail.getState();
-      const el = e.target as HTMLElement | null;
-      const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      const typing = isEditable(e.target);
 
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();

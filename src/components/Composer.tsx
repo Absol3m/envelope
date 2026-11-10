@@ -7,6 +7,7 @@ import { useMail } from "@/lib/store";
 import { btnPrimary, IconButton, Kbd } from "./ui/primitives";
 import { RecipientField } from "./RecipientField";
 import { RichEditor } from "./RichEditor";
+import { shortcut } from "@/lib/platform";
 
 const TITLES = { new: "Nouveau message", reply: "Réponse", replyAll: "Réponse à tous", forward: "Transfert" } as const;
 
@@ -104,7 +105,7 @@ export function Composer() {
 
       <footer className="flex h-14 shrink-0 items-center gap-2 border-t border-border px-3">
         <button type="button" className={`${btnPrimary} h-9 gap-2 px-4`} onClick={send}>
-          <Send size={14} /> Envoyer <Kbd className="border-white/30 bg-transparent text-white/80">⌘↵</Kbd>
+          <Send size={14} /> Envoyer <Kbd className="border-white/30 bg-transparent text-white/80">{shortcut("mod+enter")}</Kbd>
         </button>
         <input
           ref={fileInput}

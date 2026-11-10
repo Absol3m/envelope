@@ -1,0 +1,16 @@
+[package]
+name = "envelope-appearance"
+version = "0.1.0"
+edition = "2021"
+description = "Apparence du système hôte (clair/sombre, couleur d'accent, palette du bureau, matière de fenêtre)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.56"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.14", default-features = false, features = ["tokio", "settings"] }
+tokio = { version = "1", features = ["time"] }
+dirs = "6"

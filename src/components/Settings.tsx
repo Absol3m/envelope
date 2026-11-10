@@ -5,10 +5,11 @@ import { type McpInfo } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
 import { useMail, type SettingsTab } from "@/lib/store";
-import type { ThemePref } from "@/lib/theme";
+import type { ColorsPref, ThemePref } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { ShortcutList } from "./Shortcuts";
 import { AddAccountForm } from "./AddAccountForm";
+import { SETTINGS_LABEL } from "@/lib/platform";
 import { Avatar, btnPrimary, IconButton } from "./ui/primitives";
 
 const TABS: { id: SettingsTab; label: string; icon: ComponentType<{ size?: number }> }[] = [
@@ -212,6 +213,9 @@ function AppearancePanel() {
       <Section title="Thème">
         <Segmented<ThemePref> value={s.theme} onChange={s.setTheme} options={[{ value: "system", label: "Système", icon: Monitor }, { value: "light", label: "Clair", icon: Sun }, { value: "dark", label: "Sombre", icon: Moon }]} />
       </Section>
+      <Section title="Couleurs" hint="« Système » reprend les couleurs et la couleur d'accent de votre système (et de votre bureau sous Linux).">
+        <Segmented<ColorsPref> value={s.colors} onChange={s.setColors} options={[{ value: "system", label: "Système", icon: Monitor }, { value: "envelope", label: "Envelope", icon: Palette }]} />
+      </Section>
       <Section title="Densité de la liste">
         <Segmented value={s.density} onChange={s.setDensity} options={[{ value: "comfortable", label: "Confortable" }, { value: "compact", label: "Compacte" }]} />
       </Section>
@@ -239,8 +243,8 @@ export function Settings() {
           className="fixed left-1/2 top-1/2 z-[91] flex h-[min(640px,88vh)] w-[min(900px,94vw)] overflow-hidden rounded-2xl bg-elevated shadow-pop"
           style={{ animation: "dialog-in 0.22s cubic-bezier(0.16,1,0.3,1) both" }}
         >
-          <nav className="w-[196px] shrink-0 border-r border-border bg-sidebar p-3" aria-label="Réglages">
-            <Dialog.Title className="px-2.5 pb-3 pt-1 text-[15px] font-semibold tracking-tight">Réglages</Dialog.Title>
+          <nav className="w-[196px] shrink-0 border-r border-border bg-sidebar p-3" aria-label={SETTINGS_LABEL}>
+            <Dialog.Title className="px-2.5 pb-3 pt-1 text-[15px] font-semibold tracking-tight">{SETTINGS_LABEL}</Dialog.Title>
             {TABS.map((t) => (
               <button key={t.id} onClick={() => openSettings(t.id)} aria-current={settingsTab === t.id} className={cn("press flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium", settingsTab === t.id ? "bg-active text-fg" : "text-muted hover:bg-hover hover:text-fg")}>
                 <t.icon size={15} /> {t.label}

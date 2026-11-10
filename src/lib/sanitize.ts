@@ -28,7 +28,7 @@ const FORBID_TAGS = ["script", "form", "input", "button", "select", "textarea", 
 
 const BASE_CSS = `
 html{color-scheme:light}
-body{margin:0;padding:18px 22px;font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;color:#1c1c21;background:#fff;overflow-wrap:anywhere}
+body{margin:0;padding:18px 22px;font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Inter,Helvetica,Arial,sans-serif;color:#1c1c21;background:#fff;overflow-wrap:anywhere}
 img{max-width:100%;height:auto}
 a{color:#4747c9}
 pre{white-space:pre-wrap}

@@ -3,13 +3,14 @@ import { X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useMail } from "@/lib/store";
 import { NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
+import { keys, SETTINGS_LABEL } from "@/lib/platform";
 import { IconButton, Kbd } from "./ui/primitives";
 
 const SHORTCUTS: { group: string; items: [string[], string][] }[] = [
-  { group: "Navigation", items: [[["J"], "Conversation suivante"], [["K"], "Conversation précédente"], [["/"], "Rechercher"], [["⌘", "K"], "Palette de commandes"], [["1", "–", "4"], "Onglets Smart Inbox"], [["Échap"], "Fermer / désélectionner"]] },
+  { group: "Navigation", items: [[["J"], "Conversation suivante"], [["K"], "Conversation précédente"], [["/"], "Rechercher"], [keys("mod+k"), "Palette de commandes"], [["1", "–", "4"], "Onglets Smart Inbox"], [["Échap"], "Fermer / désélectionner"]] },
   { group: "Actions", items: [[["E"], "Archiver"], [["S"], "Suivre / ne plus suivre"], [["U"], "Marquer lu / non lu"], [["Z"], "Annuler la dernière archive"]] },
   { group: "Aller à…", items: [...NAV_MAILBOXES, ...NAV_SMART].filter((i) => i.go).map((i): [string[], string] => [["G", (i.go as string).toUpperCase()], i.label]) },
-  { group: "Application", items: [[["⌘", ","], "Réglages"], [["?"], "Cette aide"]] },
+  { group: "Application", items: [[keys("mod+,"), SETTINGS_LABEL], [["?"], "Cette aide"]] },
 ];
 
 export function ShortcutList() {

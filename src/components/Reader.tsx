@@ -8,6 +8,7 @@ import { useMail, visibleThreads } from "@/lib/store";
 import { cn, openExternal } from "@/lib/utils";
 import { useComposer } from "@/lib/composer";
 import { Avatar, IconButton, Kbd } from "./ui/primitives";
+import { dragRegion, shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 
 // ───────────── Corps du message ─────────────
 
@@ -28,6 +29,7 @@ function HtmlFrame({ srcDoc }: { srcDoc: string }) {
       ro?.disconnect();
       ro = new ResizeObserver(measure);
       ro.observe(doc.documentElement);
+      suppressWebviewContextMenu(doc);
       // Les liens s'ouvrent dans le navigateur système, jamais dans l'application.
       doc.addEventListener("click", (e) => {
         const a = (e.target as Element | null)?.closest?.("a[href]");
@@ -270,7 +272,7 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
 }
 
 function EmptyReader() {
-  const items: [string, string][] = [["C", "Nouveau message"], ["J / K", "Naviguer"], ["E", "Archiver"], ["⌘ K", "Palette de commandes"]];
+  const items: [string, string][] = [["C", "Nouveau message"], ["J / K", "Naviguer"], ["E", "Archiver"], [shortcut("mod+k"), "Palette de commandes"]];
   return (
     <div className="anim-fade-in flex h-full flex-col items-center justify-center text-center">
       <span className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-accent/15 to-[#8b5cf6]/15 text-accent"><Mail size={28} strokeWidth={1.5} /></span>
@@ -298,7 +300,7 @@ export function Reader() {
 
   return (
     <main className="flex h-full min-h-0 min-w-0 flex-col bg-bg-subtle" aria-label="Lecture">
-      <div data-tauri-drag-region className="flex h-[46px] shrink-0 items-center gap-0.5 border-b border-border bg-bg/80 px-3 backdrop-blur-md">
+      <div {...dragRegion} className="flex h-[46px] shrink-0 items-center gap-0.5 border-b border-border bg-bg/80 px-3 backdrop-blur-md">
         {summary ? (
           <>
             <IconButton label="Répondre" kbd="R" onClick={() => useComposer.getState().respond("reply")}><Reply size={16} /></IconButton>
@@ -307,13 +309,13 @@ export function Reader() {
             <IconButton label="Archiver" kbd="E" onClick={() => archive(summary.id)}><Archive size={16} /></IconButton>
             <IconButton label={summary.isStarred ? "Ne plus suivre" : "Suivre"} kbd="S" onClick={() => toggleStar(summary.id)}><Star size={16} className={summary.isStarred ? "fill-star text-star" : ""} /></IconButton>
             <IconButton label={unread ? "Marquer comme lu" : "Marquer comme non lu"} kbd="U" onClick={() => toggleRead(summary.id)}>{unread ? <MailOpen size={16} /> : <Mail size={16} />}</IconButton>
-            <span data-tauri-drag-region className="flex-1" />
+            <span {...dragRegion} className="flex-1" />
             {index >= 0 && <span className="tnum mr-1 text-[12px] text-muted">{index + 1} sur {list.length}</span>}
             <IconButton label="Précédente" kbd="K" disabled={index <= 0} onClick={() => move(-1)}><ChevronUp size={16} /></IconButton>
             <IconButton label="Suivante" kbd="J" disabled={index < 0 || index >= list.length - 1} onClick={() => move(1)}><ChevronDown size={16} /></IconButton>
           </>
         ) : (
-          <span data-tauri-drag-region className="flex-1" />
+          <span {...dragRegion} className="flex-1" />
         )}
       </div>
 
