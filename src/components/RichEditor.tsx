@@ -9,6 +9,7 @@ import { AlignCenter, AlignLeft, AlignRight, Bold, Heading2, Italic, Link2, List
 import { useState, type ReactNode } from "react";
 import { isEmail } from "@/lib/compose";
 import { cn } from "@/lib/utils";
+import { isMac } from "@/lib/platform";
 import { btnGhost, IconButton } from "./ui/primitives";
 
 const COLORS = ["#15151a", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#2563eb", "#7c3aed", "#6b6b78"];
@@ -94,9 +95,9 @@ function FormatBar({ editor }: { editor: Editor }) {
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-t border-border px-2" role="toolbar" aria-label="Mise en forme">
-      <Tool label="Gras" kbd="⌘B" active={st.bold} onClick={() => chain().toggleBold().run()}><Bold size={15} /></Tool>
-      <Tool label="Italique" kbd="⌘I" active={st.italic} onClick={() => chain().toggleItalic().run()}><Italic size={15} /></Tool>
-      <Tool label="Souligné" kbd="⌘U" active={st.underline} onClick={() => chain().toggleUnderline().run()}><Underline size={15} /></Tool>
+      <Tool label="Gras" kbd="mod+b" active={st.bold} onClick={() => chain().toggleBold().run()}><Bold size={15} /></Tool>
+      <Tool label="Italique" kbd="mod+i" active={st.italic} onClick={() => chain().toggleItalic().run()}><Italic size={15} /></Tool>
+      <Tool label="Souligné" kbd="mod+u" active={st.underline} onClick={() => chain().toggleUnderline().run()}><Underline size={15} /></Tool>
       <Tool label="Barré" active={st.strike} onClick={() => chain().toggleStrike().run()}><Strikethrough size={15} /></Tool>
       <Sep />
       <Tool label="Titre" active={st.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()}><Heading2 size={15} /></Tool>
@@ -108,7 +109,7 @@ function FormatBar({ editor }: { editor: Editor }) {
       <Tool label="Centrer" active={st.center} onClick={() => chain().setTextAlign("center").run()}><AlignCenter size={15} /></Tool>
       <Tool label="Aligner à droite" active={st.right} onClick={() => chain().setTextAlign("right").run()}><AlignRight size={15} /></Tool>
       <Sep />
-      <Tool label="Lien" kbd="⌘K" active={st.link} onClick={openLink}><Link2 size={15} /></Tool>
+      <Tool label="Lien" kbd="mod+k" active={st.link} onClick={openLink}><Link2 size={15} /></Tool>
       <Dropdown.Root>
         <Dropdown.Trigger asChild>
           <IconButton label="Couleur du texte" tooltipSide="top" {...keepFocus}><Palette size={15} /></IconButton>
@@ -123,8 +124,8 @@ function FormatBar({ editor }: { editor: Editor }) {
       </Dropdown.Root>
       <Tool label="Effacer la mise en forme" onClick={() => chain().unsetAllMarks().clearNodes().unsetTextAlign().run()}><RemoveFormatting size={15} /></Tool>
       <span className="flex-1" />
-      <Tool label="Annuler" kbd="⌘Z" disabled={!st.canUndo} onClick={() => chain().undo().run()}><Undo2 size={15} /></Tool>
-      <Tool label="Rétablir" kbd="⇧⌘Z" disabled={!st.canRedo} onClick={() => chain().redo().run()}><Redo2 size={15} /></Tool>
+      <Tool label="Annuler" kbd="mod+z" disabled={!st.canUndo} onClick={() => chain().undo().run()}><Undo2 size={15} /></Tool>
+      <Tool label="Rétablir" kbd={isMac ? "shift+mod+z" : "mod+y"} disabled={!st.canRedo} onClick={() => chain().redo().run()}><Redo2 size={15} /></Tool>
     </div>
   );
 }
@@ -151,7 +152,7 @@ export function RichEditor({ html, onChange, focusAtStart }: { html: string; onC
       <div
         className="composer-editor min-h-0 flex-1 cursor-text overflow-y-auto px-4 py-3"
         onKeyDown={(e) => {
-          // ⌘K dans l'éditeur : lien (et non la palette de commandes).
+          // ⌘K / Ctrl+K dans l'éditeur : lien (et non la palette de commandes).
           if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") e.stopPropagation();
         }}
         onClick={(e) => { if (e.target === e.currentTarget) editor.commands.focus("end"); }}

@@ -35,6 +35,12 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
     }
 }
 
+/// Couleurs du système (clair/sombre, accent, palette du bureau), relues à chaque retour au premier plan.
+#[tauri::command]
+pub async fn system_appearance() -> envelope_appearance::Appearance {
+    envelope_appearance::read().await
+}
+
 #[tauri::command]
 pub async fn list_accounts(state: State<'_, AppState>) -> Result<Vec<Account>> {
     account::list(&state.db).await
@@ -373,7 +379,9 @@ async fn attachment_path(state: &AppState, attachment_id: i64) -> Result<std::pa
             "pièce jointe hors du dossier autorisé".into(),
         ));
     }
-    Ok(path)
+    // Sous Windows, `canonicalize` produit un chemin `\\?\C:\…` que certaines applications
+    // associées refusent : on le rend sous sa forme habituelle (sans effet ailleurs).
+    Ok(dunce::simplified(&path).to_path_buf())
 }
 
 #[tauri::command]

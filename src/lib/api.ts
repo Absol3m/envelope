@@ -154,6 +154,18 @@ export interface Backend {
 
 export const isTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/** Réglages d'apparence du système hôte (crate envelope-appearance, `read`). */
+export interface SystemAppearance {
+  /** Préférence sombre du bureau, quand la vue web ne la voit pas (Linux). */
+  dark: boolean | null;
+  accentLight: string | null;
+  accentDark: string | null;
+  /** Schéma de couleurs de l'utilisateur (KDE). */
+  palette: { window: string; view: string; fg: string; fgMuted: string } | null;
+}
+
+export const systemAppearance = () => invoke<SystemAppearance>("system_appearance");
+
 export const tauriBackend: Backend = {
   demo: false,
   listAccounts: () => invoke("list_accounts"),

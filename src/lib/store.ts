@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { applyTheme, loadTheme, type ThemePref } from "./theme";
+import { parseColors, parseTheme, renderAppearance, type ColorsPref, type ThemePref } from "./theme";
+import { pref } from "./pref";
 import { demoBackend } from "./mock";
 import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
@@ -22,22 +23,6 @@ export interface Toast {
 const PAGE = 100;
 const UNDO_MS = 5000;
 
-const pref = {
-  get<T extends string>(key: string, fallback: T): T {
-    try {
-      return (localStorage.getItem(`envelope.${key}`) as T | null) ?? fallback;
-    } catch {
-      return fallback;
-    }
-  },
-  set(key: string, value: string) {
-    try {
-      localStorage.setItem(`envelope.${key}`, value);
-    } catch {
-      /* non mémorisé */
-    }
-  },
-};
 
 interface State {
   backend: Backend;
@@ -61,6 +46,7 @@ interface State {
   settingsTab: SettingsTab | null;
   helpOpen: boolean;
   theme: ThemePref;
+  colors: ColorsPref;
   density: Density;
   previews: boolean;
 
@@ -85,6 +71,7 @@ interface State {
   openSettings(tab: SettingsTab | null): void;
   setHelp(open: boolean): void;
   setTheme(t: ThemePref): void;
+  setColors(c: ColorsPref): void;
   setDensity(d: Density): void;
   setPreviews(p: boolean): void;
 }
@@ -184,7 +171,8 @@ export const useMail = create<State>((set, get) => {
     paletteOpen: false,
     settingsTab: null,
     helpOpen: false,
-    theme: loadTheme(),
+    theme: parseTheme(pref.get("theme", "system")),
+    colors: parseColors(pref.get("colors", "system")),
     density: pref.get<Density>("density", "comfortable"),
     previews: pref.get("previews", "on") === "on",
 
@@ -352,8 +340,14 @@ export const useMail = create<State>((set, get) => {
     openSettings: (settingsTab) => set({ settingsTab }),
     setHelp: (helpOpen) => set({ helpOpen }),
     setTheme(theme) {
-      applyTheme(theme);
+      pref.set("theme", theme);
       set({ theme });
+      renderAppearance(get());
+    },
+    setColors(colors) {
+      pref.set("colors", colors);
+      set({ colors });
+      renderAppearance(get());
     },
     setDensity(density) {
       pref.set("density", density);

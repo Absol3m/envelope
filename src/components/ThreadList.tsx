@@ -7,6 +7,7 @@ import { displayName, groupLabel, listDate } from "@/lib/format";
 import { useMail, visibleThreads } from "@/lib/store";
 import { isInboxView, viewTitle, type View } from "@/lib/views";
 import { cn } from "@/lib/utils";
+import { dragRegion } from "@/lib/platform";
 import { Avatar, IconButton, Kbd } from "./ui/primitives";
 
 interface RowProps {
@@ -173,10 +174,10 @@ export function ThreadList() {
   const compact = density === "compact";
   return (
     <section className="flex h-full min-h-0 flex-col border-r border-border bg-bg-subtle" aria-label="Conversations">
-      <header data-tauri-drag-region className="shrink-0 px-4 pt-[14px]">
-        <div data-tauri-drag-region className="flex h-[30px] items-baseline gap-2">
-          <h1 data-tauri-drag-region className="pointer-events-none text-[17px] font-semibold tracking-tight">{query.trim() ? "Recherche" : viewTitle(view)}</h1>
-          {list.length > 0 && <span data-tauri-drag-region className="tnum pointer-events-none text-[12px] text-faint">{list.length}</span>}
+      <header {...dragRegion} className="shrink-0 px-4 pt-[14px]">
+        <div {...dragRegion} className="flex h-[30px] items-baseline gap-2">
+          <h1 {...dragRegion} className="pointer-events-none text-[17px] font-semibold tracking-tight">{query.trim() ? "Recherche" : viewTitle(view)}</h1>
+          {list.length > 0 && <span {...dragRegion} className="tnum pointer-events-none text-[12px] text-faint">{list.length}</span>}
         </div>
 
         <label className="mt-2.5 flex h-8 items-center gap-2 rounded-lg border border-border bg-bg px-2.5 text-muted transition-colors focus-within:border-accent/60 focus-within:ring-[3px] focus-within:ring-accent-soft">

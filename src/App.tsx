@@ -9,6 +9,7 @@ import { useShortcuts } from "@/hooks/useShortcuts";
 import { isTauri } from "@/lib/api";
 import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
+import { dragRegion } from "@/lib/platform";
 
 // Écrans rarement ouverts : chargés à la demande, hors du paquet initial.
 const Onboarding = lazy(() => import("@/components/Onboarding").then((m) => ({ default: m.Onboarding })));
@@ -36,7 +37,7 @@ export default function App() {
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));
   }, []);
 
-  if (!ready) return <div className="h-full bg-bg" data-tauri-drag-region />;
+  if (!ready) return <div className="h-full bg-bg" {...dragRegion} />;
 
   return (
     <TooltipProvider delayDuration={350}>

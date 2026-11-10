@@ -2,6 +2,7 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { displayName, hue, initials } from "@/lib/format";
+import { shortcut } from "@/lib/platform";
 
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -13,7 +14,8 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
 
 export const TooltipProvider = TooltipPrimitive.Provider;
 
-/** Infobulle avec raccourci clavier optionnel : l'interface s'explique elle-même. */
+/** Infobulle avec raccourci clavier optionnel : l'interface s'explique elle-même.
+ *  `kbd` est un raccourci au format de `shortcut()` (`"mod+k"`, `"e"`), affiché selon le système. */
 export function Tip({ label, kbd, side = "bottom", children }: { label: string; kbd?: string; side?: "top" | "bottom" | "left" | "right"; children: ReactNode }) {
   return (
     <TooltipPrimitive.Root delayDuration={350}>
@@ -25,7 +27,7 @@ export function Tip({ label, kbd, side = "bottom", children }: { label: string; 
           className="anim-fade-in z-[70] flex items-center gap-2 rounded-md bg-fg px-2 py-1 text-[11px] font-medium text-bg shadow-pop"
         >
           {label}
-          {kbd && <span className="rounded bg-bg/20 px-1 text-[10px] opacity-80">{kbd}</span>}
+          {kbd && <span className="rounded bg-bg/20 px-1 text-[10px] opacity-80">{shortcut(kbd)}</span>}
         </TooltipPrimitive.Content>
       </TooltipPrimitive.Portal>
     </TooltipPrimitive.Root>
