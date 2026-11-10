@@ -162,6 +162,19 @@ export function emailHtml(html: string): string {
   return `<div style="font-family:${MAIL_FONT};font-size:14px;line-height:1.55">${doc.body.innerHTML}</div>`;
 }
 
+const NEUTRAL_KEYWORDS = new Set(["inherit", "initial", "unset", "currentcolor", "windowtext", "black", "white", "gray", "grey", "silver", "dimgray", "dimgrey", "darkgray", "darkgrey", "lightgray", "lightgrey", "gainsboro", "whitesmoke"]);
+
+/** Noir, blanc ou gris quasi pur : la couleur de texte par défaut du document d'origine (collé,
+ *  cité), pas un choix de mise en forme. Valeur telle que la renvoie `element.style.color`
+ *  (`rgb()` ou mot-clé). Écart toléré entre composantes : 12, sous le gris bleuté de la palette
+ *  de l'éditeur (#6b6b78), qui reste donc une vraie couleur. */
+export function isNeutralColor(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  if (NEUTRAL_KEYWORDS.has(v)) return true;
+  const rgb = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(v)?.slice(1).map(Number);
+  return !!rgb && Math.max(...rgb) - Math.min(...rgb) <= 12;
+}
+
 const bodyHtmlOf = (m: DetailMessage) => (m.bodyHtml?.trim() ? sanitizeFragment(m.bodyHtml) : m.bodyText?.trim() ? textToHtml(m.bodyText) : "");
 
 const who = (name: string | null | undefined, address: string) => (name ? `${name} <${address}>` : address);

@@ -1,4 +1,3 @@
-import { applyTheme } from "@/lib/theme";
 import { useComposer } from "@/lib/composer";
 import { useMail, type SettingsTab } from "@/lib/store";
 
@@ -7,7 +6,7 @@ import { useMail, type SettingsTab } from "@/lib/store";
 export function applyDevParams() {
   const q = new URLSearchParams(location.search);
   const theme = q.get("theme");
-  if (theme === "light" || theme === "dark") applyTheme(theme);
+  if (theme === "light" || theme === "dark") useMail.getState().setTheme(theme);
 
   // Une fois la boîte chargée (sélection initiale comprise) pour ne pas être écrasé par elle.
   const unsub = useMail.subscribe((s) => {

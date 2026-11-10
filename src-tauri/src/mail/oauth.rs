@@ -81,7 +81,7 @@ impl OAuthProvider {
         let cfg = self.config();
         let client_id = std::env::var(cfg.client_id_env).map_err(|_| {
             AppError::Auth(format!(
-                "identifiant client {} non configuré (Réglages › Comptes)",
+                "identifiant client {} non configuré (onglet Comptes)",
                 self.label()
             ))
         })?;

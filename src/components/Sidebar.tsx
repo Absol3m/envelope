@@ -6,6 +6,7 @@ import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
 import { NAV_MAILBOXES, NAV_SMART, sameView, type NavItem as NavItemData } from "@/lib/views";
 import { cn } from "@/lib/utils";
+import { dragRegion, isMac, SETTINGS_LABEL } from "@/lib/platform";
 import { IconButton, Spinner, Tip } from "./ui/primitives";
 
 type Icon = NavItemData["icon"];
@@ -42,8 +43,8 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full min-h-0 flex-col border-r border-border bg-sidebar">
-      {/* Zone de glisser (feux tricolores macOS en surimpression) */}
-      <div data-tauri-drag-region className="h-[46px] shrink-0" />
+      {/* macOS : zone de glisser sous les feux tricolores en surimpression ; ailleurs, barre de titre native */}
+      <div {...dragRegion} className={cn("shrink-0", isMac ? "h-[46px]" : "h-3")} />
 
       <div className="px-2.5 pb-2">
         <Dropdown.Root>
@@ -130,7 +131,7 @@ export function Sidebar() {
         <IconButton label="Agent IA (MCP)" tooltipSide="top" onClick={() => openSettings("agent")}>
           <Bot size={15} />
         </IconButton>
-        <IconButton label="Réglages" kbd="⌘," tooltipSide="top" onClick={() => openSettings("accounts")}>
+        <IconButton label={SETTINGS_LABEL} kbd="mod+," tooltipSide="top" onClick={() => openSettings("accounts")}>
           <Settings size={15} />
         </IconButton>
       </div>

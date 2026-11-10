@@ -10,18 +10,8 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Envelope",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 560,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true,
-        "dragDropEnabled": false
-      }
-    ],
+    "windows": [],
+    "macOSPrivateApi": true,
     "security": { "csp": null }
   },
   "bundle": {

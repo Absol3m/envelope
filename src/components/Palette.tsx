@@ -6,6 +6,7 @@ import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
 import { NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
 import { Kbd } from "./ui/primitives";
+import { keys, SETTINGS_LABEL } from "@/lib/platform";
 
 type Icon = ComponentType<{ size?: number }>;
 
@@ -19,7 +20,7 @@ function Item({ icon: Icon, children, hint, onSelect, value }: { icon: Icon; chi
   );
 }
 
-/** ⌘K : toute action de l'application, et la recherche, au même endroit. */
+/** ⌘K / Ctrl+K : toute action de l'application, et la recherche, au même endroit. */
 export function Palette() {
   const s = useMail();
   const saved = useComposer((c) => c.saved !== null);
@@ -74,7 +75,7 @@ export function Palette() {
           <Item icon={Undo2} hint={["Z"]} onSelect={run(() => { if (!useComposer.getState().undoSend()) s.undo(); })}>Annuler (envoi ou archivage)</Item>
           <Item icon={RefreshCw} onSelect={run(() => s.accounts.forEach((a) => void s.backend.syncNow(a.id)))}>Synchroniser maintenant</Item>
           <Item icon={Bot} onSelect={run(() => s.openSettings("agent"))}>Agent IA (serveur MCP)</Item>
-          <Item icon={Settings} hint={["⌘", ","]} onSelect={run(() => s.openSettings("accounts"))}>Réglages</Item>
+          <Item icon={Settings} hint={keys("mod+,")} onSelect={run(() => s.openSettings("accounts"))}>{SETTINGS_LABEL}</Item>
           <Item icon={Keyboard} hint={["?"]} onSelect={run(() => s.setHelp(true))}>Raccourcis clavier</Item>
         </Command.Group>
       </Command.List>

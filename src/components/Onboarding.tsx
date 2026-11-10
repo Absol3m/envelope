@@ -1,5 +1,6 @@
 import { Lock, Sparkles } from "lucide-react";
 import { useMail } from "@/lib/store";
+import { dragRegion } from "@/lib/platform";
 import { AddAccountForm } from "./AddAccountForm";
 
 /** Premier lancement : un seul écran, un seul choix. */
@@ -7,7 +8,7 @@ export function Onboarding() {
   const enterDemo = useMail((s) => s.enterDemo);
 
   return (
-    <div className="relative flex h-full items-center justify-center overflow-hidden bg-bg" data-tauri-drag-region>
+    <div className="relative flex h-full items-center justify-center overflow-hidden bg-bg" {...dragRegion}>
       <div aria-hidden className="pointer-events-none absolute -top-40 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-gradient-to-br from-accent/25 via-[#8b5cf6]/15 to-transparent blur-3xl" />
       <div className="anim-fade-up relative w-[min(420px,90vw)]">
         <div className="mb-7 text-center">

@@ -7,9 +7,32 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import StarterKit from "@tiptap/starter-kit";
 import { AlignCenter, AlignLeft, AlignRight, Bold, Heading2, Italic, Link2, List, ListOrdered, Palette, Quote, Redo2, RemoveFormatting, Strikethrough, Underline, Undo2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { isEmail } from "@/lib/compose";
+import { isEmail, isNeutralColor } from "@/lib/compose";
 import { cn } from "@/lib/utils";
+import { isMac } from "@/lib/platform";
 import { btnGhost, IconButton } from "./ui/primitives";
+
+/** Couleur de texte : tout HTML qui entre dans l'éditeur (collage, citation, brouillon) perd ses
+ *  couleurs neutres (le noir ou le blanc de sa source) et prend celle du thème, lisible en sombre
+ *  comme en clair. Les vraies couleurs (rouge, bleu…) sont gardées. */
+export const ThemedColor = Color.extend({
+  addGlobalAttributes() {
+    return (this.parent?.() ?? []).map((g) => {
+      const color = g.attributes.color;
+      const parse = color?.parseHTML;
+      if (!parse) return g;
+      const parseHTML = (el: HTMLElement) => {
+        const v = parse(el);
+        if (typeof v !== "string") return v;
+        // Valeur brute du style (`#000`, `black`…) ramenée à la forme normalisée (`rgb(0, 0, 0)`).
+        const probe = document.createElement("span");
+        probe.style.color = v;
+        return isNeutralColor(probe.style.color) ? null : v;
+      };
+      return { ...g, attributes: { ...g.attributes, color: { ...color, parseHTML } } };
+    });
+  },
+});
 
 const COLORS = ["#15151a", "#dc2626", "#ea580c", "#ca8a04", "#16a34a", "#0891b2", "#2563eb", "#7c3aed", "#6b6b78"];
 
@@ -94,9 +117,9 @@ function FormatBar({ editor }: { editor: Editor }) {
 
   return (
     <div className="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-t border-border px-2" role="toolbar" aria-label="Mise en forme">
-      <Tool label="Gras" kbd="⌘B" active={st.bold} onClick={() => chain().toggleBold().run()}><Bold size={15} /></Tool>
-      <Tool label="Italique" kbd="⌘I" active={st.italic} onClick={() => chain().toggleItalic().run()}><Italic size={15} /></Tool>
-      <Tool label="Souligné" kbd="⌘U" active={st.underline} onClick={() => chain().toggleUnderline().run()}><Underline size={15} /></Tool>
+      <Tool label="Gras" kbd="mod+b" active={st.bold} onClick={() => chain().toggleBold().run()}><Bold size={15} /></Tool>
+      <Tool label="Italique" kbd="mod+i" active={st.italic} onClick={() => chain().toggleItalic().run()}><Italic size={15} /></Tool>
+      <Tool label="Souligné" kbd="mod+u" active={st.underline} onClick={() => chain().toggleUnderline().run()}><Underline size={15} /></Tool>
       <Tool label="Barré" active={st.strike} onClick={() => chain().toggleStrike().run()}><Strikethrough size={15} /></Tool>
       <Sep />
       <Tool label="Titre" active={st.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()}><Heading2 size={15} /></Tool>
@@ -108,7 +131,7 @@ function FormatBar({ editor }: { editor: Editor }) {
       <Tool label="Centrer" active={st.center} onClick={() => chain().setTextAlign("center").run()}><AlignCenter size={15} /></Tool>
       <Tool label="Aligner à droite" active={st.right} onClick={() => chain().setTextAlign("right").run()}><AlignRight size={15} /></Tool>
       <Sep />
-      <Tool label="Lien" kbd="⌘K" active={st.link} onClick={openLink}><Link2 size={15} /></Tool>
+      <Tool label="Lien" kbd="mod+k" active={st.link} onClick={openLink}><Link2 size={15} /></Tool>
       <Dropdown.Root>
         <Dropdown.Trigger asChild>
           <IconButton label="Couleur du texte" tooltipSide="top" {...keepFocus}><Palette size={15} /></IconButton>
@@ -123,8 +146,8 @@ function FormatBar({ editor }: { editor: Editor }) {
       </Dropdown.Root>
       <Tool label="Effacer la mise en forme" onClick={() => chain().unsetAllMarks().clearNodes().unsetTextAlign().run()}><RemoveFormatting size={15} /></Tool>
       <span className="flex-1" />
-      <Tool label="Annuler" kbd="⌘Z" disabled={!st.canUndo} onClick={() => chain().undo().run()}><Undo2 size={15} /></Tool>
-      <Tool label="Rétablir" kbd="⇧⌘Z" disabled={!st.canRedo} onClick={() => chain().redo().run()}><Redo2 size={15} /></Tool>
+      <Tool label="Annuler" kbd="mod+z" disabled={!st.canUndo} onClick={() => chain().undo().run()}><Undo2 size={15} /></Tool>
+      <Tool label="Rétablir" kbd={isMac ? "shift+mod+z" : "mod+y"} disabled={!st.canRedo} onClick={() => chain().redo().run()}><Redo2 size={15} /></Tool>
     </div>
   );
 }
@@ -136,7 +159,7 @@ export function RichEditor({ html, onChange, focusAtStart }: { html: string; onC
       StarterKit.configure({ heading: { levels: [2, 3] }, link: { openOnClick: false, autolink: true, protocols: ["mailto"], HTMLAttributes: { rel: "noopener noreferrer" } } }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       TextStyle,
-      Color,
+      ThemedColor,
       Placeholder.configure({ placeholder: "Écrivez votre message…" }),
     ],
     content: html,
@@ -151,7 +174,7 @@ export function RichEditor({ html, onChange, focusAtStart }: { html: string; onC
       <div
         className="composer-editor min-h-0 flex-1 cursor-text overflow-y-auto px-4 py-3"
         onKeyDown={(e) => {
-          // ⌘K dans l'éditeur : lien (et non la palette de commandes).
+          // ⌘K / Ctrl+K dans l'éditeur : lien (et non la palette de commandes).
           if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") e.stopPropagation();
         }}
         onClick={(e) => { if (e.target === e.currentTarget) editor.commands.focus("end"); }}

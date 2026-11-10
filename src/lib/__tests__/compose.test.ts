@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
-import { attachmentError, draftFrom, emailHtml, formatRecipient, htmlToPlain, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
+import { attachmentError, draftFrom, emailHtml, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
   id: 1, messageId: "m1@x", references: [] as string[], folderId: 1, subject: "Budget", fromName: "Alice", fromAddr: "alice@x.fr",
@@ -40,6 +40,10 @@ describe("corps HTML", () => {
     expect(out).toContain('<p style="margin: 0px 0px 12px;">x</p>');
     expect(out).toContain("border-left");
     expect(out.startsWith("<div style=")).toBe(true);
+  });
+  it("couleurs neutres : noir, blanc, gris (pas le gris bleuté de la palette)", () => {
+    for (const c of ["rgb(0, 0, 0)", "rgb(34, 34, 34)", "rgba(255, 255, 255, 0.9)", "Black", "windowtext"]) expect(isNeutralColor(c)).toBe(true);
+    for (const c of ["rgb(211, 47, 47)", "rgb(107, 107, 120)", "navy", ""]) expect(isNeutralColor(c)).toBe(false);
   });
   it("les citations de mails HTML perdent images et scripts", () => {
     const d = draftFrom("reply", thread([msg({ bodyText: null, bodyHtml: '<style>p{}</style><p>ok<img src="https://track/x.gif"><script>1</script></p>' })]), "me@x.fr");
