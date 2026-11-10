@@ -4,7 +4,7 @@ import { useMail } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Kbd } from "./ui/primitives";
 
-/** Un seul toast à la fois, centré en bas. La barre fine matérialise le temps d'annulation restant. */
+/** Un seul toast à la fois, centré en bas. La barre fine (envoi différé) matérialise le temps d'annulation restant. */
 export function Toasts() {
   const { toasts, dismissToast } = useMail(useShallow((s) => ({ toasts: s.toasts, dismissToast: s.dismissToast })));
   return (
@@ -28,7 +28,7 @@ export function Toasts() {
               <Undo2 size={13} /> {t.actionLabel} <Kbd className="border-bg/30 bg-transparent text-bg/80">Z</Kbd>
             </button>
           )}
-          {t.onAction && <span className="absolute bottom-0 left-0 h-[2px] bg-bg/40" style={{ animation: `shrink ${t.duration}ms linear forwards` }} />}
+          {t.countdown && <span className="absolute bottom-0 left-0 h-[2px] bg-bg/40" style={{ animation: `shrink ${t.duration}ms linear forwards` }} />}
         </div>
       ))}
     </div>

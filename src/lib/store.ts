@@ -2,9 +2,9 @@ import { create } from "zustand";
 import { parseColors, parseTheme, renderAppearance, type ColorsPref, type ThemePref } from "./theme";
 import { pref } from "./pref";
 import { demoBackend } from "./mock";
-import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
+import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type MoveReceipt, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
-import { isInboxView, type View } from "./views";
+import { DESTINATIONS, isInboxView, isPurgeView, type Destination, type View } from "./views";
 
 export type { View };
 
@@ -18,10 +18,11 @@ export interface Toast {
   actionLabel?: string;
   onAction?: () => void;
   duration: number;
+  /** Affiche la barre de compte à rebours : réservé aux actions réellement différées jusqu'à la fin du délai (envoi). */
+  countdown?: boolean;
 }
 
 const PAGE = 100;
-const UNDO_MS = 5000;
 
 
 interface State {
@@ -63,8 +64,14 @@ interface State {
   move(delta: 1 | -1): void;
   toggleRead(id: number): void;
   toggleStar(id: number): void;
-  archive(id: number): void;
-  undo(): void;
+  /** Archive, corbeille ou spam, avec fenêtre d'annulation. */
+  moveTo(id: number, to: Destination): void;
+  /** Suppression définitive depuis la corbeille ou le spam, après confirmation. */
+  deleteForever(id: number): Promise<void>;
+  /** Vide la corbeille ou le spam affiché (tous les comptes de la vue), après confirmation. */
+  emptyView(): Promise<void>;
+  /** Défait le dernier déplacement (Z). */
+  undo(): Promise<void>;
   toast(t: Partial<Toast> & { message: string }): void;
   dismissToast(id: number): void;
   setPalette(open: boolean): void;
@@ -79,9 +86,17 @@ interface State {
 let toastSeq = 0;
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let markReadTimer: ReturnType<typeof setTimeout> | undefined;
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let loadSeq = 0; // une réponse tardive d'une ancienne requête ne doit pas écraser la liste actuelle
-/** Archivages dans leur fenêtre d'annulation : id de conversation → minuterie (le dernier ajouté est annulé par Z). */
-const pending = new Map<number, ReturnType<typeof setTimeout>>();
+/** Dossier d'où part une conversation : celui de la vue affichée, à défaut (vues transverses) la boîte de réception. */
+function sourceFolder(s: Pick<State, "view" | "folders">, thread: ThreadSummary) {
+  const v = s.view;
+  const role = v.kind === "role" ? v.role : "inbox";
+  return s.folders.find((f) => (v.kind === "folder" ? f.id === v.folderId : f.accountId === thread.accountId && f.role === role));
+}
+
+/** Reçu du dernier déplacement : de quoi le défaire (bouton « Annuler » ou Z). */
+let lastMove: MoveReceipt | null = null;
 
 /** Navigation remise à zéro : état initial et entrée en démo partagent ces valeurs. */
 const NAV_RESET = { accountFilter: null, view: { kind: "role", role: "inbox" } as View, category: "all" as Category, query: "", selectedId: null, hiddenIds: new Set<number>() as ReadonlySet<number> };
@@ -288,14 +303,14 @@ export const useMail = create<State>((set, get) => {
       });
     },
 
-    archive(id) {
+    moveTo(id, to) {
       const s = get();
       const thread = s.threads.find((t) => t.id === id);
       if (!thread) return;
-      if (s.view.kind === "role" && s.view.role === "archive") return s.toast({ message: "Cette conversation est déjà archivée." });
-
-      const folderId = s.view.kind === "folder" ? s.view.folderId : s.folders.find((f) => f.accountId === thread.accountId && f.role === "inbox")?.id;
-      if (folderId === undefined) return s.toast({ message: "Dossier de réception introuvable.", tone: "error" });
+      const dest = DESTINATIONS[to];
+      const from = sourceFolder(s, thread);
+      if (!from) return s.toast({ message: "Dossier d'origine introuvable.", tone: "error" });
+      if (from.role === to) return s.toast({ message: dest.already });
 
       // Sélection suivante avant masquage : l'écran ne se vide jamais.
       const list = visibleThreads(s);
@@ -304,25 +319,65 @@ export const useMail = create<State>((set, get) => {
       setHidden(id, true);
       if (s.selectedId === id) get().select(next ? next.id : null);
 
-      // Rien n'est envoyé au serveur tant que l'annulation est possible.
-      pending.set(id, setTimeout(() => {
-        pending.delete(id);
-        void optimistic(get().backend.archive(id, folderId), () => setHidden(id, false), "Archivage impossible", () =>
-          set((cur) => ({ threads: cur.threads.filter((t) => t.id !== id) })),
-        );
-      }, UNDO_MS));
-      get().toast({ message: "Conversation archivée", actionLabel: "Annuler", onAction: () => get().undo(), duration: UNDO_MS });
+      // Exécuté aussitôt (comme Gmail ou Apple Mail) : l'annulation fait l'opération inverse.
+      get().backend.moveThread(id, from.id, to).then(
+        (receipt) => {
+          set((cur) => ({ threads: cur.threads.filter((t) => t.id !== id) }));
+          scheduleFolders();
+          lastMove = receipt;
+          get().toast({ message: dest.done, ...(receipt && { actionLabel: "Annuler", onAction: () => void get().undo() }), duration: 6000 });
+        },
+        (e) => { setHidden(id, false); fail(dest.failed, e); },
+      );
     },
 
-    undo() {
-      const last = [...pending].pop();
-      if (!last) return;
-      const [id, timer] = last;
-      clearTimeout(timer);
-      pending.delete(id);
-      setHidden(id, false);
-      get().select(id);
-      get().toast({ message: "Archivage annulé", duration: 2200 });
+    async deleteForever(id) {
+      if (!isPurgeView(get().view) || !get().threads.some((t) => t.id === id)) return;
+      if (!(await get().backend.confirm("Supprimer définitivement cette conversation ? Cette action est irréversible.", "Supprimer"))) return;
+      // L'état a pu changer pendant la boîte de dialogue : on repart de l'état courant.
+      const s = get();
+      const thread = s.threads.find((t) => t.id === id);
+      const from = thread && sourceFolder(s, thread);
+      if (!thread || !from || !isPurgeView(s.view)) return;
+      const list = visibleThreads(s);
+      const i = list.findIndex((t) => t.id === id);
+      const next = list[i + 1] ?? list[i - 1];
+      setHidden(id, true);
+      if (s.selectedId === id) get().select(next ? next.id : null);
+      void optimistic(get().backend.deleteThread(id, from.id), () => setHidden(id, false), "Suppression impossible", () => {
+        set((cur) => ({ threads: cur.threads.filter((t) => t.id !== id) }));
+        get().toast({ message: "Conversation supprimée définitivement" });
+      });
+    },
+
+    async emptyView() {
+      const s = get();
+      const view = s.view;
+      if (!isPurgeView(view)) return;
+      const folders = s.folders.filter((f) => f.role === view.role && (!s.accountFilter || f.accountId === s.accountFilter));
+      const what = view.role === "trash" ? "la corbeille" : "le spam";
+      if (folders.length === 0 || !(await s.backend.confirm(`Vider ${what} ? Les conversations seront supprimées définitivement.`, "Vider"))) return;
+      try {
+        for (const f of folders) await s.backend.emptyFolder(f.id);
+        get().toast({ message: view.role === "trash" ? "Corbeille vidée" : "Spam vidé" });
+      } catch (e) {
+        fail("Impossible de vider", e);
+      } finally {
+        void get().reload({ silent: true }); // même en cas d'échec : des dossiers ont pu être vidés avant l'erreur
+      }
+    },
+
+    async undo() {
+      const receipt = lastMove;
+      if (!receipt) return;
+      lastMove = null;
+      try {
+        await get().backend.undoMove(receipt);
+        get().toast({ message: "Action annulée", duration: 2200 });
+        void get().reload({ silent: true });
+      } catch (e) {
+        fail("Annulation impossible", e);
+      }
     },
 
     toast(t) {
@@ -330,7 +385,8 @@ export const useMail = create<State>((set, get) => {
       const toast: Toast = { id, tone: "default", duration: 3200, ...t };
       // Un seul toast à la fois : le dernier remplace le précédent (pas d'empilement bruyant).
       set({ toasts: [toast] });
-      setTimeout(() => get().dismissToast(id), toast.duration);
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => get().dismissToast(id), toast.duration);
     },
     dismissToast(id) {
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));

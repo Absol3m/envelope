@@ -1,10 +1,10 @@
 import { Command } from "cmdk";
-import { Archive, Bot, Forward, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, PenSquare, RefreshCw, Reply, ReplyAll, Search, Settings, Star, Sun, Undo2 } from "lucide-react";
+import { Bot, Forward, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, PenSquare, RefreshCw, Reply, ReplyAll, Search, Settings, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { useState } from "react";
 import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
-import { NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
+import { DESTINATIONS, destinationsFor, isPurgeView, NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
 import { Kbd } from "./ui/primitives";
 import { keys, SETTINGS_LABEL } from "@/lib/platform";
 
@@ -44,7 +44,10 @@ export function Palette() {
 
         {t && (
           <Command.Group heading="Conversation">
-            <Item icon={Archive} hint={["E"]} onSelect={run(() => s.archive(t.id))}>Archiver</Item>
+            {destinationsFor(s.view).map((d) => (
+              <Item key={d} icon={DESTINATIONS[d].icon} hint={[DESTINATIONS[d].key]} onSelect={run(() => s.moveTo(t.id, d))}>{DESTINATIONS[d].label}</Item>
+            ))}
+            {isPurgeView(s.view) && <Item icon={Trash2} hint={["⌫"]} onSelect={run(() => void s.deleteForever(t.id))}>Supprimer définitivement</Item>}
             <Item icon={Star} hint={["S"]} onSelect={run(() => s.toggleStar(t.id))}>{t.isStarred ? "Ne plus suivre" : "Suivre"}</Item>
             <Item icon={t.unreadCount > 0 ? MailOpen : Mail} hint={["U"]} onSelect={run(() => s.toggleRead(t.id))}>{t.unreadCount > 0 ? "Marquer comme lu" : "Marquer comme non lu"}</Item>
           </Command.Group>
@@ -72,7 +75,7 @@ export function Palette() {
         </Command.Group>
 
         <Command.Group heading="Application">
-          <Item icon={Undo2} hint={["Z"]} onSelect={run(() => { if (!useComposer.getState().undoSend()) s.undo(); })}>Annuler (envoi ou archivage)</Item>
+          <Item icon={Undo2} hint={["Z"]} onSelect={run(() => { if (!useComposer.getState().undoSend()) s.undo(); })}>Annuler (envoi ou déplacement)</Item>
           <Item icon={RefreshCw} onSelect={run(() => s.accounts.forEach((a) => void s.backend.syncNow(a.id)))}>Synchroniser maintenant</Item>
           <Item icon={Bot} onSelect={run(() => s.openSettings("agent"))}>Agent IA (serveur MCP)</Item>
           <Item icon={Settings} hint={keys("mod+,")} onSelect={run(() => s.openSettings("accounts"))}>{SETTINGS_LABEL}</Item>

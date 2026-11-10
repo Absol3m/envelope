@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
-use crate::mail::actions::{self, Action};
+use crate::mail::actions::{self, Action, Applied, Destination, MoveReceipt};
 use crate::mail::autoconfig;
 use crate::mail::imap;
 use crate::mail::oauth::{self, OAuthProvider};
@@ -330,14 +330,16 @@ pub async fn get_thread_detail(state: State<'_, AppState>, thread_id: i64) -> Re
 
 /// Actions : le verrou sérialise les connexions IMAP (des raccourcis enchaînés ne doivent pas
 /// ouvrir autant de connexions simultanées que de touches).
-async fn run_action(state: &AppState, thread_id: i64, action: Action) -> Result<()> {
+async fn run_action(state: &AppState, thread_id: i64, action: Action) -> Result<Applied> {
     let _guard = state.actions.lock().await;
     actions::apply(&state.db, thread_id, action).await
 }
 
 #[tauri::command]
 pub async fn set_thread_read(state: State<'_, AppState>, thread_id: i64, read: bool) -> Result<()> {
-    run_action(&state, thread_id, Action::SetRead(read)).await
+    run_action(&state, thread_id, Action::SetRead(read))
+        .await
+        .map(drop)
 }
 
 #[tauri::command]
@@ -346,16 +348,54 @@ pub async fn set_thread_starred(
     thread_id: i64,
     starred: bool,
 ) -> Result<()> {
-    run_action(&state, thread_id, Action::SetStarred(starred)).await
+    run_action(&state, thread_id, Action::SetStarred(starred))
+        .await
+        .map(drop)
 }
 
 #[tauri::command]
-pub async fn archive_thread(
+pub async fn move_thread(
+    state: State<'_, AppState>,
+    thread_id: i64,
+    folder_id: i64,
+    to: Destination,
+) -> Result<Option<MoveReceipt>> {
+    let applied = run_action(&state, thread_id, Action::Move { folder_id, to }).await?;
+    // Le message a un nouvel UID dans le dossier cible : une synchro le fait apparaître aussitôt.
+    // (Seule l'IDLE de la boîte de réception se réveille d'elle-même.)
+    for account in &applied.accounts {
+        state.sync.trigger(account);
+    }
+    Ok(applied.receipt)
+}
+
+/// Défait un déplacement à partir de son reçu.
+#[tauri::command]
+pub async fn undo_move(state: State<'_, AppState>, receipt: MoveReceipt) -> Result<()> {
+    {
+        let _guard = state.actions.lock().await;
+        actions::undo_move(&state.db, &receipt).await?;
+    }
+    state.sync.trigger(&receipt.account_id);
+    Ok(())
+}
+
+/// Suppression définitive : seulement depuis la corbeille ou le spam.
+#[tauri::command]
+pub async fn delete_thread(
     state: State<'_, AppState>,
     thread_id: i64,
     folder_id: i64,
 ) -> Result<()> {
-    run_action(&state, thread_id, Action::Archive { folder_id }).await
+    run_action(&state, thread_id, Action::Delete { folder_id })
+        .await
+        .map(drop)
+}
+
+#[tauri::command]
+pub async fn empty_folder(state: State<'_, AppState>, folder_id: i64) -> Result<()> {
+    let _guard = state.actions.lock().await;
+    actions::empty_folder(&state.db, folder_id).await
 }
 
 // ---------- Pièces jointes ----------

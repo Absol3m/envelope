@@ -77,6 +77,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             main_window(app)?;
             let data_dir = app.path().app_data_dir()?;
@@ -125,7 +126,10 @@ pub fn run() {
             commands::get_thread_detail,
             commands::set_thread_read,
             commands::set_thread_starred,
-            commands::archive_thread,
+            commands::move_thread,
+            commands::undo_move,
+            commands::delete_thread,
+            commands::empty_folder,
             commands::open_attachment,
             commands::inline_images,
             commands::mcp_info,

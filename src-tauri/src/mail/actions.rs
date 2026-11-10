@@ -17,10 +17,51 @@ use crate::mail::{account, imap, ingest};
 pub enum Action {
     SetRead(bool),
     SetStarred(bool),
-    /// Archive les messages de la conversation présents dans ce dossier.
-    Archive {
+    /// Déplace les messages de la conversation présents dans ce dossier.
+    Move {
+        folder_id: i64,
+        to: Destination,
+    },
+    /// Supprime définitivement les messages de la conversation présents dans ce dossier, qui doit
+    /// être la corbeille ou le spam (aucune autre boîte n'est supprimable d'un geste).
+    Delete {
         folder_id: i64,
     },
+}
+
+/// Dossier de destination d'un déplacement, désigné par son rôle (les chemins varient selon le
+/// serveur et la langue).
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Destination {
+    Inbox,
+    Archive,
+    Trash,
+    Junk,
+}
+
+impl Destination {
+    /// Rôles acceptés, par ordre de préférence ; Gmail n'a pas d'archive : « Tous les messages »
+    /// en tient lieu.
+    fn roles(self) -> &'static [&'static str] {
+        match self {
+            Self::Inbox => &["inbox"],
+            Self::Archive => &["archive", "all"],
+            Self::Trash => &["trash"],
+            Self::Junk => &["junk"],
+        }
+    }
+
+    /// Nom du dossier à créer sur le serveur s'il n'en existe aucun (boîte neuve) ; son rôle est
+    /// le premier de `roles()`.
+    fn default_name(self) -> &'static str {
+        match self {
+            Self::Inbox => "INBOX",
+            Self::Archive => "Archive",
+            Self::Trash => "Trash",
+            Self::Junk => "Junk",
+        }
+    }
 }
 
 /// Un message à modifier.
@@ -31,29 +72,62 @@ struct Target {
     folder_id: i64,
     folder_path: String,
     uid: i64,
+    message_id: Option<String>,
+}
+
+/// Reçu d'un déplacement : de quoi le défaire (l'UID change dans le dossier d'arrivée, et la
+/// conversation peut avoir disparu de la base) en retrouvant les messages par leur Message-ID.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveReceipt {
+    pub account_id: String,
+    pub from_path: String,
+    pub to_path: String,
+    pub message_ids: Vec<String>,
+}
+
+/// Résultat d'une action : comptes touchés (la conversation, elle, peut avoir disparu de la base
+/// si elle est devenue vide) et, pour un déplacement, son reçu.
+pub struct Applied {
+    pub accounts: Vec<String>,
+    pub receipt: Option<MoveReceipt>,
 }
 
 /// Messages touchés par l'action (ceux dont l'état est déjà la cible sont ignorés).
 async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Vec<Target>> {
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
-        "SELECT m.id, m.account_id, m.folder_id, f.path AS folder_path, m.uid \
+        "SELECT m.id, m.account_id, m.folder_id, f.path AS folder_path, m.uid, m.message_id \
          FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = ",
     );
     qb.push_bind(thread_id);
     match action {
         Action::SetRead(read) => qb.push(" AND m.is_read <> ").push_bind(read),
         Action::SetStarred(on) => qb.push(" AND m.is_starred <> ").push_bind(on),
-        Action::Archive { folder_id } => qb.push(" AND m.folder_id = ").push_bind(folder_id),
+        Action::Move { folder_id, .. } => qb.push(" AND m.folder_id = ").push_bind(folder_id),
+        Action::Delete { folder_id } => qb
+            .push(" AND f.role IN ('trash','junk') AND m.folder_id = ")
+            .push_bind(folder_id),
     };
     qb.push(" ORDER BY m.account_id, f.path, m.uid");
     Ok(qb.build_query_as().fetch_all(pool).await?)
 }
 
 /// Applique l'action sur le serveur puis en base.
-pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<()> {
+pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Applied> {
     let targets = targets(pool, thread_id, action).await?;
     if targets.is_empty() {
-        return Ok(());
+        // Les autres actions sont idempotentes ; supprimer pour de bon ne doit jamais « réussir »
+        // à vide (dossier qui n'est ni la corbeille ni le spam, ou conversation déjà supprimée).
+        if matches!(action, Action::Delete { .. }) {
+            return Err(AppError::Invalid(
+                "rien à supprimer : seuls les messages de la corbeille ou du spam le peuvent"
+                    .into(),
+            ));
+        }
+        return Ok(Applied {
+            accounts: Vec::new(),
+            receipt: None,
+        });
     }
     // Une connexion par compte, un SELECT par dossier.
     let mut by_account: BTreeMap<&str, BTreeMap<&str, Vec<i64>>> = BTreeMap::new();
@@ -65,6 +139,8 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
             .or_default()
             .push(t.uid);
     }
+    let accounts: Vec<String> = by_account.keys().map(|a| a.to_string()).collect();
+    let mut moved: Option<(String, String)> = None; // (dossier source, dossier cible)
     for (account_id, folders) in by_account {
         let acct = account::get(pool, account_id).await?;
         let cred = account::resolve_credential(&acct).await?;
@@ -75,11 +151,86 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
                 .map(i64::to_string)
                 .collect::<Vec<_>>()
                 .join(",");
-            propagate(&mut session, pool, account_id, path, &set, action).await?;
+            if let Some(to) = propagate(&mut session, pool, account_id, path, &set, action).await? {
+                moved = Some((path.to_string(), to));
+            }
         }
         let _ = session.logout().await;
     }
-    apply_local(pool, thread_id, &targets, action).await
+    apply_local(pool, thread_id, &targets, action).await?;
+    // Pas de reçu (donc pas d'« Annuler ») si un seul message ne peut pas être retrouvé : une
+    // annulation partielle présentée comme complète serait pire que pas d'annulation.
+    let message_ids: Option<Vec<String>> = targets
+        .iter()
+        .map(|t| t.message_id.clone().filter(|id| valid_message_id(id)))
+        .collect();
+    let receipt = moved
+        .zip(message_ids)
+        .map(|((from_path, to_path), message_ids)| MoveReceipt {
+            account_id: targets[0].account_id.clone(),
+            from_path,
+            to_path,
+            message_ids,
+        });
+    Ok(Applied { accounts, receipt })
+}
+
+/// Un Message-ID utilisable tel quel dans une recherche IMAP entre guillemets : non vide (sinon la
+/// recherche couvrirait tout le dossier), ASCII imprimable, sans guillemet ni barre inverse.
+fn valid_message_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 998
+        && id
+            .bytes()
+            .all(|b| (0x20..0x7f).contains(&b) && b != b'"' && b != b'\\')
+}
+
+/// Défait un déplacement : retrouve les messages dans le dossier d'arrivée (par Message-ID) et les
+/// remet dans leur dossier d'origine. La synchro réaligne ensuite la base.
+pub async fn undo_move(pool: &SqlitePool, receipt: &MoveReceipt) -> Result<()> {
+    // Le reçu vient de l'interface : on ne fait confiance ni à ses identifiants (injectés dans une
+    // recherche IMAP) ni à ses chemins.
+    if receipt.message_ids.is_empty()
+        || !receipt.message_ids.iter().all(|id| valid_message_id(id))
+        || receipt.from_path == receipt.to_path
+    {
+        return Err(AppError::Invalid("reçu de déplacement invalide".into()));
+    }
+    let known: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM folders WHERE account_id = ? AND path = ?")
+            .bind(&receipt.account_id)
+            .bind(&receipt.from_path)
+            .fetch_optional(pool)
+            .await?;
+    if known.is_none() {
+        return Err(AppError::Invalid("reçu de déplacement invalide".into()));
+    }
+    let acct = account::get(pool, &receipt.account_id).await?;
+    let cred = account::resolve_credential(&acct).await?;
+    let mut session = imap::connect(&acct, &cred).await?;
+    session.select(&receipt.to_path).await?;
+    let mut uids = std::collections::BTreeSet::new();
+    for id in &receipt.message_ids {
+        uids.extend(
+            session
+                .uid_search(format!("HEADER Message-ID \"{id}\""))
+                .await?,
+        );
+    }
+    if uids.is_empty() {
+        let _ = session.logout().await;
+        return Err(AppError::NotFound(
+            "message introuvable dans le dossier de destination".into(),
+        ));
+    }
+    let set = uids
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    move_to(&mut session, &set, &receipt.from_path).await?;
+    let _ = session.logout().await;
+    Ok(())
 }
 
 async fn propagate(
@@ -89,16 +240,32 @@ async fn propagate(
     path: &str,
     uids: &str,
     action: Action,
-) -> Result<()> {
+) -> Result<Option<String>> {
     session.select(path).await?;
     match action {
-        Action::SetRead(on) => store_flag(session, uids, "\\Seen", on).await,
-        Action::SetStarred(on) => store_flag(session, uids, "\\Flagged", on).await,
-        Action::Archive { .. } => {
-            let dest = archive_path(pool, account_id).await?;
-            move_to(session, uids, &dest).await
+        Action::SetRead(on) => store_flag(session, uids, "\\Seen", on).await?,
+        Action::SetStarred(on) => store_flag(session, uids, "\\Flagged", on).await?,
+        Action::Delete { .. } => {
+            store_flag(session, uids, "\\Deleted", true).await?;
+            expunge(session, uids).await?;
+        }
+        Action::Move { to, .. } => {
+            let dest = match destination_path(pool, account_id, to).await? {
+                Some(path) => path,
+                None => imap::find_or_create(session, to.roles()[0], to.default_name()).await?,
+            };
+            // Gmail : « Archives » est « Tous les messages » ; déplacer un message vers son propre
+            // dossier le copierait puis l'effacerait.
+            if dest == path {
+                return Err(AppError::Invalid(
+                    "la conversation est déjà dans ce dossier".into(),
+                ));
+            }
+            move_to(session, uids, &dest).await?;
+            return Ok(Some(dest));
         }
     }
+    Ok(None)
 }
 
 async fn store_flag(session: &mut ImapSession, uids: &str, flag: &str, on: bool) -> Result<()> {
@@ -118,22 +285,38 @@ async fn move_to(session: &mut ImapSession, uids: &str, dest: &str) -> Result<()
     } else {
         session.uid_copy(uids, dest).await?;
         store_flag(session, uids, "\\Deleted", true).await?;
-        session
-            .uid_expunge(uids)
-            .await?
-            .try_collect::<Vec<_>>()
-            .await?;
+        expunge(session, uids).await?;
     }
     Ok(())
 }
 
-/// Dossier d'archive du compte ; Gmail n'en a pas, « Tous les messages » en tient lieu.
-async fn archive_path(pool: &SqlitePool, account_id: &str) -> Result<String> {
-    sqlx::query_scalar("SELECT path FROM folders WHERE account_id = ? AND role IN ('archive','all') ORDER BY role = 'archive' DESC LIMIT 1")
-        .bind(account_id)
-        .fetch_optional(pool)
+/// Efface les messages marqués `\Deleted` de cet ensemble d'UID.
+async fn expunge(session: &mut ImapSession, uids: &str) -> Result<()> {
+    session
+        .uid_expunge(uids)
         .await?
-        .ok_or_else(|| AppError::Invalid("aucun dossier d'archive sur ce compte".into()))
+        .try_collect::<Vec<_>>()
+        .await?;
+    Ok(())
+}
+
+/// Chemin du dossier de destination connu de la synchro, s'il y en a un.
+async fn destination_path(
+    pool: &SqlitePool,
+    account_id: &str,
+    to: Destination,
+) -> Result<Option<String>> {
+    for role in to.roles() {
+        let path = sqlx::query_scalar("SELECT path FROM folders WHERE account_id = ? AND role = ?")
+            .bind(account_id)
+            .bind(role)
+            .fetch_optional(pool)
+            .await?;
+        if let Some(path) = path {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 /// Aligne la base une fois le serveur à jour.
@@ -154,7 +337,9 @@ async fn apply_local(
                     .bind(on)
                     .bind(t.id)
             }
-            Action::Archive { .. } => sqlx::query("DELETE FROM messages WHERE id = ?").bind(t.id),
+            Action::Move { .. } | Action::Delete { .. } => {
+                sqlx::query("DELETE FROM messages WHERE id = ?").bind(t.id)
+            }
         }
         .execute(&mut *tx)
         .await?;
@@ -164,6 +349,45 @@ async fn apply_local(
     for folder_id in targets.iter().map(|t| t.folder_id).collect::<HashSet<_>>() {
         ingest::refresh_folder_unread(pool, folder_id).await?;
     }
+    Ok(())
+}
+
+/// Vide la corbeille ou le spam d'un compte : serveur d'abord, base ensuite.
+pub async fn empty_folder(pool: &SqlitePool, folder_id: i64) -> Result<()> {
+    let (account_id, path, role): (String, String, Option<String>) =
+        sqlx::query_as("SELECT account_id, path, role FROM folders WHERE id = ?")
+            .bind(folder_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("dossier {folder_id}")))?;
+    if !matches!(role.as_deref(), Some("trash" | "junk")) {
+        return Err(AppError::Invalid(
+            "seuls la corbeille et le spam peuvent être vidés".into(),
+        ));
+    }
+    let threads: Vec<i64> = sqlx::query_scalar(
+        "SELECT DISTINCT thread_id FROM messages WHERE folder_id = ? AND thread_id IS NOT NULL",
+    )
+    .bind(folder_id)
+    .fetch_all(pool)
+    .await?;
+
+    let acct = account::get(pool, &account_id).await?;
+    let cred = account::resolve_credential(&acct).await?;
+    let mut session = imap::connect(&acct, &cred).await?;
+    let status = session.select(&path).await?;
+    if status.exists > 0 {
+        store_flag(&mut session, "1:*", "\\Deleted", true).await?;
+        expunge(&mut session, "1:*").await?;
+    }
+    let _ = session.logout().await;
+
+    sqlx::query("DELETE FROM messages WHERE folder_id = ?")
+        .bind(folder_id)
+        .execute(pool)
+        .await?;
+    ingest::refresh_threads(pool, &threads.into_iter().collect()).await?;
+    ingest::refresh_folder_unread(pool, folder_id).await?;
     Ok(())
 }
 
@@ -205,17 +429,31 @@ mod tests {
             1
         );
         assert_eq!(
-            targets(&pool, 1, Action::Archive { folder_id: folder })
-                .await
-                .unwrap()
-                .len(),
+            targets(
+                &pool,
+                1,
+                Action::Move {
+                    folder_id: folder,
+                    to: Destination::Archive
+                }
+            )
+            .await
+            .unwrap()
+            .len(),
             2
         );
         assert_eq!(
-            targets(&pool, 1, Action::Archive { folder_id: 99 })
-                .await
-                .unwrap()
-                .len(),
+            targets(
+                &pool,
+                1,
+                Action::Move {
+                    folder_id: 99,
+                    to: Destination::Archive
+                }
+            )
+            .await
+            .unwrap()
+            .len(),
             0
         );
     }
@@ -242,7 +480,10 @@ mod tests {
                 .unwrap()
         );
 
-        let a = Action::Archive { folder_id: folder };
+        let a = Action::Move {
+            folder_id: folder,
+            to: Destination::Archive,
+        };
         let t = targets(&pool, 1, a).await.unwrap();
         apply_local(&pool, 1, &t, a).await.unwrap();
         assert_eq!(
@@ -256,16 +497,80 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn archive_needs_an_archive_folder() {
+    async fn destination_is_found_by_role() {
+        use Destination::*;
         let (pool, _) = setup().await;
-        assert!(archive_path(&pool, "a").await.is_err());
+        assert!(destination_path(&pool, "a", Archive)
+            .await
+            .unwrap()
+            .is_none());
         sqlx::query("INSERT INTO folders (account_id,path,name,role) VALUES ('a','[Gmail]/All Mail','All Mail','all')").execute(&pool).await.unwrap();
-        assert_eq!(archive_path(&pool, "a").await.unwrap(), "[Gmail]/All Mail");
+        assert_eq!(
+            destination_path(&pool, "a", Archive)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("[Gmail]/All Mail")
+        );
         sqlx::query("INSERT INTO folders (account_id,path,name,role) VALUES ('a','Archive','Archive','archive')").execute(&pool).await.unwrap();
         assert_eq!(
-            archive_path(&pool, "a").await.unwrap(),
-            "Archive",
+            destination_path(&pool, "a", Archive)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("Archive"),
             "le dossier d'archive prime sur « Tous les messages »"
         );
+        assert!(destination_path(&pool, "a", Trash).await.unwrap().is_none());
+        sqlx::query("INSERT INTO folders (account_id,path,name,role) VALUES ('a','Corbeille','Corbeille','trash')").execute(&pool).await.unwrap();
+        assert_eq!(
+            destination_path(&pool, "a", Trash)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("Corbeille")
+        );
+        assert!(destination_path(&pool, "a", Junk).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn delete_only_targets_trash_and_junk() {
+        let (pool, inbox) = setup().await;
+        assert!(
+            targets(&pool, 1, Action::Delete { folder_id: inbox })
+                .await
+                .unwrap()
+                .is_empty(),
+            "la boîte de réception n'est jamais supprimable d'un geste"
+        );
+        sqlx::query("INSERT INTO folders (id,account_id,path,name,role) VALUES (7,'a','Trash','Trash','trash')").execute(&pool).await.unwrap();
+        sqlx::query("UPDATE messages SET folder_id = 7 WHERE id = 2")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let t = targets(&pool, 1, Action::Delete { folder_id: 7 })
+            .await
+            .unwrap();
+        assert_eq!(t.iter().map(|m| m.id).collect::<Vec<_>>(), vec![2]);
+    }
+
+    #[tokio::test]
+    async fn empty_folder_refuses_other_boxes() {
+        let (pool, inbox) = setup().await;
+        assert!(empty_folder(&pool, inbox).await.is_err());
+        assert!(empty_folder(&pool, 999).await.is_err());
+    }
+
+    #[test]
+    fn message_ids_are_safe_for_imap_search() {
+        assert!(valid_message_id("abc123@mail.example.com"));
+        assert!(
+            !valid_message_id(""),
+            "un identifiant vide couvrirait tout le dossier"
+        );
+        assert!(!valid_message_id("a\"b"));
+        assert!(!valid_message_id("a\\b"));
+        assert!(!valid_message_id("a\r\nb"));
+        assert!(!valid_message_id("é@x"));
     }
 }

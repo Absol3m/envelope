@@ -3,6 +3,9 @@ import type { ComponentType } from "react";
 
 export type Role = "inbox" | "sent" | "drafts" | "archive" | "junk" | "trash";
 
+/** Dossiers où l'on peut déplacer une conversation (miroir de `Destination` côté Rust). */
+export type Destination = Extract<Role, "inbox" | "archive" | "junk" | "trash">;
+
 export type View =
   | { kind: "role"; role: Role }
   | { kind: "starred" }
@@ -50,3 +53,26 @@ export const isInboxView = (v: View) => v.kind === "role" && v.role === "inbox";
 export const viewTitle = (v: View): string => (v.kind === "folder" ? v.name : ALL.find((i) => sameView(i.view, v))?.label ?? "");
 
 export const GO_VIEWS: Record<string, View> = Object.fromEntries(ALL.filter((i) => i.go).map((i) => [i.go as string, i.view]));
+
+/** Source unique des déplacements : boutons, palette, raccourcis, aide et messages en dérivent. */
+export const DESTINATIONS: Record<Destination, { label: string; icon: NavItem["icon"]; key: string; done: string; already: string; failed: string }> = {
+  inbox: { label: "Remettre dans la boîte de réception", icon: Inbox, key: "I", done: "Conversation remise dans la boîte de réception", already: "Cette conversation est déjà dans la boîte de réception.", failed: "Déplacement impossible" },
+  archive: { label: "Archiver", icon: Archive, key: "E", done: "Conversation archivée", already: "Cette conversation est déjà archivée.", failed: "Archivage impossible" },
+  trash: { label: "Mettre à la corbeille", icon: Trash2, key: "#", done: "Conversation mise à la corbeille", already: "Cette conversation est déjà à la corbeille.", failed: "Suppression impossible" },
+  junk: { label: "Signaler comme spam", icon: ShieldAlert, key: "!", done: "Conversation signalée comme spam", already: "Cette conversation est déjà dans le spam.", failed: "Signalement impossible" },
+};
+export const isDestination = (role: string): role is Destination => Object.hasOwn(DESTINATIONS, role);
+export const DESTINATION_IDS = Object.keys(DESTINATIONS) as Destination[];
+
+/** Destinations proposées depuis cette vue : jamais la vue courante ; « remettre dans la boîte de réception » seulement depuis archives, spam et corbeille. */
+export function destinationsFor(view: View): Destination[] {
+  const here = view.kind === "role" ? view.role : null;
+  const restorable = here === "archive" || here === "junk" || here === "trash";
+  return DESTINATION_IDS.filter((d) => d !== here && (d !== "inbox" || restorable));
+}
+
+/** Type MIME du glisser-déposer d'une conversation vers un dossier de la barre latérale. */
+export const DRAG_TYPE = "application/x-envelope-thread";
+
+/** Corbeille et spam : les seules boîtes où l'on supprime pour de bon (et que l'on peut vider). */
+export const isPurgeView = (v: View): v is { kind: "role"; role: "trash" | "junk" } => v.kind === "role" && (v.role === "trash" || v.role === "junk");

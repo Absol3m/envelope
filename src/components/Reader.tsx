@@ -1,4 +1,5 @@
-import { Archive, ChevronDown, ChevronUp, File, FileArchive, FileImage, FileText, Forward, ImageOff, Mail, MailOpen, Paperclip, Reply, ReplyAll, Star } from "lucide-react";
+import { ChevronDown, ChevronUp, File, FileArchive, FileImage, FileText, Forward, ImageOff, Mail, MailOpen, Paperclip, Reply, ReplyAll, Star, Trash2 } from "lucide-react";
+import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Account, DetailAttachment, DetailMessage, ThreadDetail, ThreadSummary } from "@/lib/api";
@@ -272,7 +273,7 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
 }
 
 function EmptyReader() {
-  const items: [string, string][] = [["C", "Nouveau message"], ["J / K", "Naviguer"], ["E", "Archiver"], [shortcut("mod+k"), "Palette de commandes"]];
+  const items: [string, string][] = [["C", "Nouveau message"], ["J / K", "Naviguer"], [DESTINATIONS.archive.key, DESTINATIONS.archive.label], [shortcut("mod+k"), "Palette de commandes"]];
   return (
     <div className="anim-fade-in flex h-full flex-col items-center justify-center text-center">
       <span className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-accent/15 to-[#8b5cf6]/15 text-accent"><Mail size={28} strokeWidth={1.5} /></span>
@@ -288,8 +289,8 @@ function EmptyReader() {
 }
 
 export function Reader() {
-  const { selectedId, details, threads, accounts, hiddenIds, category, view, query, archive, toggleStar, toggleRead, move } = useMail(
-    useShallow((s) => ({ selectedId: s.selectedId, details: s.details, threads: s.threads, accounts: s.accounts, hiddenIds: s.hiddenIds, category: s.category, view: s.view, query: s.query, archive: s.archive, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move })),
+  const { selectedId, details, threads, accounts, hiddenIds, category, view, query, moveTo, deleteForever, toggleStar, toggleRead, move } = useMail(
+    useShallow((s) => ({ selectedId: s.selectedId, details: s.details, threads: s.threads, accounts: s.accounts, hiddenIds: s.hiddenIds, category: s.category, view: s.view, query: s.query, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move })),
   );
   const summary = threads.find((t) => t.id === selectedId);
   const d = selectedId === null ? undefined : details[selectedId];
@@ -306,7 +307,11 @@ export function Reader() {
             <IconButton label="Répondre" kbd="R" onClick={() => useComposer.getState().respond("reply")}><Reply size={16} /></IconButton>
             <IconButton label="Répondre à tous" kbd="A" onClick={() => useComposer.getState().respond("replyAll")}><ReplyAll size={16} /></IconButton>
             <IconButton label="Transférer" kbd="F" onClick={() => useComposer.getState().respond("forward")}><Forward size={16} /></IconButton>
-            <IconButton label="Archiver" kbd="E" onClick={() => archive(summary.id)}><Archive size={16} /></IconButton>
+            {destinationsFor(view).map((d) => {
+              const { label, icon: Icon, key } = DESTINATIONS[d];
+              return <IconButton key={d} label={label} kbd={key} onClick={() => moveTo(summary.id, d)}><Icon size={16} /></IconButton>;
+            })}
+            {isPurgeView(view) && <IconButton label="Supprimer définitivement" kbd="⌫" onClick={() => void deleteForever(summary.id)}><Trash2 size={16} className="text-danger" /></IconButton>}
             <IconButton label={summary.isStarred ? "Ne plus suivre" : "Suivre"} kbd="S" onClick={() => toggleStar(summary.id)}><Star size={16} className={summary.isStarred ? "fill-star text-star" : ""} /></IconButton>
             <IconButton label={unread ? "Marquer comme lu" : "Marquer comme non lu"} kbd="U" onClick={() => toggleRead(summary.id)}>{unread ? <MailOpen size={16} /> : <Mail size={16} />}</IconButton>
             <span {...dragRegion} className="flex-1" />

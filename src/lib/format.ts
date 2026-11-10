@@ -69,3 +69,9 @@ export function hue(seed: string): number {
   for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
   return Math.abs(h) % 360;
 }
+
+/** Fond d'avatar : dégradé stable par expéditeur (même adresse, même couleur). */
+export function avatarBackground(name: string | null | undefined, addr: string | null | undefined): string {
+  const h = hue((addr ?? displayName(name, addr)).toLowerCase());
+  return `linear-gradient(135deg, hsl(${h} 62% 58%), hsl(${(h + 38) % 360} 66% 46%))`;
+}

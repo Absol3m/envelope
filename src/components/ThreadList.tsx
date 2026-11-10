@@ -1,11 +1,12 @@
-import { Archive, Check, Inbox, Mail, MailOpen, Paperclip, Search, SearchX, Star, X } from "lucide-react";
+import { Check, Inbox, Mail, MailOpen, Paperclip, Search, SearchX, Star, Trash2, X } from "lucide-react";
+import { startThreadDrag } from "@/lib/dragImage";
 import { memo, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ThreadSummary } from "@/lib/api";
 import { categorize, CATEGORY_LABELS, type Category } from "@/lib/categories";
 import { displayName, groupLabel, listDate } from "@/lib/format";
 import { useMail, visibleThreads } from "@/lib/store";
-import { isInboxView, viewTitle, type View } from "@/lib/views";
+import { DESTINATIONS, destinationsFor, isInboxView, isPurgeView, viewTitle, type Destination, type View } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { dragRegion } from "@/lib/platform";
 import { Avatar, IconButton, Kbd } from "./ui/primitives";
@@ -16,12 +17,15 @@ interface RowProps {
   compact: boolean;
   previews: boolean;
   onSelect(id: number): void;
-  onArchive(id: number): void;
+  destinations: Destination[];
+  purge: boolean;
+  onDelete(id: number): void;
+  onMove(id: number, to: Destination): void;
   onStar(id: number): void;
   onToggleRead(id: number): void;
 }
 
-const Row = memo(function Row({ t, selected, compact, previews, onSelect, onArchive, onStar, onToggleRead }: RowProps) {
+const Row = memo(function Row({ t, selected, compact, previews, onSelect, destinations, purge, onDelete, onMove, onStar, onToggleRead }: RowProps) {
   const unread = t.unreadCount > 0;
   const sender = displayName(t.fromName, t.fromAddr);
   // Conversation à plusieurs : prénoms des participants plutôt que le seul dernier expéditeur.
@@ -31,6 +35,8 @@ const Row = memo(function Row({ t, selected, compact, previews, onSelect, onArch
       role="option"
       aria-selected={selected}
       data-thread={t.id}
+      draggable
+      onDragStart={(e) => startThreadDrag(e, t)}
       onClick={() => onSelect(t.id)}
       className={cn(
         "group relative mx-1.5 flex cursor-default gap-3 rounded-lg px-3 transition-colors",
@@ -61,11 +67,21 @@ const Row = memo(function Row({ t, selected, compact, previews, onSelect, onArch
         {previews && <div className="truncate text-[12.5px] text-muted">{t.snippet || "—"}</div>}
       </div>
 
-      {/* Actions rapides au survol : mêmes gestes que le clavier (E, S, U). */}
+      {/* Actions rapides au survol : mêmes gestes que le clavier (E, #, !, S, U). */}
       <div className={cn("absolute right-2 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-lg bg-elevated p-0.5 shadow-card group-hover:flex", selected && "bg-bg")}>
-        <IconButton label="Archiver" kbd="E" onClick={(e) => { e.stopPropagation(); onArchive(t.id); }}>
-          <Archive size={15} />
-        </IconButton>
+        {destinations.map((d) => {
+          const { label, icon: Icon, key } = DESTINATIONS[d];
+          return (
+            <IconButton key={d} label={label} kbd={key} onClick={(e) => { e.stopPropagation(); onMove(t.id, d); }}>
+              <Icon size={15} />
+            </IconButton>
+          );
+        })}
+        {purge && (
+          <IconButton label="Supprimer définitivement" kbd="⌫" onClick={(e) => { e.stopPropagation(); onDelete(t.id); }}>
+            <Trash2 size={15} className="text-danger" />
+          </IconButton>
+        )}
         <IconButton label={t.isStarred ? "Ne plus suivre" : "Suivre"} kbd="S" onClick={(e) => { e.stopPropagation(); onStar(t.id); }}>
           <Star size={15} className={t.isStarred ? "fill-star text-star" : ""} />
         </IconButton>
@@ -116,12 +132,14 @@ function Empty({ search, view, category }: { search: string; view: View; categor
 }
 
 export function ThreadList() {
-  const { view, category, query, selectedId, density, previews, threadsLoading, hasMore, threads, hiddenIds, setQuery, setCategory, loadMore, select, archive, toggleStar, toggleRead } = useMail(
-    useShallow((s) => ({ view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, setQuery: s.setQuery, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, archive: s.archive, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
+  const { view, category, query, selectedId, density, previews, threadsLoading, hasMore, threads, hiddenIds, setQuery, setCategory, loadMore, select, moveTo, deleteForever, emptyView, toggleStar, toggleRead } = useMail(
+    useShallow((s) => ({ view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, setQuery: s.setQuery, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, moveTo: s.moveTo, deleteForever: s.deleteForever, emptyView: s.emptyView, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
   );
   const scroller = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
+  const purge = isPurgeView(view);
+  const destinations = useMemo(() => destinationsFor(view), [view]);
   const list = useMemo(() => visibleThreads({ threads, hiddenIds, category, view, query }), [threads, hiddenIds, category, view, query]);
   const isInbox = isInboxView(view) && !query.trim();
 
@@ -178,6 +196,11 @@ export function ThreadList() {
         <div {...dragRegion} className="flex h-[30px] items-baseline gap-2">
           <h1 {...dragRegion} className="pointer-events-none text-[17px] font-semibold tracking-tight">{query.trim() ? "Recherche" : viewTitle(view)}</h1>
           {list.length > 0 && <span {...dragRegion} className="tnum pointer-events-none text-[12px] text-faint">{list.length}</span>}
+          {purge && list.length > 0 && !query.trim() && (
+            <button onClick={() => void emptyView()} className="press ml-auto rounded-md px-2 py-0.5 text-[12px] font-medium text-danger hover:bg-hover">
+              {view.role === "trash" ? "Vider la corbeille" : "Vider le spam"}
+            </button>
+          )}
         </div>
 
         <label className="mt-2.5 flex h-8 items-center gap-2 rounded-lg border border-border bg-bg px-2.5 text-muted transition-colors focus-within:border-accent/60 focus-within:ring-[3px] focus-within:ring-accent-soft">
@@ -240,7 +263,7 @@ export function ThreadList() {
                   {r.label}
                 </div>
               ) : (
-                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} onSelect={select} onArchive={archive} onStar={toggleStar} onToggleRead={toggleRead} />
+                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} onSelect={select} destinations={destinations} purge={purge} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
               ),
             )}
             <div ref={sentinel} className="h-px" />

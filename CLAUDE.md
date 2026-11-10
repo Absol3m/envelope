@@ -14,6 +14,10 @@
 - `src-tauri/` : application (workspace Cargo). `crates/envelope-core` : requêtes de lecture partagées (recherche, threads). `crates/envelope-mcp` : serveur MCP séparé, lecture seule sur la base ; les actions IMAP (archiver, étiqueter) passeront par l'application (temps 2).
 - Contenu des e-mails = entrée non fiable (prompt injection) : toujours signalé comme tel dans les sorties MCP.
 
+## Natif d'abord
+- Toujours préférer les fonctionnalités natives de chaque OS (trousseau, notifications, sélecteurs de fichiers, thème/apparence, ouverture de liens, glisser-déposer, etc.) ou les plugins Tauri officiels plutôt que de recoder ce qui existe : le code maison est une surface d'attaque et une source de trous de sécurité.
+- Ne réimplémenter que si aucune API native ou bibliothèque éprouvée ne couvre le besoin, et le justifier en commentaire.
+
 ## Conventions Rust
 - Erreurs : `AppError` (thiserror) dans src-tauri/src/error.rs ; pas d'`unwrap()` hors tests.
 - SQL : `sqlx::query*` à l'exécution (pas de macros check) ; migrations dans src-tauri/migrations/.

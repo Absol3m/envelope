@@ -1,4 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
+import { ask } from "@tauri-apps/plugin-dialog";
+import type { Destination } from "./views";
 
 /** Types miroirs des structures Rust (src-tauri/src/commands.rs, crates/envelope-core). */
 export interface Account {
@@ -33,6 +35,13 @@ export interface ThreadSummary {
   fromName: string | null;
   fromAddr: string | null;
   participants: string | null;
+}
+/** Reçu d'un déplacement (voir `MoveReceipt` côté Rust) : opaque pour l'interface. */
+export interface MoveReceipt {
+  accountId: string;
+  fromPath: string;
+  toPath: string;
+  messageIds: string[];
 }
 export interface Addr {
   name: string | null;
@@ -136,7 +145,13 @@ export interface Backend {
   getThread(id: number): Promise<ThreadDetail>;
   setRead(threadId: number, read: boolean): Promise<void>;
   setStarred(threadId: number, starred: boolean): Promise<void>;
-  archive(threadId: number, folderId: number): Promise<void>;
+  /** Déplace la conversation ; retourne de quoi défaire le déplacement (null si impossible). */
+  moveThread(threadId: number, folderId: number, to: Destination): Promise<MoveReceipt | null>;
+  undoMove(receipt: MoveReceipt): Promise<void>;
+  deleteThread(threadId: number, folderId: number): Promise<void>;
+  emptyFolder(folderId: number): Promise<void>;
+  /** Confirmation native (boîte de dialogue de l'OS) avant une action irréversible. */
+  confirm(message: string, okLabel: string): Promise<boolean>;
   syncNow(accountId: string): Promise<void>;
   addAccount(input: NewAccount): Promise<Account>;
   addOAuthAccount(provider: OAuthProviderId, email: string): Promise<Account>;
@@ -174,7 +189,11 @@ export const tauriBackend: Backend = {
   getThread: (threadId) => invoke("get_thread_detail", { threadId }),
   setRead: (threadId, read) => invoke("set_thread_read", { threadId, read }),
   setStarred: (threadId, starred) => invoke("set_thread_starred", { threadId, starred }),
-  archive: (threadId, folderId) => invoke("archive_thread", { threadId, folderId }),
+  moveThread: (threadId, folderId, to) => invoke("move_thread", { threadId, folderId, to }),
+  undoMove: (receipt) => invoke("undo_move", { receipt }),
+  deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
+  emptyFolder: (folderId) => invoke("empty_folder", { folderId }),
+  confirm: (message, okLabel) => ask(message, { title: "Envelope", kind: "warning", okLabel, cancelLabel: "Annuler" }),
   syncNow: (accountId) => invoke("sync_now", { accountId }),
   addAccount: (input) => invoke("add_account", { input }),
   addOAuthAccount: (provider, email) => invoke("add_oauth_account", { provider, email }),

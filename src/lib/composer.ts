@@ -138,7 +138,7 @@ export const useComposer = create<ComposerState>((set, get) => {
           }
         }, UNDO_MS),
       };
-      useMail.getState().toast({ message: "Envoi du message…", actionLabel: "Annuler", onAction: () => get().undoSend(), duration: UNDO_MS });
+      useMail.getState().toast({ message: "Envoi du message…", actionLabel: "Annuler", onAction: () => get().undoSend(), duration: UNDO_MS, countdown: true });
     },
 
     undoSend() {

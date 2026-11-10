@@ -1,7 +1,7 @@
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { displayName, hue, initials } from "@/lib/format";
+import { avatarBackground, displayName, initials } from "@/lib/format";
 import { shortcut } from "@/lib/platform";
 
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
@@ -66,7 +66,6 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
 /** Avatar à dégradé stable par expéditeur : repère visuel rapide, sans photo à charger. */
 export function Avatar({ name, address, size = 32 }: { name?: string | null; address?: string | null; size?: number }) {
   const label = displayName(name, address);
-  const h = hue((address ?? label).toLowerCase());
   return (
     <span
       aria-hidden
@@ -75,7 +74,7 @@ export function Avatar({ name, address, size = 32 }: { name?: string | null; add
         width: size,
         height: size,
         fontSize: size * 0.38,
-        background: `linear-gradient(135deg, hsl(${h} 62% 58%), hsl(${(h + 38) % 360} 66% 46%))`,
+        background: avatarBackground(name, address),
         boxShadow: "inset 0 0 0 1px rgb(255 255 255 / 0.18)",
       }}
     >

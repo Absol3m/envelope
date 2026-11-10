@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
-import { GO_VIEWS, isInboxView } from "@/lib/views";
+import { DESTINATIONS, destinationsFor, GO_VIEWS, isInboxView, isPurgeView } from "@/lib/views";
 import { isEditable } from "@/lib/platform";
 import type { Category } from "@/lib/categories";
 
@@ -45,7 +45,7 @@ export function useShortcuts() {
       switch (e.key) {
         case "j": case "ArrowDown": e.preventDefault(); st.move(1); break;
         case "k": case "ArrowUp": e.preventDefault(); st.move(-1); break;
-        case "e": if (id !== null) st.archive(id); break;
+        case "Delete": case "Backspace": if (id !== null && isPurgeView(st.view)) { e.preventDefault(); void st.deleteForever(id); } break;
         case "s": if (id !== null) st.toggleStar(id); break;
         case "u": if (id !== null) st.toggleRead(id); break;
         case "c": e.preventDefault(); useComposer.getState().compose(); break;
@@ -60,8 +60,12 @@ export function useShortcuts() {
           goPending = true;
           goTimer = setTimeout(() => (goPending = false), 900);
           break;
-        default:
-          if (isInboxView(st.view) && /^[1-4]$/.test(e.key)) st.setCategory(CATEGORIES[Number(e.key) - 1]);
+        default: {
+          const to = destinationsFor(st.view).find((d) => DESTINATIONS[d].key === e.key.toUpperCase());
+          if (to) {
+            if (id !== null) st.moveTo(id, to);
+          } else if (isInboxView(st.view) && /^[1-4]$/.test(e.key)) st.setCategory(CATEGORIES[Number(e.key) - 1]);
+        }
       }
     };
     window.addEventListener("keydown", onKey);

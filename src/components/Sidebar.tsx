@@ -1,24 +1,37 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
+import { useState, type DragEvent } from "react";
 import { Bot, Check, ChevronsUpDown, Inbox, Layers, PenSquare, RefreshCw, Settings } from "lucide-react";
 import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
 import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
-import { NAV_MAILBOXES, NAV_SMART, sameView, type NavItem as NavItemData } from "@/lib/views";
+import { DRAG_TYPE, isDestination, NAV_MAILBOXES, NAV_SMART, sameView, type View, type NavItem as NavItemData } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { dragRegion, isMac, SETTINGS_LABEL } from "@/lib/platform";
 import { IconButton, Spinner, Tip } from "./ui/primitives";
 
 type Icon = NavItemData["icon"];
 
-function NavItem({ icon: Icon, label, count, active, onClick }: { icon: Icon; label: string; count?: number; active: boolean; onClick: () => void }) {
+/** Dépôt d'une conversation glissée depuis la liste : `onDrop` reçoit son identifiant. */
+function NavItem({ icon: Icon, label, count, active, onClick, onDrop }: { icon: Icon; label: string; count?: number; active: boolean; onClick: () => void; onDrop?: (threadId: number) => void }) {
+  const [over, setOver] = useState(false);
+  const accepts = (e: DragEvent) => onDrop !== undefined && e.dataTransfer.types.includes(DRAG_TYPE);
   return (
     <button
       onClick={onClick}
+      data-drop={onDrop ? "" : undefined}
+      data-over={over ? "" : undefined}
+      onDragOver={(e) => { if (accepts(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setOver(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); }}
+      onDrop={(e) => {
+        setOver(false);
+        const id = Number(e.dataTransfer.getData(DRAG_TYPE));
+        if (accepts(e) && Number.isInteger(id)) { e.preventDefault(); onDrop?.(id); }
+      }}
       title={label}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "press group flex h-[30px] w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] font-medium max-[1100px]:justify-center max-[1100px]:px-0",
+        "nav-target press group flex h-[30px] w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] font-medium max-[1100px]:justify-center max-[1100px]:px-0",
         active ? "bg-active text-fg" : "text-muted hover:bg-hover hover:text-fg",
       )}
     >
@@ -30,9 +43,14 @@ function NavItem({ icon: Icon, label, count, active, onClick }: { icon: Icon; la
 }
 
 export function Sidebar() {
-  const { accounts, folders, accountFilter, view, setView, setAccount, openSettings, backend } = useMail(useShallow((s) => ({ accounts: s.accounts, folders: s.folders, accountFilter: s.accountFilter, view: s.view, setView: s.setView, setAccount: s.setAccount, openSettings: s.openSettings, backend: s.backend })));
+  const { accounts, folders, accountFilter, view, setView, setAccount, openSettings, backend, moveTo } = useMail(useShallow((s) => ({ moveTo: s.moveTo, accounts: s.accounts, folders: s.folders, accountFilter: s.accountFilter, view: s.view, setView: s.setView, setAccount: s.setAccount, openSettings: s.openSettings, backend: s.backend })));
   const scoped = folders.filter((f) => !accountFilter || f.accountId === accountFilter);
   const unread = (role: string) => scoped.filter((f) => f.role === role).reduce((n, f) => n + f.unreadCount, 0);
+  /** Boîtes où l'on peut déposer une conversation (archives, corbeille, spam, réception), sauf la vue affichée. */
+  const dropFor = (v: View) => {
+    const role = v.kind === "role" && isDestination(v.role) ? v.role : undefined;
+    return role && !sameView(v, view) ? (id: number) => moveTo(id, role) : undefined;
+  };
   /** Seuls la boîte de réception et « Non lus » affichent un compteur. */
   const countFor = (i: NavItemData) => (i.view.kind === "unread" || (i.view.kind === "role" && i.view.role === "inbox") ? unread("inbox") : undefined);
   const custom = scoped.filter((f) => f.role === null).slice(0, 8);
@@ -94,7 +112,7 @@ export function Sidebar() {
 
       <nav className="min-h-0 flex-1 space-y-px overflow-y-auto px-2.5 pb-3" aria-label="Dossiers">
         {NAV_MAILBOXES.map((i) => (
-          <NavItem key={i.label} icon={i.icon} label={i.label} count={countFor(i)} active={sameView(view, i.view)} onClick={() => setView(i.view)} />
+          <NavItem key={i.label} icon={i.icon} label={i.label} count={countFor(i)} active={sameView(view, i.view)} onClick={() => setView(i.view)} onDrop={dropFor(i.view)} />
         ))}
 
         <p className="px-2.5 pb-1 pt-4 text-[10.5px] font-semibold uppercase tracking-wider text-faint max-[1100px]:hidden">Vues intelligentes</p>

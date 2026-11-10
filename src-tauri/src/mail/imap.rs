@@ -135,9 +135,13 @@ pub fn folder_role(
     })
 }
 
-/// Chemin du dossier « Envoyés » sur le serveur ; il est créé (et abonné) s'il n'existe pas encore,
-/// ce qui arrive sur une boîte neuve.
-pub async fn find_or_create_sent(session: &mut ImapSession) -> Result<String> {
+/// Chemin du dossier de ce rôle sur le serveur ; il est créé sous `default_name` (et abonné) s'il
+/// n'existe pas encore, ce qui arrive sur une boîte neuve (ni « Envoyés » ni « Corbeille »).
+pub async fn find_or_create(
+    session: &mut ImapSession,
+    role: &str,
+    default_name: &str,
+) -> Result<String> {
     let names: Vec<_> = session
         .list(Some(""), Some("*"))
         .await?
@@ -147,14 +151,14 @@ pub async fn find_or_create_sent(session: &mut ImapSession) -> Result<String> {
         !n.attributes()
             .iter()
             .any(|a| matches!(a, NameAttribute::NoSelect))
-            && folder_role(n.name(), n.delimiter(), n.attributes()) == Some("sent")
+            && folder_role(n.name(), n.delimiter(), n.attributes()) == Some(role)
     });
     if let Some(n) = found {
         return Ok(n.name().to_string());
     }
-    session.create("Sent").await?;
-    let _ = session.subscribe("Sent").await; // non bloquant : certains serveurs l'abonnent d'office
-    Ok("Sent".to_string())
+    session.create(default_name).await?;
+    let _ = session.subscribe(default_name).await; // non bloquant : certains serveurs l'abonnent d'office
+    Ok(default_name.to_string())
 }
 
 /// Dépose `raw` (message déjà envoyé) dans le dossier « Envoyés », marqué lu.
@@ -162,7 +166,7 @@ pub async fn find_or_create_sent(session: &mut ImapSession) -> Result<String> {
 pub async fn append_sent(session: &mut ImapSession, known: Option<&str>, raw: &[u8]) -> Result<()> {
     let path = match known {
         Some(p) => p.to_string(),
-        None => find_or_create_sent(session).await?,
+        None => find_or_create(session, "sent", "Sent").await?,
     };
     session.append(&path, Some("(\\Seen)"), None, raw).await?;
     Ok(())

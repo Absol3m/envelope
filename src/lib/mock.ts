@@ -216,10 +216,25 @@ export const demoBackend: Backend = {
     find(id).starred = starred;
     return delay(undefined, 80);
   },
-  archive: (id) => {
-    find(id).role = "archive";
+  moveThread: (id, _folderId, to) => {
+    const t = find(id);
+    const receipt = { accountId: t.accountId, fromPath: t.role, toPath: to, messageIds: [String(id)] };
+    t.role = to;
+    return delay(receipt, 200);
+  },
+  undoMove: (receipt) => {
+    find(Number(receipt.messageIds[0])).role = receipt.fromPath as MockThread["role"];
     return delay(undefined, 200);
   },
+  deleteThread: (id) => {
+    T.splice(T.indexOf(find(id)), 1);
+    return delay(undefined, 200);
+  },
+  emptyFolder: (id) => {
+    for (let i = T.length - 1; i >= 0; i--) if (id === folderId(T[i].accountId, T[i].role)) T.splice(i, 1);
+    return delay(undefined, 300);
+  },
+  confirm: (message) => Promise.resolve(window.confirm(message)),
   syncNow: () => delay(undefined, 600),
   addAccount: () => Promise.reject(new Error("Mode démo : l'ajout de compte est désactivé.")),
   addOAuthAccount: () => Promise.reject(new Error("Mode démo : l'ajout de compte est désactivé.")),
