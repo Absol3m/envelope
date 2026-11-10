@@ -20,32 +20,21 @@ export function RecipientField({ label, value, onChange, backend, accountId, aut
   const [options, setOptions] = useState<Addr[]>([]);
   const [active, setActive] = useState(0);
   const ref = useRef<HTMLInputElement>(null);
-  // Toujours la dernière valeur : `commit` peut être appelé depuis un événement global.
-  const latest = useRef({ value, text });
-  latest.current = { value, text };
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
 
   const add = (list: Recipient[]) => {
-    const known = new Set(latest.current.value.map((r) => r.address.toLowerCase()));
+    const known = new Set(value.map((r) => r.address.toLowerCase()));
     const fresh = list.filter((r) => !known.has(r.address.toLowerCase()) && known.add(r.address.toLowerCase()));
-    if (fresh.length) onChangeRef.current([...latest.current.value, ...fresh]);
+    if (fresh.length) onChange([...value, ...fresh]);
   };
-  const commit = (raw = latest.current.text) => {
+  /** Saisie en cours → pastilles ; ce qui n'est pas une adresse reste dans le champ, en rouge. */
+  const commit = (raw = text) => {
     if (!raw.trim()) return;
     const { ok, rejected } = parseRecipients(raw);
     add(ok);
-    latest.current = { ...latest.current, text: rejected.join(", ") };
     setText(rejected.join(", "));
     setInvalid(rejected.length > 0);
     setOptions([]);
   };
-
-  useEffect(() => {
-    const onCommit = () => commit();
-    window.addEventListener("envelope:commit-recipients", onCommit);
-    return () => window.removeEventListener("envelope:commit-recipients", onCommit);
-  }, []);
 
   useEffect(() => {
     const q = text.trim();
@@ -93,10 +82,13 @@ export function RecipientField({ label, value, onChange, backend, accountId, aut
           onBlur={() => commit()}
           onPaste={(e) => {
             const pasted = e.clipboardData.getData("text");
-            if (/[,;\n<]/.test(pasted)) { e.preventDefault(); commit(latest.current.text + pasted); }
+            if (/[,;\n<]/.test(pasted)) { e.preventDefault(); commit(text + pasted); }
           }}
           onKeyDown={(e) => {
-            if (e.metaKey || e.ctrlKey) return;
+            if (e.metaKey || e.ctrlKey) {
+              if (e.key === "Enter") commit(); // ⌘↵ : la saisie en cours compte, puis l'envoi se poursuit
+              return;
+            }
             if (options.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
               e.preventDefault();
               setActive((i) => (i + (e.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);

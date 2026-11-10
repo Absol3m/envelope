@@ -56,6 +56,11 @@ export function prepareHtml(html: string, opts: { allowRemote: boolean; cid?: Re
   };
 }
 
+/** Fragment de mail reçu à citer dans une réponse : mêmes barrières que l'affichage, sans images ni styles. */
+export function sanitizeFragment(html: string): string {
+  return DOMPurify.sanitize(html, { FORBID_TAGS: [...FORBID_TAGS, "img", "style", "head"], FORBID_ATTR: ["srcset", "ping", "style"] });
+}
+
 const TRUSTED_KEY = "envelope.trustedSenders";
 let trusted: Set<string> | null = null;
 

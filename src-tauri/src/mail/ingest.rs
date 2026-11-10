@@ -616,18 +616,27 @@ mod tests {
         assert_eq!(last.message_id.as_deref(), Some("m2@example.com"));
         assert_eq!(last.references, vec!["m1@example.com".to_string()]);
 
-        let found = envelope_core::contacts::suggest(&pool, Some("a"), "ali", &[], 8)
+        let found = envelope_core::contacts::suggest(&pool, Some("a"), "ali", 8)
             .await
             .unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].address, "alice@example.com");
-        // L'adresse du compte n'est jamais proposée ; % et _ saisis sont littéraux.
-        let own =
-            envelope_core::contacts::suggest(&pool, None, "example", &["alice@example.com"], 8)
-                .await
-                .unwrap();
-        assert!(own.iter().all(|a| a.address != "alice@example.com"));
-        assert!(envelope_core::contacts::suggest(&pool, None, "%", &[], 8)
+        // L'adresse d'un compte n'est jamais proposée ; % et _ saisis sont littéraux.
+        sqlx::query("UPDATE accounts SET email = 'alice@example.com'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let others = envelope_core::contacts::suggest(&pool, None, "example", 8)
+            .await
+            .unwrap();
+        assert_eq!(
+            others
+                .iter()
+                .map(|a| a.address.as_str())
+                .collect::<Vec<_>>(),
+            vec!["bob@example.com"]
+        );
+        assert!(envelope_core::contacts::suggest(&pool, None, "%", 8)
             .await
             .unwrap()
             .is_empty());

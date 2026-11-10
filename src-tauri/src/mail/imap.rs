@@ -94,6 +94,14 @@ pub async fn connect(account: &Account, cred: &Credential) -> Result<ImapSession
     session.map_err(|(e, _client)| AppError::Auth(format!("connexion IMAP refusée : {e}")))
 }
 
+/// Dernier segment d'un chemin de dossier (« INBOX.Sent » → « Sent »).
+pub fn leaf<'a>(path: &'a str, delimiter: Option<&str>) -> &'a str {
+    match delimiter {
+        Some(d) if !d.is_empty() => path.rsplit(d).next().unwrap_or(path),
+        _ => path,
+    }
+}
+
 /// Rôle d'un dossier : attribut SPECIAL-USE du serveur, à défaut son nom (« Sent », « Envoyés »…).
 pub fn folder_role(
     path: &str,
@@ -113,28 +121,17 @@ pub fn folder_role(
         NameAttribute::Flagged => Some("flagged"),
         _ => None,
     });
-    by_attr.or_else(|| {
-        let leaf = match delimiter {
-            Some(d) if !d.is_empty() => path.rsplit(d).next().unwrap_or(path),
-            _ => path,
-        };
-        match leaf.to_lowercase().as_str() {
-            "sent"
-            | "sent items"
-            | "sent messages"
-            | "envoyés"
-            | "envoyes"
-            | "éléments envoyés" => Some("sent"),
-            "drafts" | "draft" | "brouillons" => Some("drafts"),
-            "trash" | "deleted items" | "deleted messages" | "corbeille" | "éléments supprimés" => {
-                Some("trash")
-            }
-            "junk" | "spam" | "junk e-mail" | "courrier indésirable" | "indésirables" => {
-                Some("junk")
-            }
-            "archive" | "archives" => Some("archive"),
-            _ => None,
+    by_attr.or_else(|| match leaf(path, delimiter).to_lowercase().as_str() {
+        "sent" | "sent items" | "sent messages" | "envoyés" | "envoyes" | "éléments envoyés" => {
+            Some("sent")
         }
+        "drafts" | "draft" | "brouillons" => Some("drafts"),
+        "trash" | "deleted items" | "deleted messages" | "corbeille" | "éléments supprimés" => {
+            Some("trash")
+        }
+        "junk" | "spam" | "junk e-mail" | "courrier indésirable" | "indésirables" => Some("junk"),
+        "archive" | "archives" => Some("archive"),
+        _ => None,
     })
 }
 
@@ -161,8 +158,12 @@ pub async fn find_or_create_sent(session: &mut ImapSession) -> Result<String> {
 }
 
 /// Dépose `raw` (message déjà envoyé) dans le dossier « Envoyés », marqué lu.
-pub async fn append_sent(session: &mut ImapSession, raw: &[u8]) -> Result<()> {
-    let path = find_or_create_sent(session).await?;
+/// `known` : chemin déjà connu de la synchro (évite un LIST) ; à défaut on le cherche ou on le crée.
+pub async fn append_sent(session: &mut ImapSession, known: Option<&str>, raw: &[u8]) -> Result<()> {
+    let path = match known {
+        Some(p) => p.to_string(),
+        None => find_or_create_sent(session).await?,
+    };
     session.append(&path, Some("(\\Seen)"), None, raw).await?;
     Ok(())
 }

@@ -7,6 +7,7 @@ import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/r
 import StarterKit from "@tiptap/starter-kit";
 import { AlignCenter, AlignLeft, AlignRight, Bold, Heading2, Italic, Link2, List, ListOrdered, Palette, Quote, Redo2, RemoveFormatting, Strikethrough, Underline, Undo2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { isEmail } from "@/lib/compose";
 import { cn } from "@/lib/utils";
 import { btnGhost, IconButton } from "./ui/primitives";
 
@@ -17,7 +18,7 @@ export function normalizeUrl(input: string): string | null {
   const v = input.trim();
   if (!v) return null;
   if (/^mailto:/i.test(v)) return v;
-  if (/^[^\s@/:]+@[^\s@/:]+\.[^\s@/:]{2,}$/.test(v)) return `mailto:${v}`;
+  if (isEmail(v)) return `mailto:${v}`;
   const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`;
   try {
     const u = new URL(withScheme);

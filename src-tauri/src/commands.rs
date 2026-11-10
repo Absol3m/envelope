@@ -234,14 +234,22 @@ pub async fn search_emails(
     .await?)
 }
 
-/// Résultat d'un envoi (le message est parti dans tous les cas). `saved_to_sent` : `None` si le
-/// serveur range lui-même le message (Gmail) ; `Some(false)` si la copie dans « Envoyés » a
-/// échoué, avec la cause dans `sent_error`.
+/// Sort de la copie du message envoyé (le message lui-même est parti dans tous les cas).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SentCopy {
+    /// Copie déposée dans « Envoyés ».
+    Saved,
+    /// Le serveur range lui-même le message (Gmail).
+    Server,
+    /// Copie impossible, avec la cause.
+    Failed(String),
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendReport {
-    saved_to_sent: Option<bool>,
-    sent_error: Option<String>,
+    sent_copy: SentCopy,
 }
 
 #[tauri::command]
@@ -254,33 +262,35 @@ pub async fn send_email(
     let cred = account::resolve_credential(&acct).await?;
     let raw = smtp::send(&acct, &cred, &message).await?;
 
-    let report = if acct.provider == "gmail" {
-        SendReport {
-            saved_to_sent: None, // Gmail range lui-même les messages envoyés par SMTP
-            sent_error: None,
-        }
+    let sent_copy = if acct.provider == "gmail" {
+        SentCopy::Server
     } else {
-        match file_in_sent(&acct, &cred, &raw).await {
-            Ok(()) => SendReport {
-                saved_to_sent: Some(true),
-                sent_error: None,
-            },
+        match file_in_sent(&state, &acct, &cred, &raw).await {
+            Ok(()) => SentCopy::Saved,
             Err(e) => {
                 tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
-                SendReport {
-                    saved_to_sent: Some(false),
-                    sent_error: Some(e.to_string()),
-                }
+                SentCopy::Failed(e.to_string())
             }
         }
     };
     state.sync.trigger(&account_id); // la copie (ou le nouveau dossier) apparaît à la synchro
-    Ok(report)
+    Ok(SendReport { sent_copy })
 }
 
-async fn file_in_sent(acct: &Account, cred: &account::Credential, raw: &[u8]) -> Result<()> {
+async fn file_in_sent(
+    state: &AppState,
+    acct: &Account,
+    cred: &account::Credential,
+    raw: &[u8],
+) -> Result<()> {
+    // Dossier déjà connu de la synchro ; sinon `append_sent` le cherche sur le serveur, voire le crée.
+    let known: Option<String> =
+        sqlx::query_scalar("SELECT path FROM folders WHERE account_id = ? AND role = 'sent'")
+            .bind(&acct.id)
+            .fetch_optional(&state.db)
+            .await?;
     let mut session = imap::connect(acct, cred).await?;
-    let res = imap::append_sent(&mut session, raw).await;
+    let res = imap::append_sent(&mut session, known.as_deref(), raw).await;
     let _ = session.logout().await;
     res
 }
@@ -292,13 +302,7 @@ pub async fn suggest_contacts(
     account_id: Option<String>,
     query: String,
 ) -> Result<Vec<Addr>> {
-    let own: Vec<String> = account::list(&state.db)
-        .await?
-        .into_iter()
-        .map(|a| a.email)
-        .collect();
-    let own: Vec<&str> = own.iter().map(String::as_str).collect();
-    Ok(contacts::suggest(&state.db, account_id.as_deref(), &query, &own, 8).await?)
+    Ok(contacts::suggest(&state.db, account_id.as_deref(), &query, 8).await?)
 }
 
 // ---------- Conversations (interface) ----------

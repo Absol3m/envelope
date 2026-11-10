@@ -19,11 +19,8 @@ export function Composer() {
   useEffect(() => setShowCc(false), [draft?.id]);
 
   if (!draft) return null;
+  const ccOpen = showCc || draft.cc.length > 0 || draft.bcc.length > 0;
   const replying = draft.mode === "reply" || draft.mode === "replyAll";
-  const submit = () => {
-    window.dispatchEvent(new Event("envelope:commit-recipients")); // saisie en cours → pastille
-    send();
-  };
 
   return (
     <section
@@ -31,7 +28,7 @@ export function Composer() {
       aria-label={TITLES[draft.mode]}
       className="anim-fade-up fixed bottom-4 right-6 z-[60] flex h-[min(640px,calc(100vh-32px))] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-2xl border border-border bg-elevated shadow-pop"
       onKeyDown={(e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); }
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); }
         else if (e.key === "Escape") { e.preventDefault(); close(); }
       }}
     >
@@ -56,11 +53,11 @@ export function Composer() {
 
       <div className="relative">
         <RecipientField label="À" value={draft.to} onChange={(to) => update({ to })} backend={backend} accountId={draft.accountId} autoFocus={!replying} />
-        {!(showCc || draft.cc.length || draft.bcc.length) && (
+        {!ccOpen && (
           <button type="button" onClick={() => setShowCc(true)} className="press absolute right-3 top-2 rounded-md px-2 py-0.5 text-[12px] text-muted hover:bg-hover hover:text-fg">Cc / Cci</button>
         )}
       </div>
-      {(showCc || draft.cc.length > 0 || draft.bcc.length > 0) && (
+      {ccOpen && (
         <>
           <RecipientField label="Cc" value={draft.cc} onChange={(cc) => update({ cc })} backend={backend} accountId={draft.accountId} />
           <RecipientField label="Cci" value={draft.bcc} onChange={(bcc) => update({ bcc })} backend={backend} accountId={draft.accountId} />
@@ -77,7 +74,7 @@ export function Composer() {
       <RichEditor key={draft.id} html={draft.html} onChange={(html) => update({ html })} focusAtStart={replying} />
 
       <footer className="flex h-14 shrink-0 items-center gap-2 border-t border-border px-3">
-        <button type="button" className={`${btnPrimary} h-9 gap-2 px-4`} onClick={submit}>
+        <button type="button" className={`${btnPrimary} h-9 gap-2 px-4`} onClick={send}>
           <Send size={14} /> Envoyer <Kbd className="border-white/30 bg-transparent text-white/80">⌘↵</Kbd>
         </button>
         <span className="flex-1" />

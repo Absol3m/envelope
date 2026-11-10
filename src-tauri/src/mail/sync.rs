@@ -309,10 +309,7 @@ async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<Fo
         let path = n.name().to_string();
         let role = imap::folder_role(&path, n.delimiter(), n.attributes());
         let delim = n.delimiter();
-        let leaf = match delim {
-            Some(d) if !d.is_empty() => path.rsplit(d).next().unwrap_or(&path),
-            _ => &path,
-        };
+        let leaf = imap::leaf(&path, delim);
         sqlx::query(
             "INSERT INTO folders (account_id, path, name, role, delimiter) VALUES (?,?,?,?,?) \
              ON CONFLICT(account_id, path) DO UPDATE SET name = excluded.name, role = excluded.role, delimiter = excluded.delimiter",
