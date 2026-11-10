@@ -115,6 +115,7 @@ export interface OutgoingMessage {
   bodyHtml?: string;
   inReplyTo?: string;
   references: string[];
+  attachments: { filename: string; mimeType: string; dataBase64: string }[];
 }
 /** Sort de la copie dans « Envoyés » : déposée, rangée par le serveur (Gmail) ou impossible (cause). */
 export type SentCopy = "saved" | "server" | { failed: string };
