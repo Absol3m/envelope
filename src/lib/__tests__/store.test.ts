@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { demoBackend } from "../mock";
-import { useMail, visibleThreads } from "../store";
+import { selectionIds, useMail, visibleThreads } from "../store";
 
 /** Avance le temps fictif : les « latences » de la démo et la fenêtre d'annulation. */
 const tick = (ms: number) => vi.advanceTimersByTimeAsync(ms);
@@ -45,7 +45,7 @@ describe("store (boîte de démonstration)", () => {
     await tick(500); // latence de la démo
     s = useMail.getState();
     expect(s.threads.some((t) => t.id === first.id)).toBe(false);
-    expect(s.toasts[0]?.actionLabel).toBe("Annuler");
+    expect(s.toasts[0]?.message).toBe("Conversation archivée");
   });
 
   it("la corbeille et le spam suivent le même chemin avec leur destination", async () => {
@@ -109,19 +109,38 @@ describe("store (boîte de démonstration)", () => {
     expect(spy).toHaveBeenCalledTimes(trashFolders);
   });
 
-  it("annuler fait l'opération inverse avec le reçu du déplacement", async () => {
+  it("sélection multiple : plage, ajout, tout, et une action s'applique à tout le lot", async () => {
     await boot();
-    const undoSpy = vi.spyOn(demoBackend, "undoMove");
-    const target = visibleThreads(useMail.getState())[0];
-    useMail.getState().moveTo(target.id, "archive");
+    const list = visibleThreads(useMail.getState());
+    const st = () => useMail.getState();
+    st().select(list[0].id);
+    st().rangeCheck(list[2].id);
+    expect([...st().checked]).toEqual([list[0].id, list[1].id, list[2].id]);
+    expect(selectionIds(st())).toHaveLength(3);
+    st().toggleCheck(list[1].id); // retire une conversation
+    expect(selectionIds(st())).toEqual([list[0].id, list[2].id]);
+    st().checkAll();
+    expect(st().checked.size).toBe(list.length);
+
+    const spy = vi.spyOn(demoBackend, "moveThread");
+    st().select(list[0].id);
+    st().rangeCheck(list[1].id);
+    st().moveTo(selectionIds(st()), "archive");
     await tick(500);
-    const undo = useMail.getState().undo();
-    await tick(500);
-    await undo;
-    expect(undoSpy).toHaveBeenCalledTimes(1);
-    expect(undoSpy.mock.calls[0][0]).toMatchObject({ toPath: "archive" });
-    await useMail.getState().undo(); // plus rien à annuler
-    expect(undoSpy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(st().checked.size).toBe(0);
+    expect(st().toasts[0].message).toContain("2 conversations archivées");
+  });
+
+  it("une sélection d'une seule conversation redevient la conversation ouverte", async () => {
+    await boot();
+    const [a, b] = visibleThreads(useMail.getState());
+    useMail.getState().select(a.id);
+    useMail.getState().toggleCheck(b.id);
+    expect(useMail.getState().checked.size).toBe(2);
+    useMail.getState().toggleCheck(a.id);
+    expect(useMail.getState().checked.size).toBe(0);
+    expect(useMail.getState().selectedId).toBe(b.id);
   });
 
   it("un échec serveur restaure la conversation et prévient l'utilisateur", async () => {

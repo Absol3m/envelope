@@ -127,7 +127,6 @@ pub fn run() {
             commands::set_thread_read,
             commands::set_thread_starred,
             commands::move_thread,
-            commands::undo_move,
             commands::delete_thread,
             commands::empty_folder,
             commands::open_attachment,

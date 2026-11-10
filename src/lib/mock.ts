@@ -217,13 +217,7 @@ export const demoBackend: Backend = {
     return delay(undefined, 80);
   },
   moveThread: (id, _folderId, to) => {
-    const t = find(id);
-    const receipt = { accountId: t.accountId, fromPath: t.role, toPath: to, messageIds: [String(id)] };
-    t.role = to;
-    return delay(receipt, 200);
-  },
-  undoMove: (receipt) => {
-    find(Number(receipt.messageIds[0])).role = receipt.fromPath as MockThread["role"];
+    find(id).role = to;
     return delay(undefined, 200);
   },
   deleteThread: (id) => {

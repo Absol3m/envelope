@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp, File, FileArchive, FileImage, FileText, Forward, ImageOff, Mail, MailOpen, Paperclip, Reply, ReplyAll, Star, Trash2 } from "lucide-react";
 import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Account, DetailAttachment, DetailMessage, ThreadDetail, ThreadSummary } from "@/lib/api";
 import { displayName, fileSize, fullDate, listDate } from "@/lib/format";
@@ -272,6 +272,37 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
   );
 }
 
+function BatchButton({ icon: Icon, label, kbd, danger, onClick }: { icon: ComponentType<{ size?: number }>; label: string; kbd?: string; danger?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={cn("press inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-bg px-3 text-[13px] font-medium hover:bg-hover", danger && "text-danger")}>
+      <Icon size={15} />{label}{kbd && <Kbd>{kbd}</Kbd>}
+    </button>
+  );
+}
+
+/** Plusieurs conversations sélectionnées : les actions s'appliquent à tout le lot. */
+function MultiSelection({ ids }: { ids: number[] }) {
+  const { view, threads, moveTo, deleteForever, toggleStar, toggleRead, clearChecked } = useMail(
+    useShallow((s) => ({ view: s.view, threads: s.threads, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, clearChecked: s.clearChecked })),
+  );
+  const picked = threads.filter((t) => ids.includes(t.id));
+  const anyUnread = picked.some((t) => t.unreadCount > 0);
+  const anyUnstarred = picked.some((t) => !t.isStarred);
+  return (
+    <main className="anim-fade-in flex h-full min-h-0 min-w-0 flex-col items-center justify-center bg-bg-subtle px-6 text-center" aria-label="Sélection multiple">
+      <span className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-accent-soft text-[24px] font-semibold tnum text-accent">{picked.length}</span>
+      <p className="text-[15px] font-semibold">{picked.length} conversations sélectionnées</p>
+      <div className="mt-6 flex max-w-[560px] flex-wrap justify-center gap-2">
+        {destinationsFor(view).map((d) => <BatchButton key={d} icon={DESTINATIONS[d].icon} label={DESTINATIONS[d].label} kbd={DESTINATIONS[d].key} onClick={() => moveTo(ids, d)} />)}
+        {isPurgeView(view) && <BatchButton icon={Trash2} label="Supprimer définitivement" kbd="⌫" danger onClick={() => void deleteForever(ids)} />}
+        <BatchButton icon={anyUnread ? MailOpen : Mail} label={anyUnread ? "Marquer comme lues" : "Marquer comme non lues"} kbd="U" onClick={() => toggleRead(ids)} />
+        <BatchButton icon={Star} label={anyUnstarred ? "Suivre" : "Ne plus suivre"} kbd="S" onClick={() => toggleStar(ids)} />
+      </div>
+      <button onClick={clearChecked} className="press mt-5 text-[12.5px] text-muted hover:text-fg">Désélectionner <Kbd>Échap</Kbd></button>
+    </main>
+  );
+}
+
 function EmptyReader() {
   const items: [string, string][] = [["C", "Nouveau message"], ["J / K", "Naviguer"], [DESTINATIONS.archive.key, DESTINATIONS.archive.label], [shortcut("mod+k"), "Palette de commandes"]];
   return (
@@ -289,8 +320,8 @@ function EmptyReader() {
 }
 
 export function Reader() {
-  const { selectedId, details, threads, accounts, hiddenIds, category, view, query, moveTo, deleteForever, toggleStar, toggleRead, move } = useMail(
-    useShallow((s) => ({ selectedId: s.selectedId, details: s.details, threads: s.threads, accounts: s.accounts, hiddenIds: s.hiddenIds, category: s.category, view: s.view, query: s.query, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move })),
+  const { selectedId, checked, details, threads, accounts, hiddenIds, category, view, query, moveTo, deleteForever, toggleStar, toggleRead, move } = useMail(
+    useShallow((s) => ({ selectedId: s.selectedId, checked: s.checked, details: s.details, threads: s.threads, accounts: s.accounts, hiddenIds: s.hiddenIds, category: s.category, view: s.view, query: s.query, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move })),
   );
   const summary = threads.find((t) => t.id === selectedId);
   const d = selectedId === null ? undefined : details[selectedId];
@@ -298,6 +329,7 @@ export function Reader() {
   const index = list.findIndex((t) => t.id === selectedId);
   const unread = (summary?.unreadCount ?? 0) > 0;
   const account = accounts.find((a) => a.id === (d?.accountId ?? summary?.accountId));
+  if (checked.size > 1) return <MultiSelection ids={[...checked]} />;
 
   return (
     <main className="flex h-full min-h-0 min-w-0 flex-col bg-bg-subtle" aria-label="Lecture">

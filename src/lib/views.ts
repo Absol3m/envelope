@@ -55,11 +55,11 @@ export const viewTitle = (v: View): string => (v.kind === "folder" ? v.name : AL
 export const GO_VIEWS: Record<string, View> = Object.fromEntries(ALL.filter((i) => i.go).map((i) => [i.go as string, i.view]));
 
 /** Source unique des déplacements : boutons, palette, raccourcis, aide et messages en dérivent. */
-export const DESTINATIONS: Record<Destination, { label: string; icon: NavItem["icon"]; key: string; done: string; already: string; failed: string }> = {
-  inbox: { label: "Remettre dans la boîte de réception", icon: Inbox, key: "I", done: "Conversation remise dans la boîte de réception", already: "Cette conversation est déjà dans la boîte de réception.", failed: "Déplacement impossible" },
-  archive: { label: "Archiver", icon: Archive, key: "E", done: "Conversation archivée", already: "Cette conversation est déjà archivée.", failed: "Archivage impossible" },
-  trash: { label: "Mettre à la corbeille", icon: Trash2, key: "#", done: "Conversation mise à la corbeille", already: "Cette conversation est déjà à la corbeille.", failed: "Suppression impossible" },
-  junk: { label: "Signaler comme spam", icon: ShieldAlert, key: "!", done: "Conversation signalée comme spam", already: "Cette conversation est déjà dans le spam.", failed: "Signalement impossible" },
+export const DESTINATIONS: Record<Destination, { label: string; icon: NavItem["icon"]; key: string; done: string; doneMany: string; already: string; failed: string }> = {
+  inbox: { label: "Remettre dans la boîte de réception", icon: Inbox, key: "I", done: "Conversation remise dans la boîte de réception", doneMany: "remises dans la boîte de réception", already: "Cette conversation est déjà dans la boîte de réception.", failed: "Déplacement impossible" },
+  archive: { label: "Archiver", icon: Archive, key: "E", done: "Conversation archivée", doneMany: "archivées", already: "Cette conversation est déjà archivée.", failed: "Archivage impossible" },
+  trash: { label: "Mettre à la corbeille", icon: Trash2, key: "#", done: "Conversation mise à la corbeille", doneMany: "mises à la corbeille", already: "Cette conversation est déjà à la corbeille.", failed: "Suppression impossible" },
+  junk: { label: "Signaler comme spam", icon: ShieldAlert, key: "!", done: "Conversation signalée comme spam", doneMany: "signalées comme spam", already: "Cette conversation est déjà dans le spam.", failed: "Signalement impossible" },
 };
 export const isDestination = (role: string): role is Destination => Object.hasOwn(DESTINATIONS, role);
 export const DESTINATION_IDS = Object.keys(DESTINATIONS) as Destination[];
@@ -76,3 +76,13 @@ export const DRAG_TYPE = "application/x-envelope-thread";
 
 /** Corbeille et spam : les seules boîtes où l'on supprime pour de bon (et que l'on peut vider). */
 export const isPurgeView = (v: View): v is { kind: "role"; role: "trash" | "junk" } => v.kind === "role" && (v.role === "trash" || v.role === "junk");
+
+/** Identifiants de conversations d'un glisser (tableau JSON) ; tout autre contenu est ignoré. */
+export function parseDragIds(raw: string): number[] {
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) && v.every((n) => Number.isInteger(n)) ? v : [];
+  } catch {
+    return [];
+  }
+}

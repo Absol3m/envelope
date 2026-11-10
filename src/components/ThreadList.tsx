@@ -1,11 +1,12 @@
 import { Check, Inbox, Mail, MailOpen, Paperclip, Search, SearchX, Star, Trash2, X } from "lucide-react";
 import { startThreadDrag } from "@/lib/dragImage";
-import { memo, useEffect, useMemo, useRef } from "react";
+import type { MouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ThreadSummary } from "@/lib/api";
 import { categorize, CATEGORY_LABELS, type Category } from "@/lib/categories";
 import { displayName, groupLabel, listDate } from "@/lib/format";
-import { useMail, visibleThreads } from "@/lib/store";
+import { dragIds, useMail, visibleThreads } from "@/lib/store";
 import { DESTINATIONS, destinationsFor, isInboxView, isPurgeView, viewTitle, type Destination, type View } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { dragRegion } from "@/lib/platform";
@@ -16,7 +17,8 @@ interface RowProps {
   selected: boolean;
   compact: boolean;
   previews: boolean;
-  onSelect(id: number): void;
+  checked: boolean;
+  onSelect(id: number, e: MouseEvent): void;
   destinations: Destination[];
   purge: boolean;
   onDelete(id: number): void;
@@ -25,8 +27,9 @@ interface RowProps {
   onToggleRead(id: number): void;
 }
 
-const Row = memo(function Row({ t, selected, compact, previews, onSelect, destinations, purge, onDelete, onMove, onStar, onToggleRead }: RowProps) {
+const Row = memo(function Row({ t, selected, compact, previews, checked, onSelect, destinations, purge, onDelete, onMove, onStar, onToggleRead }: RowProps) {
   const unread = t.unreadCount > 0;
+  const active = selected || checked;
   const sender = displayName(t.fromName, t.fromAddr);
   // Conversation à plusieurs : prénoms des participants plutôt que le seul dernier expéditeur.
   const who = t.participants && t.messageCount > 1 ? t.participants.split(", ").map((p) => p.split(" ")[0]).join(", ") : sender;
@@ -35,16 +38,17 @@ const Row = memo(function Row({ t, selected, compact, previews, onSelect, destin
       role="option"
       aria-selected={selected}
       data-thread={t.id}
+      data-checked={checked ? "" : undefined}
       draggable
-      onDragStart={(e) => startThreadDrag(e, t)}
-      onClick={() => onSelect(t.id)}
+      onDragStart={(e) => startThreadDrag(e, t, dragIds(useMail.getState(), t.id))}
+      onClick={(e) => onSelect(t.id, e)}
       className={cn(
-        "group relative mx-1.5 flex cursor-default gap-3 rounded-lg px-3 transition-colors",
+        "group relative mx-1.5 flex cursor-default select-none gap-3 rounded-lg px-3 transition-colors",
         compact ? "py-[7px]" : "py-[11px]",
-        selected ? "bg-accent-soft" : "hover:bg-hover",
+        active ? "bg-accent-soft" : "hover:bg-hover",
       )}
     >
-      {selected && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-accent" />}
+      {active && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-accent" />}
       <div className="flex w-2 shrink-0 items-start pt-[7px]">
         {unread && <span aria-label="Non lu" className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_3px_var(--accent-soft)]" />}
       </div>
@@ -132,12 +136,18 @@ function Empty({ search, view, category }: { search: string; view: View; categor
 }
 
 export function ThreadList() {
-  const { view, category, query, selectedId, density, previews, threadsLoading, hasMore, threads, hiddenIds, setQuery, setCategory, loadMore, select, moveTo, deleteForever, emptyView, toggleStar, toggleRead } = useMail(
-    useShallow((s) => ({ view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, setQuery: s.setQuery, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, moveTo: s.moveTo, deleteForever: s.deleteForever, emptyView: s.emptyView, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
+  const { view, category, query, selectedId, density, previews, threadsLoading, hasMore, threads, hiddenIds, checked, toggleCheck, rangeCheck, setQuery, setCategory, loadMore, select, moveTo, deleteForever, emptyView, toggleStar, toggleRead } = useMail(
+    useShallow((s) => ({ view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, checked: s.checked, toggleCheck: s.toggleCheck, rangeCheck: s.rangeCheck, setQuery: s.setQuery, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, moveTo: s.moveTo, deleteForever: s.deleteForever, emptyView: s.emptyView, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
   );
   const scroller = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
+  /** Clic : ouvre ; Maj+clic : plage ; Cmd/Ctrl+clic : ajoute ou retire. */
+  const onRowClick = useCallback((id: number, e: MouseEvent) => {
+    if (e.shiftKey) rangeCheck(id);
+    else if (e.metaKey || e.ctrlKey) toggleCheck(id);
+    else select(id);
+  }, [select, toggleCheck, rangeCheck]);
   const purge = isPurgeView(view);
   const destinations = useMemo(() => destinationsFor(view), [view]);
   const list = useMemo(() => visibleThreads({ threads, hiddenIds, category, view, query }), [threads, hiddenIds, category, view, query]);
@@ -263,7 +273,7 @@ export function ThreadList() {
                   {r.label}
                 </div>
               ) : (
-                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} onSelect={select} destinations={destinations} purge={purge} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
+                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} checked={checked.has(r.t.id)} onSelect={onRowClick} destinations={destinations} purge={purge} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
               ),
             )}
             <div ref={sentinel} className="h-px" />

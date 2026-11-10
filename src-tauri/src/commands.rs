@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
-use crate::mail::actions::{self, Action, Applied, Destination, MoveReceipt};
+use crate::mail::actions::{self, Action, Destination};
 use crate::mail::autoconfig;
 use crate::mail::imap;
 use crate::mail::oauth::{self, OAuthProvider};
@@ -330,7 +330,7 @@ pub async fn get_thread_detail(state: State<'_, AppState>, thread_id: i64) -> Re
 
 /// Actions : le verrou sérialise les connexions IMAP (des raccourcis enchaînés ne doivent pas
 /// ouvrir autant de connexions simultanées que de touches).
-async fn run_action(state: &AppState, thread_id: i64, action: Action) -> Result<Applied> {
+async fn run_action(state: &AppState, thread_id: i64, action: Action) -> Result<Vec<String>> {
     let _guard = state.actions.lock().await;
     actions::apply(&state.db, thread_id, action).await
 }
@@ -359,24 +359,13 @@ pub async fn move_thread(
     thread_id: i64,
     folder_id: i64,
     to: Destination,
-) -> Result<Option<MoveReceipt>> {
-    let applied = run_action(&state, thread_id, Action::Move { folder_id, to }).await?;
+) -> Result<()> {
+    let accounts = run_action(&state, thread_id, Action::Move { folder_id, to }).await?;
     // Le message a un nouvel UID dans le dossier cible : une synchro le fait apparaître aussitôt.
     // (Seule l'IDLE de la boîte de réception se réveille d'elle-même.)
-    for account in &applied.accounts {
+    for account in &accounts {
         state.sync.trigger(account);
     }
-    Ok(applied.receipt)
-}
-
-/// Défait un déplacement à partir de son reçu.
-#[tauri::command]
-pub async fn undo_move(state: State<'_, AppState>, receipt: MoveReceipt) -> Result<()> {
-    {
-        let _guard = state.actions.lock().await;
-        actions::undo_move(&state.db, &receipt).await?;
-    }
-    state.sync.trigger(&receipt.account_id);
     Ok(())
 }
 

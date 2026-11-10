@@ -3,7 +3,7 @@ import { Bot, Forward, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, PenSquare
 import type { ComponentType, ReactNode } from "react";
 import { useState } from "react";
 import { useComposer } from "@/lib/composer";
-import { useMail } from "@/lib/store";
+import { selectionIds, useMail } from "@/lib/store";
 import { DESTINATIONS, destinationsFor, isPurgeView, NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
 import { Kbd } from "./ui/primitives";
 import { keys, SETTINGS_LABEL } from "@/lib/platform";
@@ -27,8 +27,12 @@ export function Palette() {
   const [text, setText] = useState("");
   const close = () => { s.setPalette(false); setText(""); };
   const run = (fn: () => void) => () => { close(); fn(); };
-  const id = s.selectedId;
-  const t = s.threads.find((x) => x.id === id);
+  const ids = selectionIds(s);
+  const idSet = new Set(ids);
+  const picked = s.threads.filter((x) => idSet.has(x.id));
+  const many = picked.length > 1;
+  const anyUnread = picked.some((x) => x.unreadCount > 0);
+  const anyUnstarred = picked.some((x) => !x.isStarred);
 
   return (
     <Command.Dialog open={s.paletteOpen} onOpenChange={(o) => (o ? s.setPalette(true) : close())} label="Palette de commandes" loop>
@@ -42,14 +46,14 @@ export function Palette() {
           </Command.Group>
         )}
 
-        {t && (
-          <Command.Group heading="Conversation">
+        {picked.length > 0 && (
+          <Command.Group heading={many ? `${picked.length} conversations` : "Conversation"}>
             {destinationsFor(s.view).map((d) => (
-              <Item key={d} icon={DESTINATIONS[d].icon} hint={[DESTINATIONS[d].key]} onSelect={run(() => s.moveTo(t.id, d))}>{DESTINATIONS[d].label}</Item>
+              <Item key={d} icon={DESTINATIONS[d].icon} hint={[DESTINATIONS[d].key]} onSelect={run(() => s.moveTo(ids, d))}>{DESTINATIONS[d].label}</Item>
             ))}
-            {isPurgeView(s.view) && <Item icon={Trash2} hint={["⌫"]} onSelect={run(() => void s.deleteForever(t.id))}>Supprimer définitivement</Item>}
-            <Item icon={Star} hint={["S"]} onSelect={run(() => s.toggleStar(t.id))}>{t.isStarred ? "Ne plus suivre" : "Suivre"}</Item>
-            <Item icon={t.unreadCount > 0 ? MailOpen : Mail} hint={["U"]} onSelect={run(() => s.toggleRead(t.id))}>{t.unreadCount > 0 ? "Marquer comme lu" : "Marquer comme non lu"}</Item>
+            {isPurgeView(s.view) && <Item icon={Trash2} hint={["⌫"]} onSelect={run(() => void s.deleteForever(ids))}>Supprimer définitivement</Item>}
+            <Item icon={Star} hint={["S"]} onSelect={run(() => s.toggleStar(ids))}>{anyUnstarred ? "Suivre" : "Ne plus suivre"}</Item>
+            <Item icon={anyUnread ? MailOpen : Mail} hint={["U"]} onSelect={run(() => s.toggleRead(ids))}>{anyUnread ? "Marquer comme lu" : "Marquer comme non lu"}</Item>
           </Command.Group>
         )}
 
@@ -75,7 +79,7 @@ export function Palette() {
         </Command.Group>
 
         <Command.Group heading="Application">
-          <Item icon={Undo2} hint={["Z"]} onSelect={run(() => { if (!useComposer.getState().undoSend()) s.undo(); })}>Annuler (envoi ou déplacement)</Item>
+          <Item icon={Undo2} hint={["Z"]} onSelect={run(() => void useComposer.getState().undoSend())}>Annuler l'envoi</Item>
           <Item icon={RefreshCw} onSelect={run(() => s.accounts.forEach((a) => void s.backend.syncNow(a.id)))}>Synchroniser maintenant</Item>
           <Item icon={Bot} onSelect={run(() => s.openSettings("agent"))}>Agent IA (serveur MCP)</Item>
           <Item icon={Settings} hint={keys("mod+,")} onSelect={run(() => s.openSettings("accounts"))}>{SETTINGS_LABEL}</Item>

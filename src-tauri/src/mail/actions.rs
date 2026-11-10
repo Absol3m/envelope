@@ -72,31 +72,12 @@ struct Target {
     folder_id: i64,
     folder_path: String,
     uid: i64,
-    message_id: Option<String>,
-}
-
-/// Reçu d'un déplacement : de quoi le défaire (l'UID change dans le dossier d'arrivée, et la
-/// conversation peut avoir disparu de la base) en retrouvant les messages par leur Message-ID.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MoveReceipt {
-    pub account_id: String,
-    pub from_path: String,
-    pub to_path: String,
-    pub message_ids: Vec<String>,
-}
-
-/// Résultat d'une action : comptes touchés (la conversation, elle, peut avoir disparu de la base
-/// si elle est devenue vide) et, pour un déplacement, son reçu.
-pub struct Applied {
-    pub accounts: Vec<String>,
-    pub receipt: Option<MoveReceipt>,
 }
 
 /// Messages touchés par l'action (ceux dont l'état est déjà la cible sont ignorés).
 async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Vec<Target>> {
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
-        "SELECT m.id, m.account_id, m.folder_id, f.path AS folder_path, m.uid, m.message_id \
+        "SELECT m.id, m.account_id, m.folder_id, f.path AS folder_path, m.uid \
          FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = ",
     );
     qb.push_bind(thread_id);
@@ -112,8 +93,9 @@ async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Ve
     Ok(qb.build_query_as().fetch_all(pool).await?)
 }
 
-/// Applique l'action sur le serveur puis en base.
-pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Applied> {
+/// Applique l'action sur le serveur puis en base ; retourne les comptes touchés (la conversation,
+/// elle, peut avoir disparu de la base si elle est devenue vide).
+pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Vec<String>> {
     let targets = targets(pool, thread_id, action).await?;
     if targets.is_empty() {
         // Les autres actions sont idempotentes ; supprimer pour de bon ne doit jamais « réussir »
@@ -124,10 +106,7 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
                     .into(),
             ));
         }
-        return Ok(Applied {
-            accounts: Vec::new(),
-            receipt: None,
-        });
+        return Ok(Vec::new());
     }
     // Une connexion par compte, un SELECT par dossier.
     let mut by_account: BTreeMap<&str, BTreeMap<&str, Vec<i64>>> = BTreeMap::new();
@@ -140,7 +119,6 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
             .push(t.uid);
     }
     let accounts: Vec<String> = by_account.keys().map(|a| a.to_string()).collect();
-    let mut moved: Option<(String, String)> = None; // (dossier source, dossier cible)
     for (account_id, folders) in by_account {
         let acct = account::get(pool, account_id).await?;
         let cred = account::resolve_credential(&acct).await?;
@@ -151,86 +129,12 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
                 .map(i64::to_string)
                 .collect::<Vec<_>>()
                 .join(",");
-            if let Some(to) = propagate(&mut session, pool, account_id, path, &set, action).await? {
-                moved = Some((path.to_string(), to));
-            }
+            propagate(&mut session, pool, account_id, path, &set, action).await?;
         }
         let _ = session.logout().await;
     }
     apply_local(pool, thread_id, &targets, action).await?;
-    // Pas de reçu (donc pas d'« Annuler ») si un seul message ne peut pas être retrouvé : une
-    // annulation partielle présentée comme complète serait pire que pas d'annulation.
-    let message_ids: Option<Vec<String>> = targets
-        .iter()
-        .map(|t| t.message_id.clone().filter(|id| valid_message_id(id)))
-        .collect();
-    let receipt = moved
-        .zip(message_ids)
-        .map(|((from_path, to_path), message_ids)| MoveReceipt {
-            account_id: targets[0].account_id.clone(),
-            from_path,
-            to_path,
-            message_ids,
-        });
-    Ok(Applied { accounts, receipt })
-}
-
-/// Un Message-ID utilisable tel quel dans une recherche IMAP entre guillemets : non vide (sinon la
-/// recherche couvrirait tout le dossier), ASCII imprimable, sans guillemet ni barre inverse.
-fn valid_message_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 998
-        && id
-            .bytes()
-            .all(|b| (0x20..0x7f).contains(&b) && b != b'"' && b != b'\\')
-}
-
-/// Défait un déplacement : retrouve les messages dans le dossier d'arrivée (par Message-ID) et les
-/// remet dans leur dossier d'origine. La synchro réaligne ensuite la base.
-pub async fn undo_move(pool: &SqlitePool, receipt: &MoveReceipt) -> Result<()> {
-    // Le reçu vient de l'interface : on ne fait confiance ni à ses identifiants (injectés dans une
-    // recherche IMAP) ni à ses chemins.
-    if receipt.message_ids.is_empty()
-        || !receipt.message_ids.iter().all(|id| valid_message_id(id))
-        || receipt.from_path == receipt.to_path
-    {
-        return Err(AppError::Invalid("reçu de déplacement invalide".into()));
-    }
-    let known: Option<i64> =
-        sqlx::query_scalar("SELECT 1 FROM folders WHERE account_id = ? AND path = ?")
-            .bind(&receipt.account_id)
-            .bind(&receipt.from_path)
-            .fetch_optional(pool)
-            .await?;
-    if known.is_none() {
-        return Err(AppError::Invalid("reçu de déplacement invalide".into()));
-    }
-    let acct = account::get(pool, &receipt.account_id).await?;
-    let cred = account::resolve_credential(&acct).await?;
-    let mut session = imap::connect(&acct, &cred).await?;
-    session.select(&receipt.to_path).await?;
-    let mut uids = std::collections::BTreeSet::new();
-    for id in &receipt.message_ids {
-        uids.extend(
-            session
-                .uid_search(format!("HEADER Message-ID \"{id}\""))
-                .await?,
-        );
-    }
-    if uids.is_empty() {
-        let _ = session.logout().await;
-        return Err(AppError::NotFound(
-            "message introuvable dans le dossier de destination".into(),
-        ));
-    }
-    let set = uids
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
-    move_to(&mut session, &set, &receipt.from_path).await?;
-    let _ = session.logout().await;
-    Ok(())
+    Ok(accounts)
 }
 
 async fn propagate(
@@ -240,7 +144,7 @@ async fn propagate(
     path: &str,
     uids: &str,
     action: Action,
-) -> Result<Option<String>> {
+) -> Result<()> {
     session.select(path).await?;
     match action {
         Action::SetRead(on) => store_flag(session, uids, "\\Seen", on).await?,
@@ -262,10 +166,9 @@ async fn propagate(
                 ));
             }
             move_to(session, uids, &dest).await?;
-            return Ok(Some(dest));
         }
     }
-    Ok(None)
+    Ok(())
 }
 
 async fn store_flag(session: &mut ImapSession, uids: &str, flag: &str, on: bool) -> Result<()> {
@@ -559,18 +462,5 @@ mod tests {
         let (pool, inbox) = setup().await;
         assert!(empty_folder(&pool, inbox).await.is_err());
         assert!(empty_folder(&pool, 999).await.is_err());
-    }
-
-    #[test]
-    fn message_ids_are_safe_for_imap_search() {
-        assert!(valid_message_id("abc123@mail.example.com"));
-        assert!(
-            !valid_message_id(""),
-            "un identifiant vide couvrirait tout le dossier"
-        );
-        assert!(!valid_message_id("a\"b"));
-        assert!(!valid_message_id("a\\b"));
-        assert!(!valid_message_id("a\r\nb"));
-        assert!(!valid_message_id("é@x"));
     }
 }

@@ -5,7 +5,7 @@ import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
 import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
-import { DRAG_TYPE, isDestination, NAV_MAILBOXES, NAV_SMART, sameView, type View, type NavItem as NavItemData } from "@/lib/views";
+import { DRAG_TYPE, parseDragIds, isDestination, NAV_MAILBOXES, NAV_SMART, sameView, type View, type NavItem as NavItemData } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { dragRegion, isMac, SETTINGS_LABEL } from "@/lib/platform";
 import { IconButton, Spinner, Tip } from "./ui/primitives";
@@ -13,7 +13,7 @@ import { IconButton, Spinner, Tip } from "./ui/primitives";
 type Icon = NavItemData["icon"];
 
 /** Dépôt d'une conversation glissée depuis la liste : `onDrop` reçoit son identifiant. */
-function NavItem({ icon: Icon, label, count, active, onClick, onDrop }: { icon: Icon; label: string; count?: number; active: boolean; onClick: () => void; onDrop?: (threadId: number) => void }) {
+function NavItem({ icon: Icon, label, count, active, onClick, onDrop }: { icon: Icon; label: string; count?: number; active: boolean; onClick: () => void; onDrop?: (threadIds: number[]) => void }) {
   const [over, setOver] = useState(false);
   const accepts = (e: DragEvent) => onDrop !== undefined && e.dataTransfer.types.includes(DRAG_TYPE);
   return (
@@ -25,8 +25,8 @@ function NavItem({ icon: Icon, label, count, active, onClick, onDrop }: { icon: 
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); }}
       onDrop={(e) => {
         setOver(false);
-        const id = Number(e.dataTransfer.getData(DRAG_TYPE));
-        if (accepts(e) && Number.isInteger(id)) { e.preventDefault(); onDrop?.(id); }
+        const ids = parseDragIds(e.dataTransfer.getData(DRAG_TYPE));
+        if (accepts(e) && ids.length > 0) { e.preventDefault(); onDrop?.(ids); }
       }}
       title={label}
       aria-current={active ? "page" : undefined}
@@ -49,7 +49,7 @@ export function Sidebar() {
   /** Boîtes où l'on peut déposer une conversation (archives, corbeille, spam, réception), sauf la vue affichée. */
   const dropFor = (v: View) => {
     const role = v.kind === "role" && isDestination(v.role) ? v.role : undefined;
-    return role && !sameView(v, view) ? (id: number) => moveTo(id, role) : undefined;
+    return role && !sameView(v, view) ? (ids: number[]) => moveTo(ids, role) : undefined;
   };
   /** Seuls la boîte de réception et « Non lus » affichent un compteur. */
   const countFor = (i: NavItemData) => (i.view.kind === "unread" || (i.view.kind === "role" && i.view.role === "inbox") ? unread("inbox") : undefined);

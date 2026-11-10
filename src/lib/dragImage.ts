@@ -12,10 +12,11 @@ import type { ThreadSummary } from "./api";
 /** Nettoyage du glisser en cours (un `dragend` perdu ne doit pas laisser la barre latérale éteinte). */
 let endDrag: (() => void) | null = null;
 
-export function startThreadDrag(e: DragEvent<HTMLElement>, t: ThreadSummary): void {
+/** `ids` : conversations glissées (la sélection multiple si la ligne en fait partie, sinon elle seule). */
+export function startThreadDrag(e: DragEvent<HTMLElement>, t: ThreadSummary, ids: readonly number[]): void {
   endDrag?.();
   const row = e.currentTarget;
-  e.dataTransfer.setData(DRAG_TYPE, String(t.id));
+  e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(ids));
   e.dataTransfer.effectAllowed = "move";
 
   const label = displayName(t.fromName, t.fromAddr);
@@ -27,9 +28,9 @@ export function startThreadDrag(e: DragEvent<HTMLElement>, t: ThreadSummary): vo
   avatar.style.background = avatarBackground(t.fromName, t.fromAddr);
   const subject = document.createElement("span");
   subject.className = "drag-chip-subject";
-  subject.textContent = t.subject || "(sans objet)";
+  subject.textContent = ids.length > 1 ? `${ids.length} conversations` : t.subject || "(sans objet)";
   chip.append(avatar, subject);
-  if (t.messageCount > 1) {
+  if (ids.length === 1 && t.messageCount > 1) {
     const count = document.createElement("span");
     count.className = "drag-chip-count";
     count.textContent = String(t.messageCount);
@@ -40,13 +41,14 @@ export function startThreadDrag(e: DragEvent<HTMLElement>, t: ThreadSummary): vo
   setTimeout(() => chip.remove(), 0); // l'image est capturée de façon synchrone
 
   // Après la capture : estomper la ligne plus tôt la griserait aussi dans l'image.
-  requestAnimationFrame(() => row.classList.add("thread-dragging"));
+  const rows = ids.length > 1 ? [...document.querySelectorAll<HTMLElement>("[data-checked]")] : [row];
+  requestAnimationFrame(() => rows.forEach((r) => r.classList.add("thread-dragging")));
   document.body.dataset.dragging = "";
 
   // `dragend` n'arrive pas si la ligne a été retirée de la liste par le dépôt : on écoute aussi `drop`.
   const end = () => {
     endDrag = null;
-    row.classList.remove("thread-dragging");
+    rows.forEach((r) => r.classList.remove("thread-dragging"));
     delete document.body.dataset.dragging;
     window.removeEventListener("dragend", end);
     document.removeEventListener("drop", end, true);

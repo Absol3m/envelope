@@ -36,13 +36,6 @@ export interface ThreadSummary {
   fromAddr: string | null;
   participants: string | null;
 }
-/** Reçu d'un déplacement (voir `MoveReceipt` côté Rust) : opaque pour l'interface. */
-export interface MoveReceipt {
-  accountId: string;
-  fromPath: string;
-  toPath: string;
-  messageIds: string[];
-}
 export interface Addr {
   name: string | null;
   address: string;
@@ -145,9 +138,7 @@ export interface Backend {
   getThread(id: number): Promise<ThreadDetail>;
   setRead(threadId: number, read: boolean): Promise<void>;
   setStarred(threadId: number, starred: boolean): Promise<void>;
-  /** Déplace la conversation ; retourne de quoi défaire le déplacement (null si impossible). */
-  moveThread(threadId: number, folderId: number, to: Destination): Promise<MoveReceipt | null>;
-  undoMove(receipt: MoveReceipt): Promise<void>;
+  moveThread(threadId: number, folderId: number, to: Destination): Promise<void>;
   deleteThread(threadId: number, folderId: number): Promise<void>;
   emptyFolder(folderId: number): Promise<void>;
   /** Confirmation native (boîte de dialogue de l'OS) avant une action irréversible. */
@@ -190,7 +181,6 @@ export const tauriBackend: Backend = {
   setRead: (threadId, read) => invoke("set_thread_read", { threadId, read }),
   setStarred: (threadId, starred) => invoke("set_thread_starred", { threadId, starred }),
   moveThread: (threadId, folderId, to) => invoke("move_thread", { threadId, folderId, to }),
-  undoMove: (receipt) => invoke("undo_move", { receipt }),
   deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
   emptyFolder: (folderId) => invoke("empty_folder", { folderId }),
   confirm: (message, okLabel) => ask(message, { title: "Envelope", kind: "warning", okLabel, cancelLabel: "Annuler" }),

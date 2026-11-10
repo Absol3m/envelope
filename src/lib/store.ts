@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { parseColors, parseTheme, renderAppearance, type ColorsPref, type ThemePref } from "./theme";
 import { pref } from "./pref";
 import { demoBackend } from "./mock";
-import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type MoveReceipt, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
+import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
 import { DESTINATIONS, isInboxView, isPurgeView, type Destination, type View } from "./views";
 
@@ -24,6 +24,19 @@ export interface Toast {
 
 const PAGE = 100;
 
+/** Une ou plusieurs conversations : les actions s'appliquent à l'ensemble. */
+type Ids = number | readonly number[];
+const toIds = (ids: Ids): readonly number[] => (typeof ids === "number" ? [ids] : ids);
+const NO_IDS: ReadonlySet<number> = new Set();
+
+/** Lance les opérations d'un lot ; sépare celles qui ont abouti de celles qui ont échoué (première raison conservée). */
+async function settleBatch<T>(items: readonly T[], run: (item: T) => Promise<unknown>) {
+  const results = await Promise.allSettled(items.map(run));
+  const ok = new Set(results.flatMap((r, i) => (r.status === "fulfilled" ? [i] : [])));
+  const failure = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+  return { done: items.filter((_, i) => ok.has(i)), failed: items.filter((_, i) => !ok.has(i)), reason: failure?.reason };
+}
+
 
 interface State {
   backend: Backend;
@@ -39,6 +52,10 @@ interface State {
   threadsLoading: boolean;
   hasMore: boolean;
   selectedId: number | null;
+  /** Sélection multiple (Maj/Cmd/Ctrl+clic) : prend le pas sur `selectedId` dès qu'elle compte 2 conversations ou plus. */
+  checked: ReadonlySet<number>;
+  /** Point de départ des sélections par plage (Maj+clic). */
+  anchorId: number | null;
   /** Conversations archivées en attente de validation (fenêtre d'annulation) : masquées de la liste. */
   hiddenIds: ReadonlySet<number>;
   details: Record<number, ThreadDetail>;
@@ -61,17 +78,19 @@ interface State {
   setCategory(c: Category): void;
   setQuery(q: string): void;
   select(id: number | null): void;
+  toggleCheck(id: number): void;
+  rangeCheck(id: number): void;
+  checkAll(): void;
+  clearChecked(): void;
   move(delta: 1 | -1): void;
-  toggleRead(id: number): void;
-  toggleStar(id: number): void;
+  toggleRead(ids: Ids): void;
+  toggleStar(ids: Ids): void;
   /** Archive, corbeille ou spam, avec fenêtre d'annulation. */
-  moveTo(id: number, to: Destination): void;
+  moveTo(ids: Ids, to: Destination): void;
   /** Suppression définitive depuis la corbeille ou le spam, après confirmation. */
-  deleteForever(id: number): Promise<void>;
+  deleteForever(ids: Ids): Promise<void>;
   /** Vide la corbeille ou le spam affiché (tous les comptes de la vue), après confirmation. */
   emptyView(): Promise<void>;
-  /** Défait le dernier déplacement (Z). */
-  undo(): Promise<void>;
   toast(t: Partial<Toast> & { message: string }): void;
   dismissToast(id: number): void;
   setPalette(open: boolean): void;
@@ -95,11 +114,9 @@ function sourceFolder(s: Pick<State, "view" | "folders">, thread: ThreadSummary)
   return s.folders.find((f) => (v.kind === "folder" ? f.id === v.folderId : f.accountId === thread.accountId && f.role === role));
 }
 
-/** Reçu du dernier déplacement : de quoi le défaire (bouton « Annuler » ou Z). */
-let lastMove: MoveReceipt | null = null;
 
 /** Navigation remise à zéro : état initial et entrée en démo partagent ces valeurs. */
-const NAV_RESET = { accountFilter: null, view: { kind: "role", role: "inbox" } as View, category: "all" as Category, query: "", selectedId: null, hiddenIds: new Set<number>() as ReadonlySet<number> };
+const NAV_RESET = { accountFilter: null, view: { kind: "role", role: "inbox" } as View, category: "all" as Category, query: "", selectedId: null, checked: NO_IDS, anchorId: null as number | null, hiddenIds: new Set<number>() as ReadonlySet<number> };
 
 function buildQuery(s: Pick<State, "view" | "accountFilter" | "query">): ThreadQuery {
   const q: ThreadQuery = { limit: PAGE };
@@ -122,11 +139,26 @@ export function visibleThreads(s: Pick<State, "threads" | "hiddenIds" | "categor
   return s.threads.filter((t) => !s.hiddenIds.has(t.id) && (!smart || categorize(t) === s.category));
 }
 
+/** Conversations visées par une action : la sélection multiple, à défaut la conversation ouverte. */
+export function selectionIds(s: Pick<State, "checked" | "selectedId">): number[] {
+  return s.checked.size > 1 ? [...s.checked] : s.selectedId !== null ? [s.selectedId] : [];
+}
+
+/** Conversations emportées par un glisser depuis cette ligne : toute la sélection si elle en fait partie. */
+export function dragIds(s: Pick<State, "checked">, id: number): number[] {
+  return s.checked.size > 1 && s.checked.has(id) ? [...s.checked] : [id];
+}
+
 export const useMail = create<State>((set, get) => {
   const patchThread = (id: number, patch: Partial<ThreadSummary>) =>
     set((s) => ({ threads: s.threads.map((t) => (t.id === id ? { ...t, ...patch } : t)) }));
   const patchDetail = (id: number, fn: (d: ThreadDetail) => ThreadDetail) =>
     set((s) => (s.details[id] ? { details: { ...s.details, [id]: fn(s.details[id]) } } : s));
+  /** Conversations de la liste correspondant à ces identifiants (une seule passe, pas de `includes` en boucle). */
+  const threadsOf = (ids: Ids) => {
+    const wanted = new Set(toIds(ids));
+    return get().threads.filter((t) => wanted.has(t.id));
+  };
   const loadFolders = async () => {
     try { set({ folders: await get().backend.listFolders() }); } catch { /* compteurs : non bloquant */ }
   };
@@ -136,12 +168,29 @@ export const useMail = create<State>((set, get) => {
     clearTimeout(foldersTimer);
     foldersTimer = setTimeout(() => void loadFolders(), 500);
   };
-  const setHidden = (id: number, hidden: boolean) =>
+  const setHidden = (ids: number | readonly number[], hidden: boolean) =>
     set((cur) => {
       const h = new Set(cur.hiddenIds);
-      if (hidden) h.add(id); else h.delete(id);
+      for (const id of toIds(ids)) { if (hidden) h.add(id); else h.delete(id); }
       return { hiddenIds: h };
     });
+  /** Retire de la liste des conversations déplacées ou supprimées côté serveur, puis rafraîchit les compteurs. */
+  const dropThreads = (ids: readonly number[]) => {
+    const gone = new Set(ids);
+    set((cur) => ({ threads: cur.threads.filter((t) => !gone.has(t.id)) }));
+    scheduleFolders();
+  };
+  /** Masque ces conversations ; si la conversation ouverte en fait partie, la suivante prend sa place (l'écran ne se vide jamais). */
+  const hideAndAdvance = (ids: readonly number[]) => {
+    const s = get();
+    const gone = new Set(ids);
+    const list = visibleThreads(s);
+    const rest = list.filter((t) => !gone.has(t.id));
+    const next = rest[Math.min(list.findIndex((t) => gone.has(t.id)), rest.length - 1)];
+    setHidden(ids, true);
+    if (s.selectedId !== null && gone.has(s.selectedId)) get().select(next?.id ?? null);
+    else if (s.checked.size > 0) get().clearChecked();
+  };
   const fail = (message: string, e: unknown) => get().toast({ message: `${message} — ${String(e)}`, tone: "error", duration: 6000 });
 
   async function fetchThreads(reset: boolean, silent = false) {
@@ -151,13 +200,26 @@ export const useMail = create<State>((set, get) => {
     try {
       const rows = await s.backend.listThreads({ ...buildQuery(s), offset: reset ? 0 : s.threads.length });
       if (seq !== loadSeq) return;
-      set((cur) => ({ threads: reset ? rows : [...cur.threads, ...rows], hasMore: rows.length === PAGE, threadsLoading: false }));
+      set((cur) => {
+        const threads = reset ? rows : [...cur.threads, ...rows];
+        // Une conversation disparue (synchro, autre appareil) ne reste pas sélectionnée à l'insu de l'utilisateur.
+        const alive = new Set(threads.map((t) => t.id));
+        const checked = new Set([...cur.checked].filter((id) => alive.has(id)));
+        return { threads, hasMore: rows.length === PAGE, threadsLoading: false, ...(checked.size !== cur.checked.size && { checked: checked.size > 1 ? checked : NO_IDS }) };
+      });
     } catch (e) {
       if (seq !== loadSeq) return;
       set({ threadsLoading: false });
       fail("Chargement impossible", e);
     }
   }
+
+  /** Une sélection d'une seule conversation n'en est pas une : c'est la conversation ouverte. */
+  const setChecked = (ids: Set<number>, anchor: number | null) => {
+    if (ids.size === 1) return get().select([...ids][0]);
+    clearTimeout(markReadTimer);
+    set((cur) => ({ checked: ids, anchorId: anchor ?? cur.anchorId }));
+  };
 
   const selectFirst = () => get().select(visibleThreads(get())[0]?.id ?? null);
 
@@ -256,7 +318,7 @@ export const useMail = create<State>((set, get) => {
 
     select(id) {
       clearTimeout(markReadTimer);
-      set({ selectedId: id });
+      set({ selectedId: id, anchorId: id, checked: NO_IDS });
       if (id === null) return;
       const s = get();
       if (!s.details[id]) {
@@ -272,6 +334,34 @@ export const useMail = create<State>((set, get) => {
       }, 900);
     },
 
+    /** Cmd/Ctrl+clic : ajoute ou retire une conversation (la conversation ouverte en fait partie d'office). */
+    toggleCheck(id) {
+      const s = get();
+      const next = new Set(s.checked.size > 0 ? s.checked : s.selectedId !== null ? [s.selectedId] : []);
+      if (!next.delete(id)) next.add(id);
+      setChecked(next, id);
+    },
+
+    /** Maj+clic : toutes les conversations entre le point de départ et celle-ci. */
+    rangeCheck(id) {
+      const s = get();
+      const list = visibleThreads(s);
+      const from = list.findIndex((t) => t.id === (s.anchorId ?? s.selectedId));
+      const to = list.findIndex((t) => t.id === id);
+      if (to < 0) return;
+      const [lo, hi] = from < 0 ? [to, to] : [Math.min(from, to), Math.max(from, to)];
+      setChecked(new Set(list.slice(lo, hi + 1).map((t) => t.id)), s.anchorId ?? s.selectedId);
+    },
+
+    checkAll() {
+      setChecked(new Set(visibleThreads(get()).map((t) => t.id)), null);
+    },
+
+    clearChecked() {
+      const id = get().selectedId;
+      if (get().checked.size > 0) set({ checked: NO_IDS, anchorId: id });
+    },
+
     move(delta) {
       const s = get();
       const list = visibleThreads(s);
@@ -281,73 +371,75 @@ export const useMail = create<State>((set, get) => {
       if (next) s.select(next.id);
     },
 
-    toggleRead(id) {
-      const t = get().threads.find((x) => x.id === id);
-      if (!t) return;
-      const read = t.unreadCount > 0; // bascule : non lu → lu, lu → non lu
-      const prev = t.unreadCount;
-      patchThread(id, { unreadCount: read ? 0 : 1 });
-      patchDetail(id, (d) => ({ ...d, messages: d.messages.map((m, i, a) => ({ ...m, isRead: read ? true : i < a.length - 1 })) }));
-      void optimistic(get().backend.setRead(id, read), () => patchThread(id, { unreadCount: prev }));
+    toggleRead(ids) {
+      const list = threadsOf(ids);
+      const read = list.some((t) => t.unreadCount > 0); // un lot mixte devient lu ; sinon non lu
+      for (const t of list.filter((t) => (t.unreadCount > 0) === read)) {
+        const prev = t.unreadCount;
+        patchThread(t.id, { unreadCount: read ? 0 : 1 });
+        patchDetail(t.id, (d) => ({ ...d, messages: d.messages.map((m, i, a) => ({ ...m, isRead: read ? true : i < a.length - 1 })) }));
+        void optimistic(get().backend.setRead(t.id, read), () => patchThread(t.id, { unreadCount: prev }));
+      }
     },
 
-    toggleStar(id) {
-      const t = get().threads.find((x) => x.id === id);
-      if (!t) return;
-      const starred = !t.isStarred;
-      patchThread(id, { isStarred: starred });
-      patchDetail(id, (d) => ({ ...d, isStarred: starred }));
-      void optimistic(get().backend.setStarred(id, starred), () => patchThread(id, { isStarred: !starred }), "Action impossible", () => {
-        // Dans la vue « Suivis », retirer l'étoile fait sortir la conversation de la liste.
-        if (!starred && get().view.kind === "starred") get().select(visibleThreads(get()).find((x) => x.id !== id && x.isStarred)?.id ?? null);
+    toggleStar(ids) {
+      const list = threadsOf(ids);
+      const starred = list.some((t) => !t.isStarred); // un lot mixte est suivi en entier ; sinon on ne suit plus
+      for (const t of list.filter((t) => t.isStarred !== starred)) {
+        patchThread(t.id, { isStarred: starred });
+        patchDetail(t.id, (d) => ({ ...d, isStarred: starred }));
+        void optimistic(get().backend.setStarred(t.id, starred), () => patchThread(t.id, { isStarred: !starred }), "Action impossible", () => {
+          // Dans la vue « Suivis », retirer l'étoile fait sortir la conversation de la liste.
+          if (!starred && get().view.kind === "starred") get().select(visibleThreads(get()).find((x) => x.id !== t.id && x.isStarred)?.id ?? null);
+        });
+      }
+    },
+
+    moveTo(ids, to) {
+      const s = get();
+      const dest = DESTINATIONS[to];
+      const moves = toIds(ids).flatMap((id) => {
+        const thread = s.threads.find((t) => t.id === id);
+        const from = thread && sourceFolder(s, thread);
+        return from && from.role !== to ? [{ id, from: from.id }] : [];
+      });
+      if (moves.length === 0) return s.toast({ message: dest.already });
+
+      hideAndAdvance(moves.map((m) => m.id));
+      // Exécuté aussitôt (comme Gmail ou Apple Mail) : l'annulation fait l'opération inverse.
+      void settleBatch(moves, (m) => get().backend.moveThread(m.id, m.from, to)).then(({ done, failed, reason }) => {
+        setHidden(failed.map((m) => m.id), false);
+        if (done.length > 0) {
+          dropThreads(done.map((m) => m.id));
+          get().toast({ message: done.length === 1 ? dest.done : `${done.length} conversations ${dest.doneMany}` });
+        }
+        if (failed.length > 0) fail(dest.failed, reason);
       });
     },
 
-    moveTo(id, to) {
-      const s = get();
-      const thread = s.threads.find((t) => t.id === id);
-      if (!thread) return;
-      const dest = DESTINATIONS[to];
-      const from = sourceFolder(s, thread);
-      if (!from) return s.toast({ message: "Dossier d'origine introuvable.", tone: "error" });
-      if (from.role === to) return s.toast({ message: dest.already });
-
-      // Sélection suivante avant masquage : l'écran ne se vide jamais.
-      const list = visibleThreads(s);
-      const i = list.findIndex((t) => t.id === id);
-      const next = list[i + 1] ?? list[i - 1];
-      setHidden(id, true);
-      if (s.selectedId === id) get().select(next ? next.id : null);
-
-      // Exécuté aussitôt (comme Gmail ou Apple Mail) : l'annulation fait l'opération inverse.
-      get().backend.moveThread(id, from.id, to).then(
-        (receipt) => {
-          set((cur) => ({ threads: cur.threads.filter((t) => t.id !== id) }));
-          scheduleFolders();
-          lastMove = receipt;
-          get().toast({ message: dest.done, ...(receipt && { actionLabel: "Annuler", onAction: () => void get().undo() }), duration: 6000 });
-        },
-        (e) => { setHidden(id, false); fail(dest.failed, e); },
-      );
-    },
-
-    async deleteForever(id) {
-      if (!isPurgeView(get().view) || !get().threads.some((t) => t.id === id)) return;
-      if (!(await get().backend.confirm("Supprimer définitivement cette conversation ? Cette action est irréversible.", "Supprimer"))) return;
+    async deleteForever(ids) {
+      if (!isPurgeView(get().view)) return;
+      const count = (list: readonly number[]) => list.filter((id) => get().threads.some((t) => t.id === id)).length;
+      const n = count(toIds(ids));
+      if (n === 0) return;
+      const what = n === 1 ? "cette conversation" : `ces ${n} conversations`;
+      if (!(await get().backend.confirm(`Supprimer définitivement ${what} ? Cette action est irréversible.`, "Supprimer"))) return;
       // L'état a pu changer pendant la boîte de dialogue : on repart de l'état courant.
       const s = get();
-      const thread = s.threads.find((t) => t.id === id);
-      const from = thread && sourceFolder(s, thread);
-      if (!thread || !from || !isPurgeView(s.view)) return;
-      const list = visibleThreads(s);
-      const i = list.findIndex((t) => t.id === id);
-      const next = list[i + 1] ?? list[i - 1];
-      setHidden(id, true);
-      if (s.selectedId === id) get().select(next ? next.id : null);
-      void optimistic(get().backend.deleteThread(id, from.id), () => setHidden(id, false), "Suppression impossible", () => {
-        set((cur) => ({ threads: cur.threads.filter((t) => t.id !== id) }));
-        get().toast({ message: "Conversation supprimée définitivement" });
+      const deletes = toIds(ids).flatMap((id) => {
+        const thread = s.threads.find((t) => t.id === id);
+        const from = thread && sourceFolder(s, thread);
+        return from && isPurgeView(s.view) ? [{ id, from: from.id }] : [];
       });
+      if (deletes.length === 0) return;
+      hideAndAdvance(deletes.map((d) => d.id));
+      const { done, failed, reason } = await settleBatch(deletes, (d) => get().backend.deleteThread(d.id, d.from));
+      setHidden(failed.map((d) => d.id), false);
+      if (done.length > 0) {
+        dropThreads(done.map((d) => d.id));
+        get().toast({ message: done.length === 1 ? "Conversation supprimée définitivement" : `${done.length} conversations supprimées définitivement` });
+      }
+      if (failed.length > 0) fail("Suppression impossible", reason);
     },
 
     async emptyView() {
@@ -364,19 +456,6 @@ export const useMail = create<State>((set, get) => {
         fail("Impossible de vider", e);
       } finally {
         void get().reload({ silent: true }); // même en cas d'échec : des dossiers ont pu être vidés avant l'erreur
-      }
-    },
-
-    async undo() {
-      const receipt = lastMove;
-      if (!receipt) return;
-      lastMove = null;
-      try {
-        await get().backend.undoMove(receipt);
-        get().toast({ message: "Action annulée", duration: 2200 });
-        void get().reload({ silent: true });
-      } catch (e) {
-        fail("Annulation impossible", e);
       }
     },
 
