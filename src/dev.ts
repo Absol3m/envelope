@@ -23,7 +23,10 @@ export function applyDevParams() {
       ...(q.get("onboarding") && { needsOnboarding: true }),
     });
     const compose = q.get("compose");
-    if (compose === "new") useComposer.getState().compose();
+    if (compose === "new") {
+      useComposer.getState().compose();
+      if (q.get("attach")) useComposer.getState().update({ attachments: [{ id: "1", name: "Devis-refonte-site-v3.pdf", mimeType: "application/pdf", size: 482_000, dataBase64: "" }, { id: "2", name: "photo.jpg", mimeType: "image/jpeg", size: 2_300_000, dataBase64: "" }] });
+    }
     else if (compose === "reply" || compose === "replyAll" || compose === "forward") {
       // Le détail de la conversation arrive après la sélection.
       const wait = setInterval(() => {

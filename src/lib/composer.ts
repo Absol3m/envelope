@@ -1,10 +1,13 @@
 import { create } from "zustand";
-import { draftFrom, emptyDraft, isBlank, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
+import { attachmentError, draftFrom, emptyDraft, isBlank, readAsBase64, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
 import { useMail } from "./store";
 
 /** Fenêtre d'annulation de l'envoi : rien ne part tant qu'elle n'est pas écoulée (comme l'archivage). */
 const UNDO_MS = 5000;
 const SAVED_KEY = "envelope.draft";
+
+/** Forme écrite dans le stockage local : les pièces jointes (volumineuses) n'y sont pas, seuls leurs noms sont gardés. */
+const toSaved = (d: Draft): Draft => ({ ...d, attachments: [], lostAttachments: d.attachments.map((a) => a.name) });
 
 const readSaved = (): Draft | null => {
   try {
@@ -12,12 +15,12 @@ const readSaved = (): Draft | null => {
     if (!raw) return null;
     // Brouillons d'avant l'éditeur riche : `body` (texte) → `html`, et un identifiant.
     const d = JSON.parse(raw) as Draft & { body?: string };
-    return { ...d, id: d.id ?? crypto.randomUUID(), html: d.html ?? textToHtml(d.body ?? "") };
+    return { ...d, id: d.id ?? crypto.randomUUID(), html: d.html ?? textToHtml(d.body ?? ""), attachments: [] };
   } catch { return null; }
 };
 const writeSaved = (d: Draft | null) => {
   try {
-    if (d) localStorage.setItem(SAVED_KEY, JSON.stringify(d)); else localStorage.removeItem(SAVED_KEY);
+    if (d) localStorage.setItem(SAVED_KEY, JSON.stringify(toSaved(d))); else localStorage.removeItem(SAVED_KEY);
   } catch { /* stockage indisponible : le brouillon reste en mémoire */ }
 };
 
@@ -29,6 +32,8 @@ interface ComposerState {
   compose(): void;
   respond(mode: Exclude<ComposeMode, "new">): void;
   update(patch: Partial<Draft>): void;
+  attach(files: File[]): Promise<void>;
+  detach(id: string): void;
   resume(): void;
   /** Ferme le panneau en conservant le brouillon s'il n'est pas vide. */
   close(): void;
@@ -71,12 +76,33 @@ export const useComposer = create<ComposerState>((set, get) => {
 
     update: (patch) => set((s) => (s.draft ? { draft: { ...s.draft, ...patch } } : s)),
 
+    async attach(files) {
+      const d = get().draft;
+      if (!d || !files.length) return;
+      const error = attachmentError(d.attachments, files);
+      if (error) return toast(error, "error", 5000);
+      try {
+        // Lecture fichier par fichier : un seul contenu en transit à la fois, les pastilles apparaissent au fur et à mesure.
+        for (const f of files) {
+          const added = { id: crypto.randomUUID(), name: f.name, mimeType: f.type || "application/octet-stream", size: f.size, dataBase64: await readAsBase64(f) };
+          // Le panneau a pu changer pendant la lecture : on rattache au brouillon d'origine seulement.
+          if (get().draft?.id !== d.id) return;
+          set((cur) => (cur.draft ? { draft: { ...cur.draft, attachments: [...cur.draft.attachments, added] } } : cur));
+        }
+      } catch (e) {
+        toast(`Pièce jointe impossible — ${String(e)}`, "error");
+      }
+    },
+
+    detach: (id) => set((s) => (s.draft ? { draft: { ...s.draft, attachments: s.draft.attachments.filter((a) => a.id !== id) } } : s)),
+
     resume() {
       const saved = get().saved;
       if (!saved) return;
       set({ saved: null });
       writeSaved(null);
-      open(saved);
+      open({ ...saved, lostAttachments: undefined });
+      if (saved.lostAttachments?.length) toast(`Pièces jointes à rejoindre : ${saved.lostAttachments.join(", ")}`, "default", 6000);
     },
 
     close() {

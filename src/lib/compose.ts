@@ -7,6 +7,18 @@ export interface Recipient {
   address: string;
   name?: string | null;
 }
+/** Pièce jointe en mémoire (contenu en base64, jamais écrit sur disque ni dans le brouillon local). */
+export interface AttachmentDraft {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  dataBase64: string;
+}
+/** Même limite que le serveur d'envoi (Rust, `smtp.rs`) : à garder alignées. 25 Mo cumulés, 20 fichiers. */
+export const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 20;
+
 export interface Draft {
   /** Identifie le brouillon : l'éditeur est recréé quand il change. */
   id: string;
@@ -18,6 +30,9 @@ export interface Draft {
   subject: string;
   /** Corps au format HTML produit par l'éditeur riche. */
   html: string;
+  attachments: AttachmentDraft[];
+  /** Brouillon relu depuis le stockage local : noms des pièces jointes qui n'y sont pas conservées. */
+  lostAttachments?: string[];
   inReplyTo?: string;
   references: string[];
 }
@@ -65,13 +80,35 @@ export function toOutgoing(d: Draft): OutgoingMessage {
     bodyHtml: emailHtml(d.html),
     inReplyTo: d.inReplyTo,
     references: d.references,
+    attachments: d.attachments.map((a) => ({ filename: a.name, mimeType: a.mimeType, dataBase64: a.dataBase64 })),
   };
 }
 
-export const isBlank = (d: Draft) => !d.to.length && !d.cc.length && !d.bcc.length && !d.subject.trim() && !htmlToPlain(d.html);
+/** Vérifie qu'ajouter `files` reste dans les limites ; renvoie le message d'erreur sinon. */
+export function attachmentError(current: AttachmentDraft[], files: { name: string; size: number }[]): string | null {
+  if (current.length + files.length > MAX_ATTACHMENTS) return `Trop de pièces jointes (maximum ${MAX_ATTACHMENTS}).`;
+  const total = [...current, ...files].reduce((n, f) => n + f.size, 0);
+  if (total > MAX_ATTACHMENTS_BYTES) return `Pièces jointes trop volumineuses : ${Math.round(MAX_ATTACHMENTS_BYTES / 1024 / 1024)} Mo au total au maximum.`;
+  return null;
+}
+
+/** Contenu d'un fichier en base64 (sans préfixe data:). */
+export function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const url = String(r.result);
+      resolve(url.slice(url.indexOf(",") + 1));
+    };
+    r.onerror = () => reject(new Error(`lecture impossible : ${file.name}`));
+    r.readAsDataURL(file);
+  });
+}
+
+export const isBlank = (d: Draft) => !d.to.length && !d.cc.length && !d.bcc.length && !d.subject.trim() && !d.attachments.length && !htmlToPlain(d.html);
 
 export function emptyDraft(accountId: string): Draft {
-  return { id: crypto.randomUUID(), accountId, mode: "new", to: [], cc: [], bcc: [], subject: "", html: "", references: [] };
+  return { id: crypto.randomUUID(), accountId, mode: "new", to: [], cc: [], bcc: [], subject: "", html: "", attachments: [], references: [] };
 }
 
 const PREFIX = /^\s*((re|tr|fwd?|fw)\s*:\s*)+/i;

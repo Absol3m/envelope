@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
-import { draftFrom, emailHtml, formatRecipient, htmlToPlain, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
+import { attachmentError, draftFrom, emailHtml, formatRecipient, htmlToPlain, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
   id: 1, messageId: "m1@x", references: [] as string[], folderId: 1, subject: "Budget", fromName: "Alice", fromAddr: "alice@x.fr",
@@ -45,6 +45,19 @@ describe("corps HTML", () => {
     const d = draftFrom("reply", thread([msg({ bodyText: null, bodyHtml: '<style>p{}</style><p>ok<img src="https://track/x.gif"><script>1</script></p>' })]), "me@x.fr");
     expect(d.html).not.toMatch(/img|script|style|track/);
     expect(d.html).toContain("ok");
+  });
+});
+
+describe("pièces jointes", () => {
+  const a = (size: number) => ({ id: String(size), name: "f", mimeType: "x/y", size, dataBase64: "" });
+  it("accepte dans la limite, refuse au-delà de 25 Mo cumulés ou de 20 fichiers", () => {
+    expect(attachmentError([a(1)], [{ name: "b", size: 1000 }])).toBeNull();
+    expect(attachmentError([a(20 * 1024 * 1024)], [{ name: "b", size: 6 * 1024 * 1024 }])).toMatch(/25 Mo/);
+    expect(attachmentError(Array.from({ length: 20 }, () => a(1)), [{ name: "b", size: 1 }])).toMatch(/Trop/);
+  });
+  it("part avec le message, au format attendu par le serveur", () => {
+    const d = { ...draftFrom("forward", thread(), "me@x.fr"), attachments: [{ id: "1", name: "devis.pdf", mimeType: "application/pdf", size: 3, dataBase64: "AAEC" }] };
+    expect(toOutgoing(d).attachments).toEqual([{ filename: "devis.pdf", mimeType: "application/pdf", dataBase64: "AAEC" }]);
   });
 });
 
