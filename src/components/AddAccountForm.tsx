@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Detected, OAuthProviderId, OAuthStatus, ServerConfig } from "@/lib/api";
+import { isEmail } from "@/lib/compose";
 import { OAUTH_INFO } from "@/lib/providers";
 import { useMail } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { btnGhost, btnPrimary, inputCls, Spinner } from "./ui/primitives";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const SOURCES: Record<Detected["source"], string> = {
   builtin: "fournisseur connu",
   autoconfig: "configuration du fournisseur",
@@ -36,7 +36,7 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
   useEffect(() => {
     setDetected(null);
     setForcePassword(false);
-    if (!EMAIL_RE.test(addr)) return;
+    if (!isEmail(addr)) return;
     let stale = false;
     setDetecting(true);
     const t = setTimeout(() => {

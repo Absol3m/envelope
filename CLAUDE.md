@@ -8,7 +8,7 @@
 
 ## Workflow
 - Après chaque développement (fonctionnalité, correctif, refactor), lancer le skill `simplify` sur les changements avant de conclure, puis relancer les vérifications ci-dessus.
-- Tout ce qui est mis de côté (suggestion de revue non appliquée, refactor reporté, limite connue, piste non vérifiée) fait l'objet d'une issue GitHub (`gh issue create`), regroupée par thème. Ne jamais écarter quelque chose sans trace.
+- Tout ce qui est mis de côté (suggestion de revue non appliquée, refactor reporté, limite connue, piste non vérifiée) fait l'objet d'une issue GitHub (`gh issue create`), regroupée par thème. Ne jamais écarter quelque chose sans trace : créer l'issue avant de conclure (sans attendre un rappel), y inclure les remarques mineures écartées, et citer son numéro dans la réponse.
 
 ## Architecture
 - `src-tauri/` : application (workspace Cargo). `crates/envelope-core` : requêtes de lecture partagées (recherche, threads). `crates/envelope-mcp` : serveur MCP séparé, lecture seule sur la base ; les actions IMAP (archiver, étiqueter) passeront par l'application (temps 2).

@@ -103,7 +103,9 @@ export const useComposer = create<ComposerState>((set, get) => {
           pendingSend = null;
           try {
             const report = await useMail.getState().backend.sendEmail(draft.accountId, toOutgoing(draft));
-            toast(report.savedToSent === false ? `Message envoyé, mais la copie dans « Envoyés » a échoué — ${report.sentError ?? "cause inconnue"}` : "Message envoyé", report.savedToSent === false ? "error" : "default", report.savedToSent === false ? 8000 : undefined);
+            const failure = typeof report.sentCopy === "object" ? report.sentCopy.failed : null;
+            if (failure === null) toast("Message envoyé");
+            else toast(`Message envoyé, mais la copie dans « Envoyés » a échoué — ${failure}`, "error", 8000);
           } catch (e) {
             open(draft); // rien n'est perdu : le message revient dans le panneau
             toast(`Envoi impossible — ${String(e)}`, "error", 7000);

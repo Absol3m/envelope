@@ -1,3 +1,4 @@
+import { sanitizeFragment } from "./sanitize";
 import type { Addr, DetailMessage, OutgoingMessage, ThreadDetail } from "./api";
 
 export type ComposeMode = "new" | "reply" | "replyAll" | "forward";
@@ -87,13 +88,6 @@ export function textToHtml(text: string): string {
     .join("");
 }
 
-/** HTML reçu → fragment sûr à citer : sans script, style ni image (les balises inconnues sont de toute façon écartées par l'éditeur). */
-function quotable(html: string): string {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  doc.querySelectorAll("script,style,head,img,iframe,object,embed,link,meta,form").forEach((n) => n.remove());
-  return doc.body.innerHTML;
-}
-
 /** HTML de l'éditeur → texte brut lisible : listes à tirets, citations préfixées par « > », liens avec leur adresse. */
 export function htmlToPlain(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -116,7 +110,6 @@ export function htmlToPlain(html: string): string {
         const text = inner();
         return href && href !== text && href !== `mailto:${text}` ? `${text} (${href})` : text;
       }
-      case "SCRIPT": case "STYLE": return "";
       default: return inner();
     }
   };
@@ -127,13 +120,12 @@ const MAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,s
 /** HTML du message tel qu'il part : styles en ligne (les clients mail ignorent les feuilles de style). */
 export function emailHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
-  doc.querySelectorAll("p,h2,h3").forEach((n) => ((n as HTMLElement).style.margin = "0 0 12px"));
-  doc.querySelectorAll("ul,ol").forEach((n) => ((n as HTMLElement).style.margin = "0 0 12px"));
+  doc.querySelectorAll("p,h2,h3,ul,ol").forEach((n) => ((n as HTMLElement).style.margin = "0 0 12px"));
   doc.querySelectorAll("blockquote").forEach((n) => ((n as HTMLElement).style.cssText = "margin:0 0 12px 4px;padding-left:12px;border-left:2px solid #c9c9d1;color:#555"));
   return `<div style="font-family:${MAIL_FONT};font-size:14px;line-height:1.55">${doc.body.innerHTML}</div>`;
 }
 
-const bodyHtmlOf = (m: DetailMessage) => (m.bodyHtml?.trim() ? quotable(m.bodyHtml) : m.bodyText?.trim() ? textToHtml(m.bodyText) : "");
+const bodyHtmlOf = (m: DetailMessage) => (m.bodyHtml?.trim() ? sanitizeFragment(m.bodyHtml) : m.bodyText?.trim() ? textToHtml(m.bodyText) : "");
 
 const who = (name: string | null | undefined, address: string) => (name ? `${name} <${address}>` : address);
 const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { dateStyle: "full", timeStyle: "short" });

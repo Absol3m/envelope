@@ -1,4 +1,4 @@
-import type { Account, Backend, Detected, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, Detected, SendReport, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
@@ -234,7 +234,7 @@ export const demoBackend: Backend = {
       150,
     );
   },
-  sendEmail: () => delay({ savedToSent: null, sentError: null }, 400),
+  sendEmail: () => delay<SendReport>({ sentCopy: "server" }, 400),
   suggestContacts: (_account, query) => {
     const q = query.toLowerCase();
     const seen = new Map<string, { name: string | null; address: string }>();

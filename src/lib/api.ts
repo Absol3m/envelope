@@ -116,10 +116,10 @@ export interface OutgoingMessage {
   inReplyTo?: string;
   references: string[];
 }
-/** `savedToSent` : null si le serveur range lui-même le message (Gmail), false si la copie a échoué. */
+/** Sort de la copie dans « Envoyés » : déposée, rangée par le serveur (Gmail) ou impossible (cause). */
+export type SentCopy = "saved" | "server" | { failed: string };
 export interface SendReport {
-  savedToSent: boolean | null;
-  sentError: string | null;
+  sentCopy: SentCopy;
 }
 export interface McpInfo {
   binaryPath: string | null;
