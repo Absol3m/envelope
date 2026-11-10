@@ -269,12 +269,12 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
 }
 
 function EmptyReader() {
-  const items: [string, string][] = [["J / K", "Naviguer"], ["E", "Archiver"], ["S", "Suivre"], ["⌘ K", "Tout faire au clavier"]];
+  const items: [string, string][] = [["J / K", "Naviguer"], ["E", "Archiver"], ["S", "Suivre"], ["⌘ K", "Palette de commandes"]];
   return (
     <div className="anim-fade-in flex h-full flex-col items-center justify-center text-center">
       <span className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-accent/15 to-[#8b5cf6]/15 text-accent"><Mail size={28} strokeWidth={1.5} /></span>
       <p className="text-[15px] font-semibold">Sélectionnez une conversation</p>
-      <p className="mt-1 text-[13px] text-muted">Tout se fait au clavier. Appuyez sur <Kbd>?</Kbd> pour les raccourcis.</p>
+      <p className="mt-1 text-[13px] text-muted">Sélectionnez une conversation. Les raccourcis sont là si vous les voulez : <Kbd>?</Kbd>.</p>
       <div className="mt-6 flex gap-5 text-[12px] text-muted">
         {items.map(([k, label]) => (
           <span key={k} className="flex items-center gap-1.5"><Kbd>{k}</Kbd>{label}</span>

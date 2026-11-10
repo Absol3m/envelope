@@ -1,4 +1,4 @@
-import { Lock, Mail, Sparkles } from "lucide-react";
+import { Lock, Sparkles } from "lucide-react";
 import { useMail } from "@/lib/store";
 import { AddAccountForm } from "./AddAccountForm";
 
@@ -11,9 +11,9 @@ export function Onboarding() {
       <div aria-hidden className="pointer-events-none absolute -top-40 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-gradient-to-br from-accent/25 via-[#8b5cf6]/15 to-transparent blur-3xl" />
       <div className="anim-fade-up relative w-[min(420px,90vw)]">
         <div className="mb-7 text-center">
-          <span className="mx-auto mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-[#8b5cf6] text-white shadow-pop"><Mail size={26} strokeWidth={1.7} /></span>
+          <img src="/icon.svg" alt="" className="mx-auto -mb-1 -mt-4 h-24 w-24" draggable={false} />
           <h1 className="text-[26px] font-semibold tracking-tight">Bienvenue dans Envelope</h1>
-          <p className="mt-1.5 text-[14px] text-muted">Le client mail rapide, local, pensé pour le clavier.</p>
+          <p className="mt-1.5 text-[14px] text-muted">Le client mail rapide, privé et prêt pour vos agents IA.</p>
         </div>
 
         <div className="space-y-3 rounded-2xl bg-elevated p-5 shadow-pop">

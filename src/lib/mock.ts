@@ -1,4 +1,4 @@
-import type { Account, Backend, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, Detected, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
@@ -221,6 +221,20 @@ export const demoBackend: Backend = {
   syncNow: () => delay(undefined, 600),
   addAccount: () => Promise.reject(new Error("Mode démo : l'ajout de compte est désactivé.")),
   addOAuthAccount: () => Promise.reject(new Error("Mode démo : l'ajout de compte est désactivé.")),
+  detectServers: (email) => {
+    const domain = email.split("@")[1]?.toLowerCase() ?? "";
+    const tls = (host: string, port: number) => ({ host, port, security: "tls" as const });
+    const oauth = domain === "gmail.com" ? ("google" as const) : domain === "outlook.com" ? ("microsoft" as const) : null;
+    return delay<Detected>(
+      oauth
+        ? { provider: oauth, imap: tls(`imap.${domain}`, 993), smtp: tls(`smtp.${domain}`, 465), username: email, oauth, source: "builtin" }
+        : { provider: "imap", imap: tls(`imap.${domain}`, 993), smtp: tls(`smtp.${domain}`, 465), username: email, oauth: null, source: "guess" },
+      150,
+    );
+  },
+  oauthStatus: () => delay({ google: false, microsoft: false }, 10),
+  setOAuthClient: () => Promise.reject(new Error("Mode démo : configuration désactivée.")),
+  clearOAuthClient: () => Promise.resolve(),
   removeAccount: () => Promise.reject(new Error("Mode démo : la suppression de compte est désactivée.")),
   openAttachment: () => delay(undefined, 60),
   inlineImages: () => delay({}, 10),
