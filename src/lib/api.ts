@@ -84,7 +84,25 @@ export interface NewAccount {
   email: string;
   displayName?: string;
   password: string;
+  imap?: ServerConfig;
+  smtp?: ServerConfig;
 }
+export interface ServerConfig {
+  host: string;
+  port: number;
+  security: "tls" | "starttls" | "none";
+}
+/** Serveurs détectés pour une adresse (`source` : builtin | autoconfig | ispdb | mx | guess). */
+export interface Detected {
+  provider: string;
+  imap: ServerConfig;
+  smtp: ServerConfig;
+  username: string;
+  oauth: OAuthProviderId | null;
+  source: "builtin" | "autoconfig" | "ispdb" | "mx" | "guess";
+}
+export type OAuthProviderId = "google" | "microsoft";
+export type OAuthStatus = Record<OAuthProviderId, boolean>;
 export interface McpInfo {
   binaryPath: string | null;
   dbPath: string;
@@ -102,7 +120,11 @@ export interface Backend {
   archive(threadId: number, folderId: number): Promise<void>;
   syncNow(accountId: string): Promise<void>;
   addAccount(input: NewAccount): Promise<Account>;
-  addOAuthAccount(provider: "google" | "microsoft", email: string): Promise<Account>;
+  addOAuthAccount(provider: OAuthProviderId, email: string): Promise<Account>;
+  detectServers(email: string): Promise<Detected>;
+  oauthStatus(): Promise<OAuthStatus>;
+  setOAuthClient(provider: OAuthProviderId, clientId: string, clientSecret?: string): Promise<void>;
+  clearOAuthClient(provider: OAuthProviderId): Promise<void>;
   removeAccount(accountId: string): Promise<void>;
   openAttachment(id: number): Promise<void>;
   inlineImages(messageId: number): Promise<Record<string, string>>;
@@ -123,6 +145,10 @@ export const tauriBackend: Backend = {
   syncNow: (accountId) => invoke("sync_now", { accountId }),
   addAccount: (input) => invoke("add_account", { input }),
   addOAuthAccount: (provider, email) => invoke("add_oauth_account", { provider, email }),
+  detectServers: (email) => invoke("detect_servers", { email }),
+  oauthStatus: () => invoke("oauth_status"),
+  setOAuthClient: (provider, clientId, clientSecret) => invoke("set_oauth_client", { provider, clientId, clientSecret }),
+  clearOAuthClient: (provider) => invoke("clear_oauth_client", { provider }),
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   inlineImages: (messageId) => invoke("inline_images", { messageId }),

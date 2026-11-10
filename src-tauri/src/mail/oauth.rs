@@ -1,9 +1,9 @@
 //! OAuth2 (Authorization Code + PKCE S256, redirection loopback) pour Gmail et Outlook.
 //!
-//! Les identifiants d'application ne sont pas fournis avec le code : il faut enregistrer une
-//! application « bureau » chez le fournisseur et les passer par variables d'environnement :
-//!   `ENVELOPE_GOOGLE_CLIENT_ID` (+ `ENVELOPE_GOOGLE_CLIENT_SECRET` si requis par Google)
-//!   `ENVELOPE_MICROSOFT_CLIENT_ID`
+//! Les identifiants d'application ne sont pas fournis avec le code : chaque utilisateur enregistre
+//! une application « bureau » chez le fournisseur et la saisit dans l'interface (stockée dans le
+//! trousseau de l'OS). Repli pour le développement : variables d'environnement
+//!   `ENVELOPE_GOOGLE_CLIENT_ID` (+ `ENVELOPE_GOOGLE_CLIENT_SECRET`) et `ENVELOPE_MICROSOFT_CLIENT_ID`.
 
 use std::time::Duration;
 
@@ -67,22 +67,49 @@ impl OAuthProvider {
             },
         }
     }
-    fn client_id(self) -> Result<String> {
-        let env = self.config().client_id_env;
-        std::env::var(env)
-            .map_err(|_| AppError::Auth(format!("variable d'environnement {env} manquante")))
-    }
-    /// Champs d'identification d'application communs aux échanges de jetons.
-    fn client_auth(self) -> Result<Vec<(&'static str, String)>> {
-        let mut v = vec![("client_id", self.client_id()?)];
-        if let Some(secret) = self
-            .config()
-            .client_secret_env
-            .and_then(|e| std::env::var(e).ok())
-        {
-            v.push(("client_secret", secret));
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Google => "Google",
+            Self::Microsoft => "Microsoft",
         }
-        Ok(v)
+    }
+    /// Identifiants d'application : trousseau d'abord, puis variables d'environnement.
+    pub fn client(self) -> Result<ClientCreds> {
+        if let Some(c) = account::load_client(self)? {
+            return Ok(c);
+        }
+        let cfg = self.config();
+        let client_id = std::env::var(cfg.client_id_env).map_err(|_| {
+            AppError::Auth(format!(
+                "identifiant client {} non configuré (Réglages › Comptes)",
+                self.label()
+            ))
+        })?;
+        Ok(ClientCreds {
+            client_id,
+            client_secret: cfg.client_secret_env.and_then(|e| std::env::var(e).ok()),
+        })
+    }
+    pub fn is_configured(self) -> bool {
+        self.client().is_ok()
+    }
+}
+
+/// Application OAuth2 « bureau » enregistrée par l'utilisateur chez le fournisseur.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClientCreds {
+    pub client_id: String,
+    pub client_secret: Option<String>,
+}
+
+impl ClientCreds {
+    /// Champs d'identification d'application communs aux échanges de jetons.
+    fn form_fields(&self) -> Vec<(&'static str, String)> {
+        let mut v = vec![("client_id", self.client_id.clone())];
+        if let Some(secret) = &self.client_secret {
+            v.push(("client_secret", secret.clone()));
+        }
+        v
     }
 }
 
@@ -119,7 +146,7 @@ pub async fn authorize(
     open_browser: impl FnOnce(&str) -> Result<()>,
 ) -> Result<OAuthTokens> {
     let cfg = provider.config();
-    let client_id = provider.client_id()?;
+    let client = provider.client()?;
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let redirect_uri = format!("http://127.0.0.1:{}", listener.local_addr()?.port());
 
@@ -128,7 +155,7 @@ pub async fn authorize(
     let state = uuid::Uuid::new_v4().to_string();
 
     let mut params = vec![
-        ("client_id", client_id.as_str()),
+        ("client_id", client.client_id.as_str()),
         ("response_type", "code"),
         ("redirect_uri", redirect_uri.as_str()),
         ("scope", cfg.scope),
@@ -153,7 +180,7 @@ pub async fn authorize(
         ("redirect_uri", redirect_uri),
         ("code_verifier", verifier),
     ];
-    form.extend(provider.client_auth()?);
+    form.extend(client.form_fields());
     let resp = token_request(cfg.token_url, &form).await?;
     Ok(OAuthTokens {
         access_token: resp.access_token,
@@ -234,6 +261,18 @@ fn refresh_lock() -> &'static tokio::sync::Mutex<()> {
     LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
+/// Jeton révoqué ou expiré (Google : 7 jours tant que l'application est en mode « Test »).
+fn explain_refresh_error(e: AppError) -> AppError {
+    match e {
+        AppError::Auth(m) if m.contains("invalid_grant") => AppError::Auth(
+            "autorisation expirée ou révoquée : reconnectez le compte (Google expire les jetons \
+             après 7 jours tant que l'application est en mode « Test »)"
+                .into(),
+        ),
+        e => e,
+    }
+}
+
 /// Jeton d'accès valide pour un compte : rafraîchit et persiste s'il expire dans < 60 s.
 pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Result<String> {
     let _guard = refresh_lock().lock().await; // évite deux rafraîchissements concurrents
@@ -250,8 +289,10 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
         ("refresh_token", refresh.clone()),
         ("scope", cfg.scope.to_string()),
     ];
-    form.extend(provider.client_auth()?);
-    let resp = token_request(cfg.token_url, &form).await?;
+    form.extend(provider.client()?.form_fields());
+    let resp = token_request(cfg.token_url, &form)
+        .await
+        .map_err(explain_refresh_error)?;
     let new = OAuthTokens {
         access_token: resp.access_token,
         refresh_token: resp.refresh_token.or(Some(refresh)), // Google ne renvoie pas toujours le refresh_token

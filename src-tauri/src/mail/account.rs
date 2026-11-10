@@ -40,7 +40,7 @@ impl Security {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
     pub host: String,
@@ -99,16 +99,19 @@ pub struct NewAccount {
     pub smtp: Option<ServerConfig>,
 }
 
+/// Serveurs détectés pour une adresse (voir `mail::autoconfig`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Discovered {
-    pub provider: &'static str,
+    pub provider: String,
     pub imap: ServerConfig,
     pub smtp: ServerConfig,
-}
-
-impl Discovered {
-    pub fn into_servers(self) -> (ServerConfig, ServerConfig) {
-        (self.imap, self.smtp)
-    }
+    /// Identifiant de connexion IMAP/SMTP (souvent l'adresse complète).
+    pub username: String,
+    /// Fournisseur OAuth2 à proposer plutôt qu'un mot de passe.
+    pub oauth: Option<OAuthProvider>,
+    /// Origine : `builtin`, `autoconfig`, `ispdb`, `mx` ou `guess`.
+    pub source: &'static str,
 }
 
 fn srv(host: &str, port: u16, security: Security) -> ServerConfig {
@@ -119,61 +122,105 @@ fn srv(host: &str, port: u16, security: Security) -> ServerConfig {
     }
 }
 
-/// Table de serveurs connus, avec repli `imap.<domaine>` / `smtp.<domaine>`.
-pub fn discover(email: &str) -> Result<Discovered> {
-    let domain = email
-        .rsplit_once('@')
-        .map(|(_, d)| d.trim().to_lowercase())
-        .filter(|d| d.contains('.'))
-        .ok_or_else(|| AppError::Invalid(format!("adresse e-mail invalide : {email}")))?;
-    use Security::*;
-    let (provider, imap, smtp) = match domain.as_str() {
-        "gmail.com" | "googlemail.com" => (
+/// Table de fournisseurs connus : (fournisseur, IMAP, SMTP, OAuth2).
+pub fn known_provider(
+    domain: &str,
+) -> Option<(
+    &'static str,
+    ServerConfig,
+    ServerConfig,
+    Option<OAuthProvider>,
+)> {
+    use Security::{Starttls, Tls};
+    let g = Some(OAuthProvider::Google);
+    let m = Some(OAuthProvider::Microsoft);
+    Some(match domain {
+        "gmail.com" | "googlemail.com" | "google.com" => (
             "gmail",
             srv("imap.gmail.com", 993, Tls),
             srv("smtp.gmail.com", 465, Tls),
+            g,
         ),
         "outlook.com" | "hotmail.com" | "hotmail.fr" | "live.com" | "live.fr" | "msn.com" => (
             "outlook",
             srv("outlook.office365.com", 993, Tls),
             srv("smtp-mail.outlook.com", 587, Starttls),
+            m,
         ),
         "icloud.com" | "me.com" | "mac.com" => (
             "icloud",
             srv("imap.mail.me.com", 993, Tls),
             srv("smtp.mail.me.com", 587, Starttls),
+            None,
         ),
         "yahoo.com" | "yahoo.fr" => (
             "yahoo",
             srv("imap.mail.yahoo.com", 993, Tls),
             srv("smtp.mail.yahoo.com", 465, Tls),
+            None,
         ),
         "fastmail.com" => (
             "fastmail",
             srv("imap.fastmail.com", 993, Tls),
             srv("smtp.fastmail.com", 465, Tls),
+            None,
         ),
         "orange.fr" => (
             "imap",
             srv("imap.orange.fr", 993, Tls),
             srv("smtp.orange.fr", 465, Tls),
+            None,
         ),
         "free.fr" => (
             "imap",
             srv("imap.free.fr", 993, Tls),
             srv("smtp.free.fr", 465, Tls),
+            None,
         ),
-        d => (
-            "imap",
-            srv(&format!("imap.{d}"), 993, Tls),
-            srv(&format!("smtp.{d}"), 465, Tls),
+        // Hébergeurs courants, absents de l'ISPDB : reconnus aussi via le MX d'un domaine perso.
+        "infomaniak.com" | "infomaniak.ch" => (
+            "infomaniak",
+            srv("mail.infomaniak.com", 993, Tls),
+            srv("mail.infomaniak.com", 465, Tls),
+            None,
         ),
-    };
-    Ok(Discovered {
-        provider,
-        imap,
-        smtp,
+        "ovh.net" | "ovh.com" => (
+            "ovh",
+            srv("ssl0.ovh.net", 993, Tls),
+            srv("ssl0.ovh.net", 465, Tls),
+            None,
+        ),
+        "gandi.net" => (
+            "gandi",
+            srv("mail.gandi.net", 993, Tls),
+            srv("mail.gandi.net", 465, Tls),
+            None,
+        ),
+        _ => return None,
     })
+}
+
+/// Serveurs fixes d'un fournisseur OAuth2.
+pub fn oauth_servers(provider: OAuthProvider) -> Result<(ServerConfig, ServerConfig)> {
+    let domain = match provider {
+        OAuthProvider::Google => "gmail.com",
+        OAuthProvider::Microsoft => "outlook.com",
+    };
+    known_provider(domain)
+        .map(|(_, imap, smtp, _)| (imap, smtp))
+        .ok_or_else(|| AppError::Invalid(format!("fournisseur sans serveurs connus : {domain}")))
+}
+
+/// Dernier recours : `imap.<domaine>` / `smtp.<domaine>`.
+pub fn guess(domain: &str, email: &str) -> Discovered {
+    Discovered {
+        provider: "imap".into(),
+        imap: srv(&format!("imap.{domain}"), 993, Security::Tls),
+        smtp: srv(&format!("smtp.{domain}"), 465, Security::Tls),
+        username: email.into(),
+        oauth: None,
+        source: "guess",
+    }
 }
 
 // ---------- Secrets ----------
@@ -197,6 +244,25 @@ pub fn load_oauth(account_id: &str) -> Result<oauth::OAuthTokens> {
     Ok(serde_json::from_str(
         &entry(account_id, OAUTH)?.get_password()?,
     )?)
+}
+/// Identifiants d'application OAuth2 (par fournisseur, partagés par tous les comptes).
+fn client_entry(provider: OAuthProvider) -> Result<keyring::Entry> {
+    entry("oauth-client", provider.as_str())
+}
+pub fn store_client(provider: OAuthProvider, creds: &oauth::ClientCreds) -> Result<()> {
+    Ok(client_entry(provider)?.set_password(&serde_json::to_string(creds)?)?)
+}
+pub fn load_client(provider: OAuthProvider) -> Result<Option<oauth::ClientCreds>> {
+    match client_entry(provider)?.get_password() {
+        Ok(json) => Ok(Some(serde_json::from_str(&json)?)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+pub fn delete_client(provider: OAuthProvider) {
+    if let Ok(e) = client_entry(provider) {
+        let _ = e.delete_credential();
+    }
 }
 pub fn delete_secrets(account_id: &str) {
     for kind in [PASSWORD, OAUTH] {

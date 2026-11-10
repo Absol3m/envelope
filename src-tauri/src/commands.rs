@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
 use crate::mail::actions::{self, Action};
+use crate::mail::autoconfig;
 use crate::mail::imap;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
@@ -42,13 +43,13 @@ pub async fn list_accounts(state: State<'_, AppState>) -> Result<Vec<Account>> {
 #[tauri::command]
 pub async fn add_account(state: State<'_, AppState>, input: NewAccount) -> Result<Account> {
     let email = input.email.trim().to_string();
-    let found = account::discover(&email)?;
+    let found = autoconfig::detect(&email).await?;
     let imap_cfg = input.imap.unwrap_or(found.imap);
     let smtp_cfg = input.smtp.unwrap_or(found.smtp);
     let username = input
         .username
         .filter(|u| !u.is_empty())
-        .unwrap_or_else(|| email.clone());
+        .unwrap_or(found.username);
     let id = Uuid::new_v4().to_string();
 
     account::insert(
@@ -57,7 +58,7 @@ pub async fn add_account(state: State<'_, AppState>, input: NewAccount) -> Resul
             id: &id,
             email: &email,
             display_name: input.display_name.as_deref(),
-            provider: found.provider,
+            provider: &found.provider,
             auth_kind: "password",
             username: &username,
             imap: &imap_cfg,
@@ -105,11 +106,7 @@ pub async fn add_oauth_account(
     .await?;
 
     // Serveurs fixes du fournisseur choisi (le domaine de l'e-mail peut être personnalisé).
-    let (imap_cfg, smtp_cfg) = account::discover(match provider {
-        OAuthProvider::Google => "x@gmail.com",
-        OAuthProvider::Microsoft => "x@outlook.com",
-    })?
-    .into_servers();
+    let (imap_cfg, smtp_cfg) = account::oauth_servers(provider)?;
 
     let id = Uuid::new_v4().to_string();
     account::insert(
@@ -132,6 +129,54 @@ pub async fn add_oauth_account(
     }
     state.sync.start(id.clone());
     account::get(&state.db, &id).await
+}
+
+/// Détecte les serveurs d'une adresse (table intégrée, autoconfig, ISPDB, MX).
+#[tauri::command]
+pub async fn detect_servers(email: String) -> Result<account::Discovered> {
+    autoconfig::detect(&email).await
+}
+
+/// Fournisseurs OAuth2 dont l'application (identifiant client) est configurée.
+#[derive(Serialize)]
+pub struct OAuthStatus {
+    google: bool,
+    microsoft: bool,
+}
+
+#[tauri::command]
+pub fn oauth_status() -> OAuthStatus {
+    OAuthStatus {
+        google: OAuthProvider::Google.is_configured(),
+        microsoft: OAuthProvider::Microsoft.is_configured(),
+    }
+}
+
+#[tauri::command]
+pub fn set_oauth_client(
+    provider: OAuthProvider,
+    client_id: String,
+    client_secret: Option<String>,
+) -> Result<()> {
+    let client_id = client_id.trim().to_string();
+    if client_id.is_empty() {
+        return Err(AppError::Invalid("identifiant client vide".into()));
+    }
+    let client_secret = client_secret
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    account::store_client(
+        provider,
+        &oauth::ClientCreds {
+            client_id,
+            client_secret,
+        },
+    )
+}
+
+#[tauri::command]
+pub fn clear_oauth_client(provider: OAuthProvider) {
+    account::delete_client(provider);
 }
 
 #[tauri::command]
