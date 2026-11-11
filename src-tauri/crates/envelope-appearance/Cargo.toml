@@ -14,4 +14,4 @@ winreg = "0.56"
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.14", default-features = false, features = ["tokio", "settings"] }
 tokio = { version = "1", features = ["time"] }
-dirs = "6"
+dirs = "7"
