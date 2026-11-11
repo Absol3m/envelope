@@ -47,7 +47,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # --- Moteur mail (utilisé à partir de l'étape 2) ---
 mail-parser = "0.11"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "ring", "rustls-platform-verifier", "tokio1", "hostname"] }
-async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
 tokio-rustls = "0.26"
 futures = "0.3"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
