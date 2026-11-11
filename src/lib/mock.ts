@@ -7,8 +7,8 @@ const NOW = Date.now();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
 
 const ACCOUNTS: Account[] = [
-  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2) },
-  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2) },
+  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord" },
+  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "" },
 ];
 
 const ROLES = ["inbox", "drafts", "sent", "archive", "junk", "trash"] as const;
@@ -253,6 +253,11 @@ export const demoBackend: Backend = {
   oauthStatus: () => delay({ google: false, microsoft: false }, 10),
   setOAuthClient: () => Promise.reject(new Error("Mode démo : configuration désactivée.")),
   clearOAuthClient: () => Promise.resolve(),
+  setAccountSignature: (id, signature) => {
+    const a = ACCOUNTS.find((x) => x.id === id);
+    if (a) a.signature = signature;
+    return delay(undefined, 60);
+  },
   removeAccount: () => Promise.reject(new Error("Mode démo : la suppression de compte est désactivée.")),
   openAttachment: () => delay(undefined, 60),
   inlineImages: () => delay({}, 10),

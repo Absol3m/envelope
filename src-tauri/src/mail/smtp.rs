@@ -220,6 +220,7 @@ mod tests {
             last_sync_at: None,
             sync_status: "idle".into(),
             sync_error: None,
+            signature: String::new(),
         }
     }
 

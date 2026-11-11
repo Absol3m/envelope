@@ -196,6 +196,21 @@ pub async fn remove_account(state: State<'_, AppState>, account_id: String) -> R
 }
 
 #[tauri::command]
+pub async fn set_account_signature(
+    state: State<'_, AppState>,
+    account_id: String,
+    signature: String,
+) -> Result<()> {
+    // Texte brut, borné : la signature est insérée telle quelle dans le corps des messages.
+    if signature.chars().count() > 2000 {
+        return Err(AppError::Invalid(
+            "signature trop longue (2000 caractères)".into(),
+        ));
+    }
+    account::set_signature(&state.db, &account_id, signature.trim_end()).await
+}
+
+#[tauri::command]
 pub fn sync_now(state: State<'_, AppState>, account_id: String) {
     state.sync.trigger(&account_id);
 }

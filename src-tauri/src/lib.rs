@@ -119,6 +119,7 @@ pub fn run() {
             commands::set_oauth_client,
             commands::clear_oauth_client,
             commands::remove_account,
+            commands::set_account_signature,
             commands::sync_now,
             commands::list_folders,
             commands::list_messages,

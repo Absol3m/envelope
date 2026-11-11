@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
-import { attachmentError, draftFrom, emailHtml, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
+import { attachmentError, draftFrom, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
   id: 1, messageId: "m1@x", references: [] as string[], folderId: 1, subject: "Budget", fromName: "Alice", fromAddr: "alice@x.fr",
@@ -103,5 +103,25 @@ describe("draftFrom", () => {
   it("retombe sur le texte du HTML quand il n'y a pas de version texte", () => {
     const d = draftFrom("reply", thread([msg({ bodyText: null, bodyHtml: "<p>Salut</p><p>Toi</p>" })]), "me@x.fr");
     expect(d.html).toContain("<blockquote><p>Salut</p><p>Toi</p></blockquote>");
+  });
+});
+
+describe("signature", () => {
+  it("bloc HTML avec séparateur, échappé, vide si pas de signature", () => {
+    expect(signatureHtml("Alex\n<Atelier>")).toBe("<p>--<br>Alex<br>&lt;Atelier&gt;</p>");
+    expect(signatureHtml("  \n ")).toBe("");
+  });
+  it("s'insère dans un nouveau message et sous le curseur d'une réponse, avant la citation", () => {
+    expect(emptyDraft("a", "Alex").html).toBe("<p></p><p>--<br>Alex</p>");
+    expect(emptyDraft("a").html).toBe("");
+    const d = draftFrom("reply", thread([msg({ bodyText: "salut", bodyHtml: null })]), "me@x.fr", "Alex");
+    expect(d.html.indexOf("Alex")).toBeGreaterThan(-1);
+    expect(d.html.indexOf("Alex")).toBeLessThan(d.html.indexOf("<blockquote>"));
+  });
+  it("change avec le compte expéditeur, sans écraser une signature retouchée", () => {
+    const html = `<p>Bonjour</p>${signatureHtml("A")}`;
+    expect(swapSignature(html, "A", "B")).toBe(`<p>Bonjour</p>${signatureHtml("B")}`);
+    expect(swapSignature("<p>Bonjour</p><p>--<br>A modifiée</p>", "A", "B")).toBe("<p>Bonjour</p><p>--<br>A modifiée</p>");
+    expect(swapSignature("", "", "B")).toBe(`<p></p>${signatureHtml("B")}`);
   });
 });

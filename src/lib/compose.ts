@@ -107,14 +107,28 @@ export function readAsBase64(file: File): Promise<string> {
 
 export const isBlank = (d: Draft) => !d.to.length && !d.cc.length && !d.bcc.length && !d.subject.trim() && !d.attachments.length && !htmlToPlain(d.html);
 
-export function emptyDraft(accountId: string): Draft {
-  return { id: crypto.randomUUID(), accountId, mode: "new", to: [], cc: [], bcc: [], subject: "", html: "", attachments: [], references: [] };
+export function emptyDraft(accountId: string, signature = ""): Draft {
+  return { id: crypto.randomUUID(), accountId, mode: "new", to: [], cc: [], bcc: [], subject: "", html: signature ? `<p></p>${signatureHtml(signature)}` : "", attachments: [], references: [] };
 }
 
 const PREFIX = /^\s*((re|tr|fwd?|fw)\s*:\s*)+/i;
 export const withPrefix = (prefix: "Re" | "Fwd", subject: string) => `${prefix}: ${subject.replace(PREFIX, "").trim()}`.trim();
 
 const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** Signature (texte brut) → bloc HTML précédé du séparateur usuel « -- ». Vide si pas de signature. */
+export function signatureHtml(signature: string): string {
+  const text = signature.trim();
+  return text ? `<p>--<br>${escapeHtml(text).replace(/\r?\n/g, "<br>")}</p>` : "";
+}
+
+/** Change de signature quand on change de compte expéditeur : seulement si l'ancienne est encore
+ *  intacte dans le corps (une signature retouchée à la main n'est pas écrasée) ou si le corps est vide. */
+export function swapSignature(html: string, from: string, to: string): string {
+  const old = signatureHtml(from);
+  if (old && html.includes(old)) return html.replace(old, signatureHtml(to));
+  return !htmlToPlain(html) && to.trim() ? `<p></p>${signatureHtml(to)}` : html;
+}
 
 /** Texte brut → paragraphes HTML (lignes vides = nouveaux paragraphes). */
 export function textToHtml(text: string): string {
@@ -183,7 +197,7 @@ const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const toRecipient = (a: Addr): Recipient => ({ address: a.address, name: a.name });
 
 /** Brouillon de réponse / transfert à partir de la conversation. `own` : adresse du compte. */
-export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetail, own: string): Draft {
+export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetail, own: string, signature = ""): Draft {
   const msgs = thread.messages;
   // On répond au dernier message reçu ; si tous sont de nous, au dernier.
   const target = [...msgs].reverse().find((m) => !sameAddr(m.fromAddr, own)) ?? msgs[msgs.length - 1];
@@ -199,7 +213,7 @@ export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetai
       `À : ${target.to.map((a) => who(a.name, a.address)).join(", ")}`,
     ];
     const head = lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("");
-    return { ...base, mode, subject: withPrefix("Fwd", thread.subject), html: `<p></p>${head}${bodyHtmlOf(target)}` };
+    return { ...base, mode, subject: withPrefix("Fwd", thread.subject), html: `<p></p>${signatureHtml(signature)}${head}${bodyHtmlOf(target)}` };
   }
 
   const fromMe = sameAddr(target.fromAddr, own);
@@ -216,7 +230,7 @@ export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetai
     to: primary,
     cc,
     subject: withPrefix("Re", thread.subject),
-    html: `<p></p><p>${escapeHtml(header)}</p><blockquote>${bodyHtmlOf(target)}</blockquote>`,
+    html: `<p></p>${signatureHtml(signature)}<p>${escapeHtml(header)}</p><blockquote>${bodyHtmlOf(target)}</blockquote>`,
     inReplyTo: target.messageId ?? undefined,
     references: [...new Set(refs)],
   };

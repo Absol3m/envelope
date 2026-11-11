@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { ShortcutList } from "./Shortcuts";
 import { AddAccountForm } from "./AddAccountForm";
 import { SETTINGS_LABEL } from "@/lib/platform";
-import { Avatar, btnPrimary, IconButton } from "./ui/primitives";
+import { Avatar, btnPrimary, IconButton, inputCls } from "./ui/primitives";
 
 const TABS: { id: SettingsTab; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { id: "accounts", label: "Comptes", icon: UserRound },
@@ -84,6 +84,36 @@ function Code({ title, text }: { title: string; text: string }) {
 
 // ───────────── Comptes ─────────────
 
+/** Signature d'un compte : enregistrée à la perte du focus, si elle a changé. */
+function SignatureField({ id, email, value }: { id: string; email: string; value: string }) {
+  const { backend, refreshAccounts, toast } = useMail(useShallow((s) => ({ backend: s.backend, refreshAccounts: s.refreshAccounts, toast: s.toast })));
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const save = async () => {
+    if (text.trimEnd() === value) return;
+    try {
+      await backend.setAccountSignature(id, text);
+      await refreshAccounts();
+    } catch (e) {
+      toast({ message: `Signature non enregistrée — ${String(e)}`, tone: "error" });
+    }
+  };
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[12px] text-muted">{email}</span>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => void save()}
+        rows={3}
+        maxLength={2000}
+        placeholder="Aucune signature"
+        className={cn(inputCls, "h-auto resize-y py-2")}
+      />
+    </label>
+  );
+}
+
 function AccountsPanel() {
   const { accounts, backend, reload, toast, init } = useMail(useShallow((s) => ({ accounts: s.accounts, backend: s.backend, reload: s.reload, toast: s.toast, init: s.init })));
   const [removing, setRemoving] = useState<string | null>(null);
@@ -128,6 +158,14 @@ function AccountsPanel() {
           {accounts.length === 0 && <li className="px-3.5 py-6 text-center text-[13px] text-muted">Aucun compte pour l'instant.</li>}
         </ul>
       </Section>
+
+      {accounts.length > 0 && (
+        <Section title="Signatures" hint="Ajoutée aux nouveaux messages et aux réponses, précédée de « -- ». Texte brut.">
+          <div className="space-y-3">
+            {accounts.map((a) => <SignatureField key={a.id} id={a.id} email={a.email} value={a.signature} />)}
+          </div>
+        </Section>
+      )}
 
       {!backend.demo && (
         <Section title="Ajouter un compte" hint="Gmail, iCloud, Yahoo… : utilisez un mot de passe d'application, pas votre mot de passe habituel. Il est stocké dans le trousseau du système.">

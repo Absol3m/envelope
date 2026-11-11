@@ -63,15 +63,15 @@ export const useComposer = create<ComposerState>((set, get) => {
       const { accounts, accountFilter } = useMail.getState();
       const accountId = accountFilter ?? accounts[0]?.id;
       if (!accountId) return toast("Ajoutez d'abord un compte.", "error");
-      open(emptyDraft(accountId));
+      open(emptyDraft(accountId, accounts.find((a) => a.id === accountId)?.signature));
     },
 
     respond(mode) {
       const { selectedId, details, accounts } = useMail.getState();
       const thread = selectedId === null ? undefined : details[selectedId];
-      const own = accounts.find((a) => a.id === thread?.accountId)?.email;
-      if (!thread || !own || !thread.messages.length) return toast("Ouvrez une conversation pour répondre.");
-      open(draftFrom(mode, thread, own));
+      const account = accounts.find((a) => a.id === thread?.accountId);
+      if (!thread || !account || !thread.messages.length) return toast("Ouvrez une conversation pour répondre.");
+      open(draftFrom(mode, thread, account.email, account.signature));
     },
 
     update: (patch) => set((s) => (s.draft ? { draft: { ...s.draft, ...patch } } : s)),

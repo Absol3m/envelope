@@ -12,6 +12,8 @@ export interface Account {
   syncStatus: "idle" | "syncing" | "error";
   syncError: string | null;
   lastSyncAt: string | null;
+  /** Texte brut, inséré dans les nouveaux messages et les réponses. */
+  signature: string;
 }
 export interface FolderRow {
   id: number;
@@ -153,6 +155,7 @@ export interface Backend {
   sendEmail(accountId: string, message: OutgoingMessage): Promise<SendReport>;
   suggestContacts(accountId: string | null, query: string): Promise<Addr[]>;
   removeAccount(accountId: string): Promise<void>;
+  setAccountSignature(accountId: string, signature: string): Promise<void>;
   openAttachment(id: number): Promise<void>;
   inlineImages(messageId: number): Promise<Record<string, string>>;
   mcpInfo(): Promise<McpInfo>;
@@ -194,6 +197,7 @@ export const tauriBackend: Backend = {
   sendEmail: (accountId, message) => invoke("send_email", { accountId, message }),
   suggestContacts: (accountId, query) => invoke("suggest_contacts", { accountId, query }),
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
+  setAccountSignature: (accountId, signature) => invoke("set_account_signature", { accountId, signature }),
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   inlineImages: (messageId) => invoke("inline_images", { messageId }),
   mcpInfo: () => invoke("mcp_info"),

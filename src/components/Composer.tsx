@@ -2,6 +2,7 @@ import { Paperclip, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useComposer } from "@/lib/composer";
+import { swapSignature } from "@/lib/compose";
 import { fileSize } from "@/lib/format";
 import { useMail } from "@/lib/store";
 import { btnPrimary, IconButton, Kbd } from "./ui/primitives";
@@ -55,7 +56,10 @@ export function Composer() {
           <select
             aria-label="Compte expéditeur"
             value={draft.accountId}
-            onChange={(e) => update({ accountId: e.target.value })}
+            onChange={(e) => {
+              const sig = (id: string) => accounts.find((a) => a.id === id)?.signature ?? "";
+              update({ accountId: e.target.value, html: swapSignature(draft.html, sig(draft.accountId), sig(e.target.value)) });
+            }}
             className="min-w-0 flex-1 bg-transparent py-1.5 outline-none"
           >
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.displayName ? `${a.displayName} <${a.email}>` : a.email}</option>)}
@@ -88,7 +92,7 @@ export function Composer() {
           Déposez pour joindre
         </div>
       )}
-      <RichEditor key={draft.id} html={draft.html} onChange={(html) => update({ html })} focusAtStart={replying} />
+      <RichEditor key={`${draft.id}:${draft.accountId}`} html={draft.html} onChange={(html) => update({ html })} focusAtStart={replying} />
 
       {draft.attachments.length > 0 && (
         <ul className="flex max-h-[84px] shrink-0 flex-wrap gap-1.5 overflow-y-auto border-t border-border px-3 py-2" aria-label="Pièces jointes">

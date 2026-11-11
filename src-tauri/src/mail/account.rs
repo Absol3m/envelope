@@ -67,11 +67,12 @@ pub struct Account {
     pub last_sync_at: Option<String>,
     pub sync_status: String,
     pub sync_error: Option<String>,
+    pub signature: String,
 }
 
 pub const ACCOUNT_COLUMNS: &str = "id, email, display_name, provider, auth_kind, username, \
     imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, \
-    last_sync_at, sync_status, sync_error";
+    last_sync_at, sync_status, sync_error, signature";
 
 /// Identifiants résolus, prêts à être présentés à IMAP/SMTP.
 #[derive(Debug, Clone)]
@@ -346,6 +347,18 @@ pub async fn get(pool: &SqlitePool, id: &str) -> Result<Account> {
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("compte {id}")))
+}
+
+pub async fn set_signature(pool: &SqlitePool, id: &str, signature: &str) -> Result<()> {
+    let done = sqlx::query("UPDATE accounts SET signature = ? WHERE id = ?")
+        .bind(signature)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    if done.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("compte {id}")));
+    }
+    Ok(())
 }
 
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
