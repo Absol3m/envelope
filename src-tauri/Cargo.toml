@@ -60,7 +60,7 @@ psl = "2"                 # liste des suffixes publics (domaine enregistrable), 
 utf7-imap = "0.3"         # noms de dossiers IMAP (UTF-7 modifié, RFC 3501)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-manual-roots"] }  # jetons OAuth2, autoconfig, désabonnement ; certificats vérifiés par le système (tls.rs)
 sha2 = "0.10"           # PKCE (S256)
-base64 = "0.22"
+base64 = "0.23"
 dunce = "1"             # chemins Windows sans préfixe \\?\ (ouverture des pièces jointes)
 
 [profile.release]
