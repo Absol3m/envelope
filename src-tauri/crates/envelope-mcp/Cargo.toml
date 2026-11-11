@@ -1,6 +1,7 @@
 [package]
 name = "envelope-mcp"
 version = "0.1.0"
+license = "AGPL-3.0-or-later"
 edition = "2021"
 description = "Serveur MCP d'Envelope : JSON-RPC 2.0 sur stdio, lecture seule de la base locale"
 

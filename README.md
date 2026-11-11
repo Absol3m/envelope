@@ -15,3 +15,9 @@ cargo build --release -p envelope-mcp --manifest-path src-tauri/Cargo.toml
 claude mcp add envelope -- /chemin/vers/envelope-mcp   # --db CHEMIN ou $ENVELOPE_DB si besoin
 ```
 Outils : `list_accounts`, `list_folders`, `search_emails`, `get_thread`, `summarize_thread`. Aucun ne modifie la base ni n'envoie de message ; le contenu des e-mails est signalé comme non fiable.
+
+## Contribuer
+Voir [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Licence
+[GNU AGPL-3.0 ou ultérieure](LICENSE).

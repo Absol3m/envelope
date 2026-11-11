@@ -1,6 +1,7 @@
 [package]
 name = "envelope"
 version = "0.1.0"
+license = "AGPL-3.0-or-later"
 description = "Client mail desktop ultra-rapide avec serveur MCP intégré"
 edition = "2021"
 rust-version = "1.80"

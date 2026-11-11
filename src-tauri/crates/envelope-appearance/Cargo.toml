@@ -1,6 +1,7 @@
 [package]
 name = "envelope-appearance"
 version = "0.1.0"
+license = "AGPL-3.0-or-later"
 edition = "2021"
 description = "Apparence du système hôte (clair/sombre, couleur d'accent, palette du bureau, matière de fenêtre)"
 

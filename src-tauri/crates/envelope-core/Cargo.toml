@@ -1,6 +1,7 @@
 [package]
 name = "envelope-core"
 version = "0.1.0"
+license = "AGPL-3.0-or-later"
 edition = "2021"
 description = "Requêtes de lecture SQLite partagées entre l'application Envelope et le serveur MCP"
 
