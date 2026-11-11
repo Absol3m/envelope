@@ -53,3 +53,24 @@ describe("assainissement des e-mails HTML", () => {
     expect(a.getAttribute("rel")).toBe("noopener noreferrer");
   });
 });
+
+describe("pixels espions et liens", () => {
+  const pixels = `<img src="https://t.test/a.gif" width="1" height="1"><img src="https://t.test/b.gif" style="display: none"><img src="https://t.test/c.gif" height="0"><img src="https://cdn.test/photo.jpg" width="600">`;
+  it("retire les images d'un pixel ou masquées, même quand les images distantes sont autorisées", () => {
+    const allowed = prepareHtml(pixels, { allowRemote: true });
+    expect(allowed.trackers).toBe(3);
+    expect(allowed.srcDoc).toContain("https://cdn.test/photo.jpg");
+    expect(allowed.srcDoc).not.toMatch(/\ssrc="https:\/\/t\.test/);
+    const blocked = prepareHtml(pixels, { allowRemote: false });
+    expect([blocked.trackers, blocked.blocked]).toEqual([3, 1]); // la photo reste bloquée tant qu'on ne l'autorise pas
+  });
+  it("une image locale d'un pixel n'est pas un traqueur", () => {
+    expect(prepareHtml(`<img src="data:image/gif;base64,R0lGOD" width="1" height="1">`, { allowRemote: true }).trackers).toBe(0);
+  });
+  it("affiche la destination des liens au survol, même si l'expéditeur y a mis un autre titre", () => {
+    const b = body(prepareHtml(`<a href="https://evil.test/x">paypal.com</a><a href="https://a.test" title="https://banque.fr">a</a>`, { allowRemote: false }).srcDoc);
+    const [a1, a2] = Array.from(b.querySelectorAll("a"));
+    expect(a1.getAttribute("title")).toBe("https://evil.test/x");
+    expect(a2.getAttribute("title")).toBe("https://a.test");
+  });
+});

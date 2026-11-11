@@ -312,6 +312,7 @@ pub async fn seed_local(db_path: &Path, count: usize) -> Result<()> {
             attachments: vec![],
             unsubscribe: None,
             draft_id: None,
+            auth_fail: None,
         };
         let tid = ingest::store(
             &pool,

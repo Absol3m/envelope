@@ -1,9 +1,10 @@
-import { ChevronDown, File, FileArchive, FileImage, FileText, ImageOff, Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
+import { ChevronDown, File, FileArchive, FileImage, FileText, ImageOff, Mail, MailOpen, Paperclip, ShieldAlert, ShieldCheck, Star, Trash2 } from "lucide-react";
 import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Account, DetailAttachment, DetailMessage, ThreadDetail, ThreadSummary } from "@/lib/api";
 import { displayName, fileSize, fullDate, listDate } from "@/lib/format";
+import { openLink } from "@/lib/links";
 import { prepareHtml, trustedSenders, trustSender } from "@/lib/sanitize";
 import { actionView, useMail } from "@/lib/store";
 import { cn, openExternal } from "@/lib/utils";
@@ -37,7 +38,8 @@ function HtmlFrame({ srcDoc }: { srcDoc: string }) {
         const a = (e.target as Element | null)?.closest?.("a[href]");
         if (a) {
           e.preventDefault();
-          void openExternal(a.getAttribute("href") ?? "");
+          // Destination douteuse (texte trompeur, adresse numérique, lettres imitées) : confirmation avant ouverture.
+          void openLink(a.getAttribute("href") ?? "", a.textContent ?? "");
         }
       });
     };
@@ -60,7 +62,7 @@ function Linkified({ text }: { text: string }) {
     <>
       {parts.map((p, i) =>
         i % 2 === 1 ? (
-          <a key={i} href={p} onClick={(e) => { e.preventDefault(); void openExternal(p); }} className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent">
+          <a key={i} href={p} onClick={(e) => { e.preventDefault(); void openLink(p, p); }} className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent">
             {p}
           </a>
         ) : (
@@ -121,6 +123,9 @@ function MessageBody({ m }: { m: DetailMessage }) {
             <button onClick={() => { trustSender(m.fromAddr); setAllow(true); }} className="press rounded-md px-2 py-1 font-medium text-muted hover:bg-hover hover:text-fg">Toujours pour cet expéditeur</button>
           </div>
         )}
+        {prepared.trackers > 0 && (
+          <p className="mb-2 flex items-center gap-1.5 px-1 text-[12px] text-muted"><ShieldCheck size={13} className="shrink-0 text-success" />{prepared.trackers} traqueur{prepared.trackers > 1 ? "s" : ""} invisible{prepared.trackers > 1 ? "s" : ""} bloqué{prepared.trackers > 1 ? "s" : ""} (image d'un pixel qui signale l'ouverture du message).</p>
+        )}
         <div className="overflow-hidden rounded-xl shadow-card"><HtmlFrame srcDoc={prepared.srcDoc} /></div>
       </div>
     );
@@ -169,6 +174,12 @@ function recipients(m: DetailMessage, me: string): string {
   return names.length ? `à ${names.join(", ")}` : "";
 }
 
+const AUTH_FAIL_TEXT = {
+  dmarc: "Le serveur de réception n'a pas pu confirmer que ce message vient bien du domaine affiché (échec DMARC) : l'adresse a peut-être été usurpée.",
+  spf: "Le message ne vient pas d'un serveur autorisé par le domaine affiché (échec SPF) : l'adresse a peut-être été usurpée.",
+  dkim: "La signature du domaine affiché est invalide (échec DKIM) : le message a pu être modifié ou usurpé.",
+} as const;
+
 function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; atts: DetailAttachment[]; me: string; expanded: boolean; onToggle(): void }) {
   const [details, setDetails] = useState(false);
   const sender = displayName(m.fromName, m.fromAddr);
@@ -202,6 +213,13 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
         </div>
         <time dateTime={m.date} title={fullDate(m.date)} className="tnum shrink-0 pt-0.5 text-[12px] text-muted">{listDate(m.date)}</time>
       </header>
+
+      {m.authFail && (
+        <div role="alert" className="anim-fade-in mt-3 flex items-start gap-2.5 rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-fg">
+          <ShieldAlert size={15} className="mt-px shrink-0 text-danger" />
+          <span><strong className="font-semibold">Expéditeur non vérifié.</strong> {AUTH_FAIL_TEXT[m.authFail]} Ne cliquez pas sur les liens et n'ouvrez pas les pièces jointes sans être sûr de l'origine du message.</span>
+        </div>
+      )}
 
       {details && (
         <dl className="selectable anim-fade-in mt-3 grid grid-cols-[52px_1fr] gap-x-3 gap-y-1 rounded-lg bg-bg-subtle px-3 py-2 text-[12px]">

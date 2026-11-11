@@ -12,7 +12,7 @@ use mail_parser::{Address, HeaderValue, MessageParser, MimeHeaders};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::error::{AppError, Result};
-use crate::mail::unsubscribe;
+use crate::mail::{authres, unsubscribe};
 use envelope_core::thread::Unsubscribe;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -51,6 +51,8 @@ pub struct ParsedMessage {
     pub unsubscribe: Option<Unsubscribe>,
     /// `X-Envelope-Draft-Id` : ce message est un brouillon d'Envelope (voir `mail::drafts`).
     pub draft_id: Option<String>,
+    /// Mécanisme (« dmarc », « spf », « dkim ») dont la vérification a échoué d'après `Authentication-Results`.
+    pub auth_fail: Option<&'static str>,
 }
 
 fn addrs(a: Option<&Address<'_>>) -> String {
@@ -122,6 +124,12 @@ pub fn parse_with(
 ) -> Option<ParsedMessage> {
     let msg = MessageParser::default().parse(raw)?;
     let from = msg.from().and_then(|a| a.first());
+    // Première occurrence = celle de notre serveur de réception (chaque relais ajoute la sienne en tête) ;
+    // `header_raw` renverrait la dernière, forgeable par l'expéditeur.
+    let auth_fail = msg
+        .headers_raw()
+        .find(|(name, _)| name.eq_ignore_ascii_case("Authentication-Results"))
+        .and_then(|(_, value)| authres::failure(value));
     let body_text = msg.body_text(0).map(|c| c.into_owned());
     let body_html = msg.body_html(0).map(|c| c.into_owned());
     let ts = msg
@@ -174,6 +182,7 @@ pub fn parse_with(
         unsubscribe: msg
             .header_raw("List-Unsubscribe")
             .and_then(|l| unsubscribe::parse(l, msg.header_raw("List-Unsubscribe-Post"))),
+        auth_fail,
         draft_id: msg
             .header_raw(super::smtp::DRAFT_ID_HEADER)
             .map(|v| v.trim().to_string())
@@ -334,8 +343,8 @@ pub async fn store_with(
     let res = sqlx::query(
         "INSERT INTO messages (account_id, folder_id, thread_id, uid, message_id, in_reply_to, references_ids, \
          subject, from_name, from_addr, to_addrs, cc_addrs, bcc_addrs, date, snippet, body_text, body_html, \
-         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click, raw_hash, draft_id) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click, raw_hash, draft_id, auth_fail) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
          ON CONFLICT(folder_id, uid) DO NOTHING",
     )
     .bind(account_id)
@@ -364,6 +373,7 @@ pub async fn store_with(
     .bind(m.unsubscribe.as_ref().is_some_and(|u| u.one_click))
     .bind(opts.raw_hash)
     .bind(&m.draft_id)
+    .bind(m.auth_fail)
     .execute(pool)
     .await?;
     if res.rows_affected() == 0 {
@@ -1063,6 +1073,22 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
             .unwrap()
             .unsubscribe
             .is_none());
+    }
+
+    #[test]
+    fn authentication_results_lit_en_tete_seulement() {
+        let mail =
+            |headers: &str| format!("{headers}From: a@b.fr\r\nSubject: x\r\n\r\nhi").into_bytes();
+        // Notre serveur (en tête) signale l'échec ; un « pass » forgé par l'expéditeur plus bas ne l'efface pas.
+        let raw = mail("Authentication-Results: mx.mon-serveur.fr; dmarc=fail header.from=b.fr\r\nAuthentication-Results: faux.test; dmarc=pass\r\n");
+        assert_eq!(parse(&raw, None).unwrap().auth_fail, Some("dmarc"));
+        assert_eq!(parse(&mail(""), None).unwrap().auth_fail, None);
+        assert_eq!(
+            parse(&mail("Authentication-Results: mx; dmarc=pass\r\n"), None)
+                .unwrap()
+                .auth_fail,
+            None
+        );
     }
 
     #[test]

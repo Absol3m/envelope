@@ -222,6 +222,7 @@ struct RawDetailMessage {
     unsub_url: Option<String>,
     unsub_mailto: Option<String>,
     unsub_one_click: bool,
+    auth_fail: Option<String>,
 }
 
 /// Moyens de désabonnement d'une liste de diffusion, tirés des en-têtes List-Unsubscribe.
@@ -256,6 +257,8 @@ pub struct DetailMessage {
     pub is_read: bool,
     pub is_starred: bool,
     pub unsubscribe: Option<Unsubscribe>,
+    /// Vérification d'identité de l'expéditeur échouée (« dmarc », « spf », « dkim ») : possible usurpation.
+    pub auth_fail: Option<String>,
 }
 
 impl From<RawDetailMessage> for DetailMessage {
@@ -278,6 +281,7 @@ impl From<RawDetailMessage> for DetailMessage {
             body_html: m.body_html,
             is_read: m.is_read,
             is_starred: m.is_starred,
+            auth_fail: m.auth_fail,
             unsubscribe: (m.unsub_url.is_some() || m.unsub_mailto.is_some()).then_some(
                 Unsubscribe {
                     url: m.unsub_url,
@@ -324,7 +328,7 @@ pub async fn get_thread_detail(pool: &SqlitePool, thread_id: i64) -> Result<Opti
     };
 
     let raw: Vec<RawDetailMessage> = sqlx::query_as(
-        "SELECT id, message_id, references_ids, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred, unsub_url, unsub_mailto, unsub_one_click \
+        "SELECT id, message_id, references_ids, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred, unsub_url, unsub_mailto, unsub_one_click, auth_fail \
          FROM messages WHERE id IN (SELECT MIN(id) FROM messages WHERE thread_id = ?1 GROUP BY COALESCE(message_id, 'id:' || id)) \
          ORDER BY date, id",
     )

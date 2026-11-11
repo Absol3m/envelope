@@ -104,6 +104,8 @@ export interface DetailMessage {
   isStarred: boolean;
   /** Désabonnement proposé par l'expéditeur (en-têtes List-Unsubscribe). */
   unsubscribe: Unsubscribe | null;
+  /** Vérification d'identité de l'expéditeur échouée d'après le serveur de réception (« dmarc », « spf », « dkim ») : possible usurpation. */
+  authFail: "dmarc" | "spf" | "dkim" | null;
 }
 export interface Unsubscribe {
   url: string | null;

@@ -6,19 +6,38 @@ import DOMPurify from "dompurify";
    3. Le résultat vit dans une iframe `sandbox` (sans scripts) avec une CSP qui interdit tout chargement
       réseau hors images explicitement autorisées. */
 
-const ctx = { allowRemote: false, blocked: 0 };
+const ctx = { allowRemote: false, blocked: 0, trackers: 0 };
+
+/** Image de 0 ou 1 pixel, ou masquée : elle ne sert qu'à signaler que le message a été ouvert. */
+function isTrackingPixel(img: HTMLImageElement): boolean {
+  const px = (v: string | null) => (v === null || v.trim() === "" ? NaN : parseFloat(v));
+  const w = px(img.getAttribute("width")), h = px(img.getAttribute("height"));
+  if (w <= 1 || h <= 1) return true;
+  const style = (img.getAttribute("style") ?? "").replace(/\s+/g, "").toLowerCase();
+  return /(^|;)((max-)?(width|height):[01](px)?|display:none|visibility:hidden)(;|!|$)/.test(style);
+}
 
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node instanceof HTMLImageElement) {
     const src = node.getAttribute("src") ?? "";
-    if (/^(https?:)?\/\//i.test(src) && !ctx.allowRemote) {
-      node.setAttribute("data-blocked-src", src);
-      node.removeAttribute("src");
-      ctx.blocked++;
+    if (/^(https?:)?\/\//i.test(src)) {
+      if (isTrackingPixel(node)) {
+        // Jamais chargé, même quand l'utilisateur autorise les images : il n'y a rien à voir.
+        node.setAttribute("data-tracker-src", src);
+        node.removeAttribute("src");
+        ctx.trackers++;
+      } else if (!ctx.allowRemote) {
+        node.setAttribute("data-blocked-src", src);
+        node.removeAttribute("src");
+        ctx.blocked++;
+      }
     }
     node.removeAttribute("srcset");
   }
   if (node.tagName === "A") {
+    // La vraie destination s'affiche au survol (infobulle du système) ; un titre fourni par l'expéditeur est écrasé :
+    // il pourrait annoncer une autre adresse que celle du lien.
+    if (node.getAttribute("href")) node.setAttribute("title", node.getAttribute("href") ?? "");
     node.setAttribute("target", "_blank");
     node.setAttribute("rel", "noopener noreferrer");
   }
@@ -40,6 +59,8 @@ export interface Prepared {
   srcDoc: string;
   /** Nombre d'images distantes neutralisées (0 si autorisées ou absentes). */
   blocked: number;
+  /** Pixels espions (images de 0/1 pixel ou masquées) retirés, que les images soient autorisées ou non. */
+  trackers: number;
 }
 
 /** `cid` : images « inline » du message (identifiant de contenu → data URL). */
@@ -47,12 +68,14 @@ export function prepareHtml(html: string, opts: { allowRemote: boolean; cid?: Re
   const withCid = opts.cid ? html.replace(/cid:([^"'\s>)]+)/gi, (m, id: string) => opts.cid?.[id] ?? m) : html;
   ctx.allowRemote = opts.allowRemote;
   ctx.blocked = 0;
+  ctx.trackers = 0;
   const clean = DOMPurify.sanitize(withCid, { FORBID_TAGS, FORBID_ATTR: ["srcset", "ping"] });
   const img = opts.allowRemote ? "img-src data: https: http:" : "img-src data:";
   const csp = `default-src 'none'; ${img}; style-src 'unsafe-inline'; font-src data:`;
   return {
     srcDoc: `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${BASE_CSS}</style></head><body>${clean}</body></html>`,
     blocked: ctx.blocked,
+    trackers: ctx.trackers,
   };
 }
 

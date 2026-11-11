@@ -34,7 +34,7 @@ let nextMsg = 1;
 let nextAtt = 1;
 const me = (acct: string) => ({ name: "Alex Morel", address: ACCOUNTS.find((a) => a.id === acct)!.email });
 
-function msg(p: { from: [string | null, string]; to?: [string | null, string][]; cc?: [string | null, string][]; at: number; text?: string; html?: string; read?: boolean; subject: string; folder?: number; unsubscribe?: DetailMessage["unsubscribe"] }): DetailMessage {
+function msg(p: { from: [string | null, string]; to?: [string | null, string][]; cc?: [string | null, string][]; at: number; text?: string; html?: string; read?: boolean; subject: string; folder?: number; unsubscribe?: DetailMessage["unsubscribe"]; authFail?: DetailMessage["authFail"] }): DetailMessage {
   return {
     id: nextMsg++,
     messageId: `demo-${nextMsg}@envelope.local`,
@@ -51,6 +51,7 @@ function msg(p: { from: [string | null, string]; to?: [string | null, string][];
     isRead: p.read ?? true,
     isStarred: false,
     unsubscribe: p.unsubscribe ?? null,
+    authFail: p.authFail ?? null,
   };
 }
 const att = (messageId: number, filename: string, mimeType: string, size: number): DetailAttachment => ({
@@ -103,6 +104,11 @@ add("pro", "inbox", [msg({
 add("pro", "inbox", [msg({
   subject: "La Lettre du matin : l'IA dans la boîte mail, vraiment utile ?", from: ["La Lettre Tech", "newsletter@lalettretech.fr"], to: [proMe], at: 55, read: false, unsubscribe: { url: "https://lalettretech.fr/desabo/42", mailto: null, oneClick: true },
   html: `<div style="font-family:Georgia,'Times New Roman',serif;max-width:560px;margin:0 auto;color:#222"><img src="https://images.lalettretech.fr/hero/2026-11-09.jpg" alt="" width="560" style="width:100%;border-radius:10px;background:#eee;min-height:120px"/><img src="${svg("#6d5dfc","#2fb1e8","MCP")}" alt="MCP" width="560" style="width:100%;border-radius:10px;margin-top:16px"/><h1 style="font-size:26px;line-height:1.2;margin:20px 0 8px">L'IA dans la boîte mail : gadget ou vraie révolution ?</h1><p style="color:#666;margin:0 0 18px">Lundi 9 novembre · 6 min de lecture</p><p style="font-size:16px;line-height:1.6">Résumés automatiques, réponses suggérées, tri intelligent… Les clients mail sont devenus le premier terrain d'expérimentation des agents. Mais qui contrôle vraiment ce que l'agent lit — et envoie — en votre nom ?</p><p style="font-size:16px;line-height:1.6">Dans cette édition : le protocole <strong>MCP</strong> expliqué simplement, trois outils open source à essayer cette semaine, et pourquoi le contenu d'un e-mail doit toujours être traité comme <em>non fiable</em>.</p><p><a href="https://lalettretech.fr/edition/212" style="display:inline-block;background:#111;color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-family:Helvetica,Arial,sans-serif;font-size:14px">Lire l'édition complète →</a></p><p style="color:#999;font-size:12px;font-family:Helvetica,Arial,sans-serif;margin-top:32px">Vous recevez cet e-mail car vous êtes abonné. <a href="https://lalettretech.fr/unsub" style="color:#999">Se désabonner</a></p></div>`,
+})]);
+// 7b — Faux message de banque (usurpation : DMARC en échec, lien dont le texte annonce un autre site, pixel espion)
+add("perso", "inbox", [msg({
+  subject: "Action requise : votre compte sera suspendu", from: ["Service Sécurité", "securite@banque-exemple.fr"], to: [persoMe], at: 70, read: false, authFail: "dmarc",
+  html: `<div style="font-family:Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;color:#222"><p>Bonjour,</p><p>Une activité inhabituelle a été détectée sur votre compte. Vérifiez votre identité dans les 24 h : <a href="https://verification-compte.example.net/login">www.banque-exemple.fr/verification</a></p><img src="https://pixel.example.net/o.gif" width="1" height="1" alt=""/></div>`,
 })]);
 // 8 — Hebdo Rust (pro, newsletter, HTML sans image distante)
 add("pro", "inbox", [msg({
