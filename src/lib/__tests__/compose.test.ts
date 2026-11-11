@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
-import { attachmentError, draftFrom, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
+import type { Draft } from "../compose";
+import { attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
   id: 1, messageId: "m1@x", references: [] as string[], folderId: 1, subject: "Budget", fromName: "Alice", fromAddr: "alice@x.fr",
@@ -123,5 +124,25 @@ describe("signature", () => {
     expect(swapSignature(html, "A", "B")).toBe(`<p>Bonjour</p>${signatureHtml("B")}`);
     expect(swapSignature("<p>Bonjour</p><p>--<br>A modifiée</p>", "A", "B")).toBe("<p>Bonjour</p><p>--<br>A modifiée</p>");
     expect(swapSignature("", "", "B")).toBe(`<p></p>${signatureHtml("B")}`);
+  });
+});
+
+describe("rappel de pièce jointe oubliée", () => {
+  const draft = (html: string, over: Partial<Draft> = {}) => ({ ...emptyDraft("a"), html, ...over });
+  it("repère une mention dans le texte ou l'objet, en français comme en anglais", () => {
+    expect(forgotAttachment(draft("<p>Veuillez trouver le devis ci-joint.</p>"))).toBe(true);
+    expect(forgotAttachment(draft("<p>Voir la pièce jointe</p>"))).toBe(true);
+    expect(forgotAttachment(draft("<p>Je vous joins le contrat</p>"))).toBe(true);
+    expect(forgotAttachment(draft("<p>Please find the attached file</p>"))).toBe(true);
+    expect(forgotAttachment(draft("<p>Bonjour</p>", { subject: "Devis en pièce jointe" }))).toBe(true);
+  });
+  it("ne se déclenche pas sans mention, ni si une pièce est déjà jointe", () => {
+    expect(forgotAttachment(draft("<p>Bonjour, à demain.</p>"))).toBe(false);
+    expect(forgotAttachment(draft("<p>Le joint de culasse est cassé</p>"))).toBe(false); // « joint » nom commun
+    expect(forgotAttachment(draft("<p>ci-joint</p>", { attachments: [{ id: "1", name: "a.pdf", mimeType: "application/pdf", size: 1, dataBase64: "" }] }))).toBe(false);
+  });
+  it("ignore la citation et la signature", () => {
+    expect(forgotAttachment(draft("<p>Merci !</p><p>--<br>Envoyé avec pièce jointe</p>"))).toBe(false);
+    expect(forgotAttachment(draft("<p>Merci !</p><blockquote><p>voir pièce jointe</p></blockquote>"))).toBe(false);
   });
 });

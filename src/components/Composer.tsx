@@ -115,7 +115,7 @@ export function Composer() {
       )}
 
       <footer className="flex h-14 shrink-0 items-center gap-2 border-t border-border px-3">
-        <button type="button" className={`${btnPrimary} h-9 gap-2 px-4`} onClick={send}>
+        <button type="button" className={`${btnPrimary} h-9 gap-2 px-4`} onClick={() => send()}>
           <Send size={14} /> Envoyer <Kbd className="border-white/30 bg-transparent text-white/80">{shortcut("mod+enter")}</Kbd>
         </button>
         <input

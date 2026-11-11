@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { attachmentError, draftFrom, draftFromServer, emptyDraft, isBlank, readAsBase64, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
+import { attachmentError, draftFrom, forgotAttachment, draftFromServer, emptyDraft, isBlank, readAsBase64, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
 import { pref } from "./pref";
 import { useMail } from "./store";
 
@@ -50,7 +50,8 @@ interface ComposerState {
   /** Ferme le panneau en conservant le brouillon s'il n'est pas vide. */
   close(): void;
   discard(): void;
-  send(): void;
+  /** `force` : envoyer malgré le rappel de pièce jointe oubliée. */
+  send(force?: boolean): void;
   /** Annule l'envoi en cours ; faux s'il n'y en a pas. */
   undoSend(): boolean;
 }
@@ -206,10 +207,13 @@ export const useComposer = create<ComposerState>((set, get) => {
       deleteFromServer(d.id);
     },
 
-    send() {
+    send(force = false) {
       const draft = get().draft;
       if (!draft) return;
       if (!draft.to.length) return toast("Ajoutez au moins un destinataire.", "error");
+      if (!force && forgotAttachment(draft)) {
+        return useMail.getState().toast({ message: "Vous mentionnez une pièce jointe, mais aucune n'est jointe.", tone: "error", actionLabel: "Envoyer quand même", onAction: () => get().send(true), duration: 8000 });
+      }
       set({ draft: null });
       pendingSend = {
         draft,

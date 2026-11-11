@@ -186,6 +186,19 @@ export function htmlToPlain(html: string): string {
   return render(doc.body).replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** Mots qui annoncent une pièce jointe (français, anglais) ; « joint » seul est exclu (le joint de culasse). */
+const ATTACHMENT_WORDS = /(?<![\p{L}\p{N}])(?:pi[eè]ces?\s+jointes?|ci[-\s]?joint(?:e|es|s)?|(?:je|nous)\s+(?:vous\s+)?(?:joins|joignons)|attach(?:ed|ment|ments|ing)|enclosed)(?![\p{L}\p{N}])/iu;
+
+/** Le texte écrit mentionne une pièce jointe alors qu'il n'y en a aucune : oubli probable. Les citations
+ *  (réponse, transfert) et la signature (après « -- ») ne comptent pas, c'est le texte de l'auteur qui parle. */
+export function forgotAttachment(d: Draft): boolean {
+  if (d.attachments.length) return false;
+  const lines = htmlToPlain(d.html).split("\n");
+  const end = lines.findIndex((l) => l.trim() === "--");
+  const own = (end < 0 ? lines : lines.slice(0, end)).filter((l) => !l.startsWith(">"));
+  return ATTACHMENT_WORDS.test(`${d.subject}\n${own.join("\n")}`);
+}
+
 const MAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
 /** HTML du message tel qu'il part : styles en ligne (les clients mail ignorent les feuilles de style). */
 export function emailHtml(html: string): string {
