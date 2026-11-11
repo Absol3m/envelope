@@ -5,6 +5,9 @@
 
 mod commands;
 mod db;
+#[cfg(debug_assertions)]
+#[doc(hidden)]
+pub mod dev;
 mod error;
 mod mail;
 mod mcp;
