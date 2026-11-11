@@ -1,5 +1,5 @@
 import { sanitizeFragment } from "./sanitize";
-import type { Addr, DetailMessage, OutgoingMessage, ThreadDetail } from "./api";
+import type { Addr, DetailMessage, DraftData, OutgoingMessage, ThreadDetail } from "./api";
 
 export type ComposeMode = "new" | "reply" | "replyAll" | "forward";
 
@@ -81,6 +81,7 @@ export function toOutgoing(d: Draft): OutgoingMessage {
     inReplyTo: d.inReplyTo,
     references: d.references,
     attachments: d.attachments.map((a) => ({ filename: a.name, mimeType: a.mimeType, dataBase64: a.dataBase64 })),
+    draftId: d.id,
   };
 }
 
@@ -109,6 +110,24 @@ export const isBlank = (d: Draft) => !d.to.length && !d.cc.length && !d.bcc.leng
 
 export function emptyDraft(accountId: string, signature = ""): Draft {
   return { id: crypto.randomUUID(), accountId, mode: "new", to: [], cc: [], bcc: [], subject: "", html: signature ? `<p></p>${signatureHtml(signature)}` : "", attachments: [], references: [] };
+}
+
+/** Brouillon relu depuis le serveur → brouillon du composer (le HTML venu du serveur est assaini). */
+export function draftFromServer(d: DraftData): Draft {
+  const recipients = (list: string[]) => parseRecipients(list.join(", ")).ok;
+  return {
+    id: d.id,
+    accountId: d.accountId,
+    mode: d.inReplyTo ? "reply" : "new",
+    to: recipients(d.to),
+    cc: recipients(d.cc),
+    bcc: recipients(d.bcc),
+    subject: d.subject,
+    html: d.bodyHtml?.trim() ? sanitizeFragment(d.bodyHtml) : textToHtml(d.bodyText),
+    attachments: d.attachments.map((a) => ({ id: crypto.randomUUID(), name: a.filename, mimeType: a.mimeType, size: Math.floor((a.dataBase64.length * 3) / 4), dataBase64: a.dataBase64 })),
+    inReplyTo: d.inReplyTo ?? undefined,
+    references: d.references,
+  };
 }
 
 const PREFIX = /^\s*((re|tr|fwd?|fw)\s*:\s*)+/i;

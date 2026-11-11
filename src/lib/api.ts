@@ -165,6 +165,22 @@ export interface OutgoingMessage {
   inReplyTo?: string;
   references: string[];
   attachments: { filename: string; mimeType: string; dataBase64: string }[];
+  /** Brouillon dont ce message est la version finale : supprimé du serveur après l'envoi. */
+  draftId?: string;
+}
+/** Brouillon relu depuis le serveur, prêt à rouvrir dans le composer. */
+export interface DraftData {
+  id: string;
+  accountId: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  bodyHtml: string | null;
+  bodyText: string;
+  inReplyTo: string | null;
+  references: string[];
+  attachments: { filename: string; mimeType: string; dataBase64: string }[];
 }
 /** Sort de la copie dans « Envoyés » : déposée, rangée par le serveur (Gmail) ou impossible (cause). */
 export type SentCopy = "saved" | "server" | { failed: string };
@@ -212,6 +228,11 @@ export interface Backend {
   setOAuthClient(provider: OAuthProviderId, clientId: string, clientSecret?: string): Promise<void>;
   clearOAuthClient(provider: OAuthProviderId): Promise<void>;
   sendEmail(accountId: string, message: OutgoingMessage): Promise<SendReport>;
+  /** Enregistre le brouillon sur le serveur (nouvelle version, puis suppression des précédentes). */
+  saveDraft(accountId: string, message: OutgoingMessage): Promise<void>;
+  deleteDraft(accountId: string, draftId: string): Promise<void>;
+  /** Relit le brouillon d'une conversation (dossier Brouillons) pour le rouvrir. */
+  openDraft(threadId: number): Promise<DraftData>;
   suggestContacts(accountId: string | null, query: string): Promise<Addr[]>;
   removeAccount(accountId: string): Promise<void>;
   setAccountSignature(accountId: string, signature: string): Promise<void>;
@@ -270,6 +291,9 @@ export const tauriBackend: Backend = {
   setOAuthClient: (provider, clientId, clientSecret) => invoke("set_oauth_client", { provider, clientId, clientSecret }),
   clearOAuthClient: (provider) => invoke("clear_oauth_client", { provider }),
   sendEmail: (accountId, message) => invoke("send_email", { accountId, message }),
+  saveDraft: (accountId, message) => invoke("save_draft", { accountId, message }),
+  deleteDraft: (accountId, draftId) => invoke("delete_draft", { accountId, draftId }),
+  openDraft: (threadId) => invoke("open_draft", { threadId }),
   suggestContacts: (accountId, query) => invoke("suggest_contacts", { accountId, query }),
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
   unsubscribe: (messageId) => invoke("unsubscribe", { messageId }),

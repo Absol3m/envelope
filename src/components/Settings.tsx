@@ -3,6 +3,7 @@ import { Bot, Check, Copy, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCh
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { type McpInfo } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
+import { serverDraftsEnabled, setServerDrafts } from "@/lib/composer";
 import { customName, FREE_FONTS, type FontPref } from "@/lib/font";
 import { notificationsEnabled, sendNative, setNotificationsEnabled } from "@/lib/notify";
 import { useShallow } from "zustand/react/shallow";
@@ -296,6 +297,19 @@ function FontSection() {
   );
 }
 
+/** Brouillons enregistrés sur le serveur : retrouvés sur un autre appareil ou dans un autre client. */
+function DraftsSection() {
+  const [on, setOn] = useState(serverDraftsEnabled);
+  return (
+    <Section title="Brouillons" hint="Un brouillon est enregistré dans le dossier Brouillons du serveur quelques secondes après la dernière modification, et supprimé une fois le message envoyé. Désactivé, il reste sur cet ordinateur seulement.">
+      <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
+        <span className="flex-1">Enregistrer les brouillons sur le serveur</span>
+        <Switch checked={on} onChange={(v) => { setOn(v); setServerDrafts(v); }} label="Enregistrer les brouillons sur le serveur" />
+      </label>
+    </Section>
+  );
+}
+
 function NotificationsSection() {
   const [on, setOn] = useState(notificationsEnabled);
   const toast = useMail((s) => s.toast);
@@ -331,6 +345,7 @@ function AppearancePanel() {
         <Segmented value={s.density} onChange={s.setDensity} options={[{ value: "comfortable", label: "Confortable" }, { value: "compact", label: "Compacte" }]} />
       </Section>
       <FontSection />
+      <DraftsSection />
       <NotificationsSection />
       <Section title="Aperçus">
         <label className="flex max-w-[420px] items-center gap-3 text-[13px]">

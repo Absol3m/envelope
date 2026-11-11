@@ -1,10 +1,11 @@
 import { Paperclip, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useComposer } from "@/lib/composer";
+import { serverDraftsEnabled, useComposer } from "@/lib/composer";
 import { swapSignature } from "@/lib/compose";
 import { fileSize } from "@/lib/format";
 import { useMail } from "@/lib/store";
+import { cn } from "@/lib/utils";
 import { btnPrimary, IconButton, Kbd } from "./ui/primitives";
 import { RecipientField } from "./RecipientField";
 import { RichEditor } from "./RichEditor";
@@ -15,6 +16,7 @@ const TITLES = { new: "Nouveau message", reply: "Réponse", replyAll: "Réponse 
 /** Panneau de rédaction flottant (bas droite) : le reste de l'application reste utilisable. */
 export function Composer() {
   const draft = useComposer((s) => s.draft);
+  const syncState = useComposer((s) => s.syncState);
   const { update, close, discard, send, attach, detach } = useComposer(useShallow((s) => ({ update: s.update, close: s.close, discard: s.discard, send: s.send, attach: s.attach, detach: s.detach })));
   const { backend, accounts } = useMail(useShallow((s) => ({ backend: s.backend, accounts: s.accounts })));
   const [showCc, setShowCc] = useState(false);
@@ -47,6 +49,11 @@ export function Composer() {
     >
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
         <h2 className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">{draft.subject || TITLES[draft.mode]}</h2>
+        {syncState !== "idle" && serverDraftsEnabled() && (
+          <span role="status" className={cn("shrink-0 text-[11.5px]", syncState === "error" ? "text-danger" : "text-faint")} title={syncState === "error" ? "Le brouillon est gardé sur cet ordinateur ; nouvel essai à la prochaine modification." : "Le brouillon est enregistré dans le dossier Brouillons du serveur."}>
+            {syncState === "saving" ? "Enregistrement…" : syncState === "saved" ? "Brouillon enregistré" : "Non enregistré sur le serveur"}
+          </span>
+        )}
         <IconButton label="Fermer (brouillon conservé)" kbd="Échap" onClick={close}><X size={16} /></IconButton>
       </header>
 

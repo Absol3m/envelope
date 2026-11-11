@@ -17,8 +17,7 @@ use sqlx::SqlitePool;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, LOCAL_ID};
-use crate::mail::actions::{expunge, store_flag};
-use crate::mail::imap::ImapSession;
+use crate::mail::actions;
 use crate::mail::{imap, ingest, rawstore};
 
 const MAX_NAME: usize = 80;
@@ -330,7 +329,7 @@ pub async fn archive(
         let cred = account::resolve_credential(&acct).await?;
         let mut session = imap::connect(&acct, &cred).await?;
         for (path, uids) in folders {
-            remove_on_server(&mut session, path, uids)
+            actions::delete_on_server(&mut session, path, uids)
                 .await
                 .map_err(|e| {
                     AppError::Invalid(format!("copié en local mais pas supprimé du serveur : {e}"))
@@ -354,13 +353,6 @@ pub async fn archive(
     ingest::refresh_folder_unread(pool, from_folder).await?;
     ingest::refresh_folder_unread(pool, to_folder).await?;
     Ok(by_account.keys().map(|a| a.to_string()).collect())
-}
-
-async fn remove_on_server(session: &mut ImapSession, path: &str, uids: &[i64]) -> Result<()> {
-    session.select(path).await?;
-    let set = imap::uid_set(uids);
-    store_flag(session, &set, "\\Deleted", true).await?;
-    expunge(session, &set).await
 }
 
 /// Déplace la conversation d'un dossier local à un autre (base seulement).

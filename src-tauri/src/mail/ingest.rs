@@ -49,6 +49,8 @@ pub struct ParsedMessage {
     pub body_html: Option<String>,
     pub attachments: Vec<ParsedAttachment>,
     pub unsubscribe: Option<Unsubscribe>,
+    /// `X-Envelope-Draft-Id` : ce message est un brouillon d'Envelope (voir `mail::drafts`).
+    pub draft_id: Option<String>,
 }
 
 fn addrs(a: Option<&Address<'_>>) -> String {
@@ -172,6 +174,10 @@ pub fn parse_with(
         unsubscribe: msg
             .header_raw("List-Unsubscribe")
             .and_then(|l| unsubscribe::parse(l, msg.header_raw("List-Unsubscribe-Post"))),
+        draft_id: msg
+            .header_raw(super::smtp::DRAFT_ID_HEADER)
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty() && v.len() <= super::smtp::MAX_DRAFT_ID),
     })
 }
 
@@ -328,8 +334,8 @@ pub async fn store_with(
     let res = sqlx::query(
         "INSERT INTO messages (account_id, folder_id, thread_id, uid, message_id, in_reply_to, references_ids, \
          subject, from_name, from_addr, to_addrs, cc_addrs, bcc_addrs, date, snippet, body_text, body_html, \
-         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click, raw_hash) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click, raw_hash, draft_id) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
          ON CONFLICT(folder_id, uid) DO NOTHING",
     )
     .bind(account_id)
@@ -357,6 +363,7 @@ pub async fn store_with(
     .bind(m.unsubscribe.as_ref().and_then(|u| u.mailto.as_deref()))
     .bind(m.unsubscribe.as_ref().is_some_and(|u| u.one_click))
     .bind(opts.raw_hash)
+    .bind(&m.draft_id)
     .execute(pool)
     .await?;
     if res.rows_affected() == 0 {

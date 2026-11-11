@@ -201,6 +201,18 @@ async fn move_to(session: &mut ImapSession, uids: &str, dest: &str) -> Result<()
     Ok(())
 }
 
+/// Supprime définitivement ces messages du dossier `path` (`\Deleted` puis EXPUNGE ciblé).
+pub(crate) async fn delete_on_server(
+    session: &mut ImapSession,
+    path: &str,
+    uids: &[i64],
+) -> Result<()> {
+    session.select(path).await?;
+    let set = imap::uid_set(uids);
+    store_flag(session, &set, "\\Deleted", true).await?;
+    expunge(session, &set).await
+}
+
 /// Efface les messages marqués `\Deleted` de cet ensemble d'UID.
 pub(crate) async fn expunge(session: &mut ImapSession, uids: &str) -> Result<()> {
     session

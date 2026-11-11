@@ -9,6 +9,7 @@ use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
 use crate::mail::actions::{self, Action, Destination};
 use crate::mail::autoconfig;
+use crate::mail::drafts;
 use crate::mail::export;
 use crate::mail::imap;
 use crate::mail::ingest;
@@ -308,6 +309,13 @@ pub async fn send_email(
     let acct = account::get(&state.db, &account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
     let raw = smtp::send(&acct, &cred, &message).await?;
+    // Le brouillon a atteint son but : on le retire du serveur (sans jamais faire échouer l'envoi).
+    if let Some(draft_id) = message.draft_id.as_deref() {
+        let _guard = state.actions.lock().await;
+        if let Err(e) = drafts::remove(&state.db, &acct, &cred, draft_id).await {
+            tracing::warn!(account = %acct.id, "brouillon non supprimé du serveur après l'envoi : {e}");
+        }
+    }
 
     let sent_copy = if acct.provider == "gmail" {
         SentCopy::Server
@@ -322,6 +330,42 @@ pub async fn send_email(
     };
     state.sync.trigger(&account_id); // la copie (ou le nouveau dossier) apparaît à la synchro
     Ok(SendReport { sent_copy })
+}
+
+/// Enregistre le brouillon sur le serveur (nouvelle version, puis suppression des précédentes).
+#[tauri::command]
+pub async fn save_draft(
+    state: State<'_, AppState>,
+    account_id: String,
+    message: OutgoingMessage,
+) -> Result<()> {
+    let _guard = state.actions.lock().await; // une seule opération sur les brouillons à la fois
+    let acct = account::get(&state.db, &account_id).await?;
+    let cred = account::resolve_credential(&acct).await?;
+    drafts::save(&state.db, &acct, &cred, &message).await?;
+    state.sync.trigger(&account_id); // la nouvelle version apparaît aussitôt dans « Brouillons »
+    Ok(())
+}
+
+/// Supprime un brouillon du serveur (abandon, ou changement de compte expéditeur).
+#[tauri::command]
+pub async fn delete_draft(
+    state: State<'_, AppState>,
+    account_id: String,
+    draft_id: String,
+) -> Result<()> {
+    let _guard = state.actions.lock().await;
+    let acct = account::get(&state.db, &account_id).await?;
+    let cred = account::resolve_credential(&acct).await?;
+    drafts::remove(&state.db, &acct, &cred, &draft_id).await?;
+    state.sync.trigger(&account_id);
+    Ok(())
+}
+
+/// Relit le brouillon d'une conversation pour le rouvrir dans le composer.
+#[tauri::command]
+pub async fn open_draft(state: State<'_, AppState>, thread_id: i64) -> Result<drafts::DraftData> {
+    drafts::open(&state.db, &state.raw_dir, thread_id).await
 }
 
 async fn file_in_sent(

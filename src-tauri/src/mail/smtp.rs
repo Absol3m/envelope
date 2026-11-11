@@ -26,6 +26,9 @@ pub struct OutgoingMessage {
     pub references: Vec<String>,
     #[serde(default)]
     pub attachments: Vec<OutgoingAttachment>,
+    /// Brouillon dont ce message est la version finale : il est supprimé du serveur une fois l'envoi réussi.
+    #[serde(default)]
+    pub draft_id: Option<String>,
 }
 
 /// Pièce jointe fournie par l'interface (contenu en base64).
@@ -96,7 +99,36 @@ fn bracket(id: &str) -> String {
     format!("<{}>", id.trim_matches(|c| c == '<' || c == '>'))
 }
 
+/// En-tête qui identifie un brouillon d'Envelope sur le serveur (voir `mail::drafts`).
+pub const DRAFT_ID_HEADER: &str = "X-Envelope-Draft-Id";
+/// Longueur maximale d'un identifiant de brouillon (un UUID en fait 36) ; au-delà, l'ingestion l'ignorerait.
+pub const MAX_DRAFT_ID: usize = 80;
+#[derive(Clone, Debug, PartialEq)]
+struct DraftId(String);
+
+impl header::Header for DraftId {
+    fn name() -> header::HeaderName {
+        header::HeaderName::new_from_ascii_str(DRAFT_ID_HEADER)
+    }
+    fn parse(s: &str) -> std::result::Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Self(s.trim().to_string()))
+    }
+    fn display(&self) -> header::HeaderValue {
+        header::HeaderValue::new(Self::name(), self.0.clone())
+    }
+}
+
 pub fn build_message(account: &Account, out: &OutgoingMessage) -> Result<Message> {
+    build(account, out, false)
+}
+
+/// Message de brouillon : comme un message à envoyer, mais les destinataires sont facultatifs, Bcc est
+/// conservé et l'identifiant du brouillon est inscrit dans un en-tête.
+pub fn build_draft(account: &Account, out: &OutgoingMessage) -> Result<Message> {
+    build(account, out, true)
+}
+
+fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Message> {
     let from = match &account.display_name {
         Some(n) if !n.is_empty() => format!("{n} <{}>", account.email),
         _ => account.email.clone(),
@@ -104,7 +136,24 @@ pub fn build_message(account: &Account, out: &OutgoingMessage) -> Result<Message
     let mut b = Message::builder()
         .from(mailbox(&from)?)
         .subject(out.subject.clone());
-    if out.to.is_empty() {
+    if draft {
+        let id = out
+            .draft_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|i| !i.is_empty() && i.len() <= MAX_DRAFT_ID)
+            .ok_or_else(|| {
+                AppError::Invalid("identifiant de brouillon manquant ou trop long".into())
+            })?;
+        b = b.keep_bcc().header(DraftId(id.to_string()));
+        if out.to.is_empty() && out.cc.is_empty() && out.bcc.is_empty() {
+            // Jamais envoyé : l'enveloppe SMTP exige pourtant un destinataire, on met l'expéditeur.
+            let me = mailbox(&account.email)?.email;
+            b = b.envelope(
+                lettre::address::Envelope::new(Some(me.clone()), vec![me]).map_err(smtp_err)?,
+            );
+        }
+    } else if out.to.is_empty() {
         return Err(AppError::Invalid(
             "au moins un destinataire est requis".into(),
         ));
@@ -240,6 +289,7 @@ mod tests {
             in_reply_to: None,
             references: vec![],
             attachments,
+            draft_id: None,
         }
     }
 

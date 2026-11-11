@@ -247,6 +247,9 @@ export const demoBackend: Backend = {
     );
   },
   sendEmail: () => delay<SendReport>({ sentCopy: "server" }, 400),
+  saveDraft: () => delay(undefined, 150),
+  deleteDraft: () => delay(undefined, 100),
+  openDraft: () => Promise.reject(new Error("Mode démo : les brouillons du serveur sont indisponibles.")),
   suggestContacts: (_account, query) => {
     const q = query.toLowerCase();
     const seen = new Map<string, { name: string | null; address: string }>();

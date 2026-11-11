@@ -127,6 +127,7 @@ async fn send_mailto(account: &Account, cred: &Credential, mailto: &str) -> Resu
         in_reply_to: None,
         references: vec![],
         attachments: vec![],
+        draft_id: None,
     };
     smtp::send(account, cred, &out).await.map(drop)
 }

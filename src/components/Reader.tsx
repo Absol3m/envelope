@@ -7,7 +7,8 @@ import { displayName, fileSize, fullDate, listDate } from "@/lib/format";
 import { prepareHtml, trustedSenders, trustSender } from "@/lib/sanitize";
 import { actionView, useMail } from "@/lib/store";
 import { cn, openExternal } from "@/lib/utils";
-import { Avatar, Kbd } from "./ui/primitives";
+import { useComposer } from "@/lib/composer";
+import { Avatar, btnPrimary, Kbd } from "./ui/primitives";
 import { BellOff } from "lucide-react";
 import { shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 
@@ -276,9 +277,21 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
   const toggle = (id: number) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const files = d.attachments.filter((a) => !a.isInline || a.filename).length;
   const unsubscribable = [...d.messages].reverse().find((m) => m.unsubscribe);
+  // Conversation qui contient un brouillon (dossier Brouillons) : on propose de le rouvrir.
+  const draftFolders = useMail((s) => s.folders);
+  const hasDraft = useMemo(() => {
+    const ids = new Set(draftFolders.filter((f) => f.role === "drafts").map((f) => f.id));
+    return d.messages.some((m) => ids.has(m.folderId));
+  }, [draftFolders, d.messages]);
 
   return (
     <div className="mx-auto max-w-[780px] px-8 pb-24 pt-7">
+      {hasDraft && (
+        <div className="anim-fade-up mb-4 flex items-center gap-3 rounded-xl bg-accent-soft px-4 py-2.5 text-[13px]">
+          <span className="flex-1">Cette conversation contient un brouillon non envoyé.</span>
+          <button className={btnPrimary} onClick={() => void useComposer.getState().openDraft(d.id)}>Modifier le brouillon</button>
+        </div>
+      )}
       <div className="anim-fade-up">
         <h2 className="selectable text-[22px] font-semibold leading-tight tracking-tight">{d.subject || "(sans objet)"}</h2>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-muted">
