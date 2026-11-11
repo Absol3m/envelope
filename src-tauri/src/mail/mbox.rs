@@ -499,13 +499,14 @@ pub async fn import(
                         continue;
                     }
                     let raw = tokio::fs::read(&file).await?;
-                    // Drapeaux Maildir (nom de fichier `…:2,SF`) si Thunderbird n'en a pas écrit.
+                    // Drapeaux Maildir (nom de fichier `…:2,SF`, ou `…;2,SF` là où `:` est interdit, comme sous Windows) si Thunderbird n'en a pas écrit.
                     let name = file
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_default();
                     let suffix = name
                         .rsplit_once(":2,")
+                        .or_else(|| name.rsplit_once(";2,"))
                         .map(|(_, s)| s.to_string())
                         .unwrap_or_default();
                     let from_name = MozFlags {
@@ -676,7 +677,7 @@ mod tests {
         std::fs::create_dir_all(md.join("new")).unwrap();
         std::fs::create_dir_all(md.join("tmp")).unwrap();
         std::fs::write(
-            md.join("cur").join("1:2,SF"),
+            md.join("cur").join("1;2,SF"),
             msg("m1", "0000", "maildir").replace("X-Mozilla-Status: 0000\n", ""),
         )
         .unwrap();
