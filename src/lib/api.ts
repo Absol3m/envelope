@@ -169,6 +169,8 @@ export interface Backend {
   openAttachment(id: number): Promise<void>;
   inlineImages(messageId: number): Promise<Record<string, string>>;
   mcpInfo(): Promise<McpInfo>;
+  /** Pastille de non-lus sur l'icône de l'application (0 : aucune). */
+  setBadge(count: number): Promise<void>;
 }
 
 export const isTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -196,6 +198,10 @@ export const tauriBackend: Backend = {
   moveThread: (threadId, folderId, to) => invoke("move_thread", { threadId, folderId, to }),
   deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
   emptyFolder: (folderId) => invoke("empty_folder", { folderId }),
+  setBadge: async (count) => {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().setBadgeCount(count > 0 ? count : undefined);
+  },
   confirm: (message, okLabel) => ask(message, { title: "Envelope", kind: "warning", okLabel, cancelLabel: "Annuler" }),
   syncNow: (accountId) => invoke("sync_now", { accountId }),
   addAccount: (input) => invoke("add_account", { input }),

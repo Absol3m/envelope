@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/primitives";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { isTauri } from "@/lib/api";
 import { useComposer } from "@/lib/composer";
+import { notifyNewMail, type SyncedPayload } from "@/lib/notify";
 import { useMail } from "@/lib/store";
 import { dragRegion } from "@/lib/platform";
 
@@ -31,7 +32,10 @@ export default function App() {
     // Événements du démon de synchro : la liste se met à jour sans geste de l'utilisateur.
     const unlisten: Promise<() => void>[] = [];
     import("@tauri-apps/api/event").then(({ listen }) => {
-      unlisten.push(listen("mail:synced", () => void useMail.getState().reload({ silent: true })));
+      unlisten.push(listen<SyncedPayload>("mail:synced", (e) => {
+        void useMail.getState().reload({ silent: true });
+        void notifyNewMail(e.payload);
+      }));
       unlisten.push(listen("mail:status", () => void useMail.getState().refreshAccounts()));
     });
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));

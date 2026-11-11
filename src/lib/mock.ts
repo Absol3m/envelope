@@ -255,6 +255,7 @@ export const demoBackend: Backend = {
   setOAuthClient: () => Promise.reject(new Error("Mode démo : configuration désactivée.")),
   clearOAuthClient: () => Promise.resolve(),
   unsubscribe: () => delay(undefined, 300),
+  setBadge: () => Promise.resolve(),
   setAccountSignature: (id, signature) => {
     const a = ACCOUNTS.find((x) => x.id === id);
     if (a) a.signature = signature;

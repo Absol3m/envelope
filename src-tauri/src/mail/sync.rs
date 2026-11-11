@@ -62,7 +62,22 @@ pub struct SyncManager {
 struct SyncedEvent {
     account_id: String,
     new_messages: usize,
+    /// Nouveaux messages non lus de la boîte de réception (de quoi notifier), plafonnés.
+    fresh: Vec<FreshMail>,
+    /// Nombre total de ces messages (au-delà du plafond de `fresh`).
+    fresh_total: usize,
 }
+
+/// Aperçu d'un nouveau message pour la notification. Contenu de l'expéditeur : non fiable, affiché en texte brut.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct FreshMail {
+    from: String,
+    subject: String,
+}
+
+/// Nombre maximal d'aperçus joints à un événement de synchro.
+const MAX_FRESH: usize = 3;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -178,11 +193,12 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
         }
         let mut touched = HashSet::new();
         let mut new_messages = 0;
+        let mut fresh = Vec::new();
         for f in folders
             .iter()
             .filter(|f| full || f.role.as_deref() == Some("inbox"))
         {
-            new_messages += sync_folder(&mut session, ctx, f, &mut touched).await?;
+            new_messages += sync_folder(&mut session, ctx, f, &mut touched, &mut fresh).await?;
         }
         ingest::refresh_threads(&ctx.pool, &touched).await?;
         if full {
@@ -194,6 +210,8 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
             SyncedEvent {
                 account_id: ctx.account_id.clone(),
                 new_messages,
+                fresh_total: fresh.len(),
+                fresh: fresh.into_iter().take(MAX_FRESH).collect(),
             },
         );
 
@@ -351,6 +369,7 @@ async fn sync_folder(
     ctx: &Ctx,
     f: &FolderRec,
     touched: &mut HashSet<i64>,
+    fresh: &mut Vec<FreshMail>,
 ) -> Result<usize> {
     let mbox = session.select(&f.path).await?;
     let uid_validity = mbox.uid_validity.map(i64::from);
@@ -412,6 +431,18 @@ async fn sync_folder(
                 seen: item.flags().any(|fl| matches!(fl, Flag::Seen)),
                 flagged: item.flags().any(|fl| matches!(fl, Flag::Flagged)),
             };
+            // Notifier seulement l'arrivée d'un nouveau message dans la boîte de réception : pas la
+            // première synchro (last_uid = 0), qui rapatrie l'historique.
+            if last_uid > 0 && f.role.as_deref() == Some("inbox") && !flags.seen {
+                fresh.push(FreshMail {
+                    from: parsed
+                        .from_name
+                        .clone()
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| parsed.from_addr.clone()),
+                    subject: parsed.subject.clone(),
+                });
+            }
             let tid = ingest::store(
                 &ctx.pool,
                 &ctx.attachments_dir,

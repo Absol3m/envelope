@@ -159,8 +159,18 @@ export const useMail = create<State>((set, get) => {
     const wanted = new Set(toIds(ids));
     return get().threads.filter((t) => wanted.has(t.id));
   };
+  let badge = -1;
   const loadFolders = async () => {
-    try { set({ folders: await get().backend.listFolders() }); } catch { /* compteurs : non bloquant */ }
+    try {
+      const folders = await get().backend.listFolders();
+      set({ folders });
+      // Pastille sur l'icône : non-lus de toutes les boîtes de réception (appel natif seulement si le total change).
+      const unread = folders.reduce((n, f) => n + (f.role === "inbox" ? f.unreadCount : 0), 0);
+      if (unread !== badge) {
+        badge = unread;
+        void get().backend.setBadge(unread).catch(() => { badge = -1; });
+      }
+    } catch { /* compteurs : non bloquant */ }
   };
   /** Après une action : un seul rafraîchissement des compteurs, même si les actions s'enchaînent. */
   let foldersTimer: ReturnType<typeof setTimeout> | undefined;

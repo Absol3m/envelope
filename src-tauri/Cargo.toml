@@ -24,6 +24,7 @@ envelope-appearance = { path = "crates/envelope-appearance" }
 tauri = { version = "2", features = ["macos-private-api"] }  # transparence (vibrancy) sous macOS
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 
 # --- Async & erreurs ---
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "fs"] }
