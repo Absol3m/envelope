@@ -84,7 +84,7 @@ async fn post_one_click(url: &str) -> Result<()> {
             a.stop()
         }
     });
-    let client = reqwest::Client::builder()
+    let client = crate::tls::http_builder()?
         .redirect(policy)
         .timeout(Duration::from_secs(15))
         .build()?;

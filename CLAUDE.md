@@ -17,6 +17,7 @@
 ## Natif d'abord
 - Toujours préférer les fonctionnalités natives de chaque OS (trousseau, notifications, sélecteurs de fichiers, thème/apparence, ouverture de liens, glisser-déposer, etc.) ou les plugins Tauri officiels plutôt que de recoder ce qui existe : le code maison est une surface d'attaque et une source de trous de sécurité.
 - Ne réimplémenter que si aucune API native ou bibliothèque éprouvée ne couvre le besoin, et le justifier en commentaire.
+- Certificats TLS : toujours vérifiés par le système (`src-tauri/src/tls.rs`, rustls-platform-verifier) pour IMAP, SMTP et HTTPS ; jamais de liste d'autorités embarquée (webpki-roots) ni de désactivation de la vérification.
 
 ## Conventions Rust
 - Erreurs : `AppError` (thiserror) dans src-tauri/src/error.rs ; pas d'`unwrap()` hors tests.

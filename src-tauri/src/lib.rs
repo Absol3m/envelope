@@ -11,6 +11,7 @@ pub mod dev;
 mod error;
 mod mail;
 mod mcp;
+mod tls;
 
 use std::path::PathBuf;
 use std::sync::Arc;

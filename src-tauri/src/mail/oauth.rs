@@ -239,13 +239,17 @@ async fn wait_for_code(listener: &TcpListener, expected_state: &str) -> Result<S
 }
 
 /// Client HTTP partagé (pool de connexions + racines TLS chargés une seule fois).
-fn http_client() -> &'static reqwest::Client {
+fn http_client() -> Result<&'static reqwest::Client> {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
-    CLIENT.get_or_init(reqwest::Client::new)
+    if let Some(c) = CLIENT.get() {
+        return Ok(c);
+    }
+    let client = crate::tls::http_builder()?.build()?;
+    Ok(CLIENT.get_or_init(|| client))
 }
 
 async fn token_request(url: &str, form: &[(&str, String)]) -> Result<TokenResponse> {
-    let resp = http_client().post(url).form(form).send().await?;
+    let resp = http_client()?.post(url).form(form).send().await?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();

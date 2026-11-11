@@ -4,13 +4,13 @@
 //! le mot de passe). Une connexion sans chiffrement est refusée.
 
 use std::fmt::Debug;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio_rustls::rustls::pki_types::ServerName;
-use tokio_rustls::rustls::{ClientConfig, RootCertStore};
+use tokio_rustls::rustls::ClientConfig;
 use tokio_rustls::TlsConnector;
 
 use async_imap::types::NameAttribute;
@@ -25,20 +25,6 @@ impl<T: AsyncRead + AsyncWrite + Unpin + Send + Debug> Io for T {}
 pub type ImapSession = async_imap::Session<Box<dyn Io>>;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
-
-fn tls_config() -> Arc<ClientConfig> {
-    static CFG: OnceLock<Arc<ClientConfig>> = OnceLock::new();
-    CFG.get_or_init(|| {
-        let mut roots = RootCertStore::empty();
-        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        Arc::new(
-            ClientConfig::builder()
-                .with_root_certificates(roots)
-                .with_no_client_auth(),
-        )
-    })
-    .clone()
-}
 
 /// SASL XOAUTH2. Si le serveur répond par un défi (= erreur JSON), on renvoie une ligne vide.
 struct XOAuth2 {
@@ -58,7 +44,7 @@ impl async_imap::Authenticator for XOAuth2 {
 }
 
 pub async fn connect(account: &Account, cred: &Credential) -> Result<ImapSession> {
-    connect_with(account, cred, tls_config()).await
+    connect_with(account, cred, crate::tls::client_config()?).await
 }
 
 /// `connect` avec une configuration TLS donnée (les tests y mettent leur propre autorité).
@@ -226,6 +212,7 @@ mod starttls_tests {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
     use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+    use tokio_rustls::rustls::RootCertStore;
     use tokio_rustls::rustls::ServerConfig;
     use tokio_rustls::TlsAcceptor;
 
@@ -318,7 +305,10 @@ mod starttls_tests {
                 .write_all(format!("{tag} OK Begin TLS negotiation now\r\n").as_bytes())
                 .await
                 .unwrap();
-            let tls = acceptor.accept(reader.into_inner()).await.unwrap();
+            // Un client qui refuse le certificat coupe la négociation : rien de plus n'est lu.
+            let Ok(tls) = acceptor.accept(reader.into_inner()).await else {
+                return seen;
+            };
             let mut reader = BufReader::new(tls);
             let mut login = String::new();
             reader.read_line(&mut login).await.unwrap();
@@ -369,6 +359,22 @@ mod starttls_tests {
             1,
             "le client n'a pas envoyé son mot de passe en clair : {seen:?}"
         );
+    }
+
+    /// Avec la configuration par défaut (vérification par le système), un certificat auto-signé est
+    /// refusé et le mot de passe n'est jamais envoyé.
+    #[tokio::test]
+    async fn certificat_inconnu_refuse_et_mot_de_passe_protege() {
+        let (acceptor, _own_roots) = tls_pair();
+        let (port, server) = mock_server(true, acceptor).await;
+        let err = connect(&account(port, "starttls"), &cred())
+            .await
+            .expect_err("certificat inconnu")
+            .to_string();
+        assert!(!err.is_empty());
+        let seen = server.await.unwrap();
+        assert_eq!(seen.len(), 1, "seul STARTTLS a circulé : {seen:?}");
+        assert!(seen.iter().all(|l| !l.contains("secret")));
     }
 
     #[tokio::test]

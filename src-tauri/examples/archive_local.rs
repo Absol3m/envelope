@@ -16,6 +16,13 @@ async fn main() {
         PathBuf::from(std::env::var("HOME").unwrap_or_default())
             .join("Library/Application Support/dev.envelope.app")
     });
+    if std::env::var("SMTP_ONLY").is_ok() {
+        match envelope_lib::dev::smtp_check(&dir).await {
+            Ok(()) => println!("SMTP : connexion et authentification OK (aucun message envoyé)"),
+            Err(e) => eprintln!("SMTP : échec : {e}"),
+        }
+        return;
+    }
     if std::env::var("COUNT_ONLY").is_ok() {
         match envelope_lib::dev::server_inbox_count(&dir, &subject).await {
             Ok(n) => println!("{n} message(s) « {subject} » dans INBOX sur le serveur"),

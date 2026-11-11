@@ -15,15 +15,16 @@ const ISPDB: &str = "https://autoconfig.thunderbird.net/v1.1";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_BODY: usize = 256 * 1024;
 
-fn http() -> &'static reqwest::Client {
+fn http() -> Result<&'static reqwest::Client> {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
-    CLIENT.get_or_init(|| {
-        reqwest::Client::builder()
-            .timeout(FETCH_TIMEOUT)
-            .redirect(reqwest::redirect::Policy::limited(3))
-            .build()
-            .unwrap_or_default()
-    })
+    if let Some(c) = CLIENT.get() {
+        return Ok(c);
+    }
+    let client = crate::tls::http_builder()?
+        .timeout(FETCH_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()?;
+    Ok(CLIENT.get_or_init(|| client))
 }
 
 /// Détecte les serveurs pour `email` (le domaine est validé avant toute requête réseau).
@@ -92,7 +93,14 @@ async fn fetch_config(
     domain: &str,
     email: &str,
 ) -> Option<Discovered> {
-    let mut req = http().get(url);
+    let client = match http() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("détection automatique indisponible : {e}");
+            return None;
+        }
+    };
+    let mut req = client.get(url);
     if send_email {
         req = req.query(&[("emailaddress", email)]);
     }

@@ -462,3 +462,17 @@ pub async fn import_check(root: &Path) -> Result<String> {
     let _ = std::fs::remove_dir_all(&base);
     Ok(out)
 }
+
+/// Test de connexion et d'authentification SMTP du premier compte (aucun message n'est envoyé).
+pub async fn smtp_check(data_dir: &Path) -> Result<()> {
+    use crate::mail::{account, smtp};
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let pool = crate::db::init(&crate::db::db_path(data_dir)).await?;
+    let acct = account::list(&pool)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::NotFound("compte".into()))?;
+    let cred = account::resolve_credential(&acct).await?;
+    smtp::test(&acct, &cred).await
+}
