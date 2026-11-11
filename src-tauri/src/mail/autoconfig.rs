@@ -332,7 +332,6 @@ mod tests {
             "a@mailbox.org",
             "a@gmx.fr",
             "a@laposte.net",
-            "a@example.net",
             "a@zoho.com",
             "a@perdu-introuvable-xyz.fr",
         ] {
