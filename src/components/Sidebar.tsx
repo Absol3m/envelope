@@ -57,6 +57,23 @@ function LocalFolders({ folders, view, setView, moveTo }: { folders: FolderRow[]
       toast({ message: `${failure} — ${String(e)}`, tone: "error", duration: 6000 });
     }
   };
+  /** Export : mbox (un fichier) ou EML (un fichier par message, dans un sous-dossier du dossier choisi). */
+  const exportTo = async (f: FolderRow, format: "mbox" | "eml") => {
+    try {
+      let path: string | null;
+      if (format === "mbox") path = await backend.pickSavePath(`${f.name}.mbox`);
+      else {
+        const dir = await backend.pickFolder(undefined, "Choisir le dossier où écrire les fichiers .eml");
+        path = dir ? await (await import("@tauri-apps/api/path")).join(dir, f.name.replace(/[\\/:*?"<>|]/g, "-")) : null;
+      }
+      if (!path) return;
+      toast({ message: `Export de « ${f.name} »…`, duration: 3000 });
+      const r = await backend.exportFolder(f.id, format, path);
+      toast({ message: `${r.exported.toLocaleString("fr-FR")} message${r.exported > 1 ? "s" : ""} exporté${r.exported > 1 ? "s" : ""}${r.missing > 0 ? ` (${r.missing} introuvable${r.missing > 1 ? "s" : ""})` : ""}`, tone: r.missing > 0 ? "error" : "default", duration: 5000 });
+    } catch (e) {
+      toast({ message: `Export impossible — ${String(e)}`, tone: "error", duration: 7000 });
+    }
+  };
   const commit = () => {
     const id = editing;
     const value = name.trim();
@@ -94,6 +111,9 @@ function LocalFolders({ folders, view, setView, moveTo }: { folders: FolderRow[]
               <Dropdown.Portal>
                 <Dropdown.Content align="start" sideOffset={4} className="z-50 min-w-[160px] rounded-xl border border-border bg-elevated p-1 text-[13px] shadow-pop">
                   <Dropdown.Item onSelect={() => { setName(f.name); setEditing(f.id); }} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">Renommer…</Dropdown.Item>
+                  <Dropdown.Item onSelect={() => void exportTo(f, "mbox")} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">Exporter en mbox…</Dropdown.Item>
+                  <Dropdown.Item onSelect={() => void exportTo(f, "eml")} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">Exporter en fichiers .eml…</Dropdown.Item>
+                  <Dropdown.Separator className="my-1 h-px bg-border" />
                   <Dropdown.Item onSelect={() => void run(() => backend.deleteLocalFolder(f.id), "Suppression impossible")} className="cursor-default rounded-lg px-2.5 py-1.5 text-danger outline-none data-[highlighted]:bg-hover">Supprimer (si vide)</Dropdown.Item>
                 </Dropdown.Content>
               </Dropdown.Portal>

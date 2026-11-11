@@ -34,7 +34,7 @@ export function ImportDialog() {
   const choose = async () => {
     setError(null);
     try {
-      const picked = await backend.pickFolder((await backend.importDefaultDir()) ?? undefined);
+      const picked = await backend.pickFolder((await backend.importDefaultDir()) ?? undefined, "Choisir le dossier à importer");
       if (!picked) return;
       const found = await backend.importScan(picked);
       if (found.length === 0) return setError("Aucun dossier de mails (mbox ou Maildir) trouvé ici. Choisissez le dossier du profil Thunderbird ou celui qui contient vos boîtes.");

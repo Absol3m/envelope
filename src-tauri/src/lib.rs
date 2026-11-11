@@ -140,6 +140,7 @@ pub fn run() {
             commands::move_thread,
             commands::delete_thread,
             commands::archive_local,
+            commands::export_folder,
             commands::import_default_dir,
             commands::import_scan,
             commands::import_run,

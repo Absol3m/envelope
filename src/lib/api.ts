@@ -38,6 +38,12 @@ export interface ImportProgress {
   foldersDone: number;
   foldersTotal: number;
 }
+export interface ExportReport {
+  exported: number;
+  /** Messages dont le message brut est introuvable (non exportés). */
+  missing: number;
+}
+export type ExportFormat = "mbox" | "eml";
 export interface FolderRow {
   id: number;
   accountId: string;
@@ -182,7 +188,11 @@ export interface Backend {
   /** Dossier des profils Thunderbird s'il existe (point de départ du sélecteur). */
   importDefaultDir(): Promise<string | null>;
   /** Sélecteur de dossier natif ; `null` si l'utilisateur annule. */
-  pickFolder(defaultPath?: string): Promise<string | null>;
+  pickFolder(defaultPath?: string, title?: string): Promise<string | null>;
+  /** Sélecteur « Enregistrer sous » natif ; `null` si l'utilisateur annule. */
+  pickSavePath(defaultName: string): Promise<string | null>;
+  /** mbox : `path` est le fichier ; eml : `path` est le dossier où écrire un fichier par message. */
+  exportFolder(folderId: number, format: ExportFormat, path: string): Promise<ExportReport>;
   importScan(path: string): Promise<ImportFolder[]>;
   importRun(path: string, keys: string[]): Promise<ImportReport>;
   createLocalFolder(name: string): Promise<number>;
@@ -238,11 +248,16 @@ export const tauriBackend: Backend = {
   deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
   archiveLocal: (threadId, folderId, localFolderId) => invoke("archive_local", { threadId, folderId, localFolderId }),
   importDefaultDir: () => invoke("import_default_dir"),
-  pickFolder: async (defaultPath) => {
+  pickFolder: async (defaultPath, title) => {
     const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ directory: true, multiple: false, defaultPath: defaultPath ?? undefined, title: "Choisir le dossier à importer" });
+    const picked = await open({ directory: true, multiple: false, defaultPath: defaultPath ?? undefined, title: title ?? "Choisir un dossier" });
     return typeof picked === "string" ? picked : null;
   },
+  pickSavePath: async (defaultName) => {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    return (await save({ defaultPath: defaultName, filters: [{ name: "Boîte mbox", extensions: ["mbox"] }] })) ?? null;
+  },
+  exportFolder: (folderId, format, path) => invoke("export_folder", { folderId, format, path }),
   importScan: (path) => invoke("import_scan", { path }),
   importRun: (path, keys) => invoke("import_run", { path, keys }),
   createLocalFolder: (name) => invoke("create_local_folder", { name }),

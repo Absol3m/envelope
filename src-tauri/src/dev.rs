@@ -436,6 +436,29 @@ pub async fn import_check(root: &Path) -> Result<String> {
     for (folder, subject, read, star, atts) in rows {
         out += &format!("  [{folder}] {subject}  lu={read} suivi={star} pj={atts}\n");
     }
+    // Aller-retour : export mbox de chaque dossier puis relecture ; les messages doivent être identiques
+    // (seules les lignes « From » du corps sont échappées par le format).
+    let folders: Vec<(i64, String)> = sqlx::query_as("SELECT id, name FROM folders WHERE account_id = 'local' AND id IN (SELECT folder_id FROM messages)")
+        .fetch_all(&pool)
+        .await?;
+    for (id, name) in folders {
+        let dest = base.join(format!("{id}.mbox"));
+        let r =
+            crate::mail::export::export_mbox(&pool, &base.join("raw"), id, &dest, &|_| {}).await?;
+        let mut reader = crate::mail::mbox::MboxReader::new(tokio::fs::File::open(&dest).await?);
+        let (mut back, mut same) = (0usize, 0usize);
+        while let Some(item) = reader.next().await? {
+            back += 1;
+            let hash = crate::mail::rawstore::put(&base.join("raw2"), &item.raw).await?;
+            if crate::mail::rawstore::get(&base.join("raw"), &hash)
+                .await
+                .is_ok()
+            {
+                same += 1;
+            }
+        }
+        out += &format!("Aller-retour [{name}] : {} exportés, {back} relus, {same} identiques à l'original ({} avec échappement « From »)\n", r.exported, back - same);
+    }
     let _ = std::fs::remove_dir_all(&base);
     Ok(out)
 }

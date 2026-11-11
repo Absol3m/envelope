@@ -9,6 +9,7 @@ use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
 use crate::mail::actions::{self, Action, Destination};
 use crate::mail::autoconfig;
+use crate::mail::export;
 use crate::mail::imap;
 use crate::mail::ingest;
 use crate::mail::local;
@@ -526,6 +527,31 @@ pub async fn import_run(
         &emit,
     )
     .await
+}
+
+/// Exporte un dossier : un fichier mbox (`path` : fichier choisi) ou des `.eml` (`path` : dossier choisi).
+/// L'avancement part en événements `export:progress`.
+#[tauri::command]
+pub async fn export_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    folder_id: i64,
+    format: export::Format,
+    path: String,
+) -> Result<export::Report> {
+    use tauri::Emitter;
+    let emit = move |p: export::Progress| {
+        let _ = app.emit("export:progress", p);
+    };
+    let dest = std::path::Path::new(&path);
+    match format {
+        export::Format::Mbox => {
+            export::export_mbox(&state.db, &state.raw_dir, folder_id, dest, &emit).await
+        }
+        export::Format::Eml => {
+            export::export_eml(&state.db, &state.raw_dir, folder_id, dest, &emit).await
+        }
+    }
 }
 
 #[tauri::command]
