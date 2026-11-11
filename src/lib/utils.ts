@@ -16,3 +16,6 @@ export async function openExternal(url: string) {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 }
+
+/** Message d'une erreur venue du moteur, sans préfixes techniques (« Error: », « authentification : »). */
+export const errText = (e: unknown) => String(e).replace(/^Error: /, "").replace(/^authentification : /, "");

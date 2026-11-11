@@ -43,6 +43,87 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
     }
 }
 
+// ---------- Verrouillage de l'application ----------
+
+#[tauri::command]
+pub fn lock_status(lock: State<'_, crate::lock::Lock>) -> crate::lock::Status {
+    lock.status()
+}
+
+#[tauri::command]
+pub async fn unlock_password(lock: State<'_, crate::lock::Lock>, password: String) -> Result<()> {
+    lock.unlock(crate::lock::Method::Password, Some(password))
+        .await
+}
+
+/// Ouvre l'invite d'authentification du système (Touch ID, Windows Hello) ; rend la main quand elle est close.
+#[tauri::command]
+pub async fn unlock_system(lock: State<'_, crate::lock::Lock>) -> Result<()> {
+    lock.unlock(crate::lock::Method::System, None).await
+}
+
+/// Secours quand le déverrouillage est impossible (mot de passe oublié, trousseau réinitialisé, Windows Hello retiré) :
+/// efface **toutes** les données locales (comptes, messages bruts, pièces jointes, stockage local, modèles, réglages) et
+/// le verrouillage. Les e-mails restent sur les serveurs. Réservé à l'état verrouillé ; l'interface demande confirmation.
+#[tauri::command]
+pub async fn reset_app(
+    state: State<'_, AppState>,
+    lock: State<'_, crate::lock::Lock>,
+) -> Result<()> {
+    if !lock.is_locked() {
+        return Err(AppError::Invalid(
+            "l'application n'est pas verrouillée".into(),
+        ));
+    }
+    for a in account::list(&state.db).await? {
+        state.sync.stop(&a.id);
+        account::delete_secrets(&a.id);
+    }
+    lock.reset(&state.db).await?;
+    for dir in [&state.raw_dir, &state.attachments_dir] {
+        let _ = tokio::fs::remove_dir_all(dir).await;
+        let _ = tokio::fs::create_dir_all(dir).await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn lock_now(lock: State<'_, crate::lock::Lock>) -> Result<()> {
+    lock.lock_now()
+}
+
+/// Configure le verrouillage. `current_password` : ancien mot de passe, exigé pour modifier un verrouillage
+/// par mot de passe déjà actif (par le système, c'est l'invite native qui s'en charge).
+#[tauri::command]
+pub async fn set_lock(
+    state: State<'_, AppState>,
+    lock: State<'_, crate::lock::Lock>,
+    method: crate::lock::Method,
+    timeout_secs: u32,
+    password: Option<String>,
+    current_password: Option<String>,
+) -> Result<crate::lock::Status> {
+    if timeout_secs > 24 * 3600 {
+        return Err(AppError::Invalid("délai trop long (24 h au plus)".into()));
+    }
+    let next = crate::lock::Config {
+        method,
+        timeout_secs,
+    };
+    lock.configure(&state.db, next, password, current_password)
+        .await?;
+    Ok(lock.status())
+}
+
+/// Chiffrement du disque qui contient les données (FileVault, BitLocker, LUKS) : `on`, `off` ou `unknown`.
+#[tauri::command]
+pub async fn disk_encryption(
+    state: State<'_, AppState>,
+) -> Result<crate::diskcrypt::DiskEncryption> {
+    let dir = state.db_path.parent().unwrap_or(&state.db_path);
+    Ok(crate::diskcrypt::status(dir).await)
+}
+
 /// Couleurs du système (clair/sombre, accent, palette du bureau), relues à chaque retour au premier plan.
 #[tauri::command]
 pub async fn system_appearance() -> envelope_appearance::Appearance {

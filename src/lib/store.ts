@@ -3,13 +3,13 @@ import { parseColors, parseTheme, renderAppearance, type ColorsPref, type ThemeP
 import { applyFont, savedFont, type FontPref } from "./font";
 import { pref } from "./pref";
 import { demoBackend } from "./mock";
-import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ScheduledSend, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
+import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type LockStatus, type ScheduledSend, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
 import { DESTINATIONS, isEmptiableView, isInboxView, isPurgeView, LOCAL_ACCOUNT, placeOf, type Destination, type View } from "./views";
 
 export type { View };
 
-export type SettingsTab = "accounts" | "agent" | "appearance" | "shortcuts";
+export type SettingsTab = "accounts" | "security" | "agent" | "appearance" | "shortcuts";
 export type Density = "comfortable" | "compact";
 
 export interface Toast {
@@ -46,6 +46,8 @@ interface State {
   importOpen: boolean;
   /** Envois programmés en file (liste « Programmés »). */
   scheduled: ScheduledSend[];
+  /** Verrouillage de l'application (null tant qu'il n'est pas connu). Verrouillé : seul l'écran de déverrouillage s'affiche. */
+  lock: LockStatus | null;
   scheduledOpen: boolean;
   /** Historique encore à rapatrier du serveur, par compte (absent ou 0 : complet). */
   backfill: Readonly<Record<string, number>>;
@@ -83,6 +85,11 @@ interface State {
   setBackfill(accountId: string, remaining: number): void;
   setImportOpen(open: boolean): void;
   setScheduledOpen(open: boolean): void;
+  /** Verrouille tout de suite : le moteur refuse alors toute commande, et les données affichées sont effacées. */
+  lockNow(): Promise<void>;
+  /** Après un déverrouillage réussi : recharge la boîte. */
+  unlocked(): Promise<void>;
+  setLockStatus(lock: LockStatus): void;
   refreshScheduled(): Promise<void>;
   loadMore(): Promise<void>;
   setView(v: View): void;
@@ -273,6 +280,7 @@ export const useMail = create<State>((set, get) => {
     needsOnboarding: false,
     importOpen: false,
     scheduled: [],
+    lock: null,
     scheduledOpen: false,
     backfill: {},
     accounts: [],
@@ -296,6 +304,10 @@ export const useMail = create<State>((set, get) => {
       if (!isTauri()) return get().enterDemo(); // aperçu navigateur : boîte de démonstration
       set({ backend: tauriBackend });
       try {
+        // Le verrouillage d'abord : verrouillé, le moteur refuserait tout le reste.
+        const lock = await tauriBackend.lockStatus();
+        set({ lock });
+        if (lock.locked) return void set({ ready: true, threadsLoading: false });
         const accounts = await tauriBackend.listAccounts();
         set({ accounts, needsOnboarding: accounts.length === 0, ready: true });
         if (accounts.length) {
@@ -330,6 +342,16 @@ export const useMail = create<State>((set, get) => {
     },
 
     setImportOpen: (importOpen) => set({ importOpen }),
+    setLockStatus: (lock) => set({ lock }),
+    async lockNow() {
+      await get().backend.lockNow();
+      // On efface ce qui est affiché : l'écran de verrouillage ne doit rien laisser derrière lui en mémoire.
+      set({ lock: { ...get().lock!, locked: true }, accounts: [], folders: [], threads: [], details: {}, scheduled: [], settingsTab: null, paletteOpen: false, ...NAV_RESET });
+    },
+    async unlocked() {
+      set({ lock: await get().backend.lockStatus(), threadsLoading: true });
+      await (get().backend.demo ? get().enterDemo() : get().init());
+    },
     setScheduledOpen: (scheduledOpen) => set({ scheduledOpen }),
     async refreshScheduled() {
       try { set({ scheduled: await get().backend.listScheduled() }); } catch { /* conservé */ }

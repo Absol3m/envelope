@@ -8,6 +8,7 @@ import { Toasts } from "@/components/Toasts";
 import { TooltipProvider } from "@/components/ui/primitives";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { isTauri } from "@/lib/api";
+import { useAutoLock } from "@/lib/autolock";
 import { useComposer } from "@/lib/composer";
 import { notifyNewMail, type SyncedPayload } from "@/lib/notify";
 import { useMail } from "@/lib/store";
@@ -18,13 +19,14 @@ const Onboarding = lazy(() => import("@/components/Onboarding").then((m) => ({ d
 const Composer = lazy(() => import("@/components/Composer").then((m) => ({ default: m.Composer })));
 const Palette = lazy(() => import("@/components/Palette").then((m) => ({ default: m.Palette })));
 const Settings = lazy(() => import("@/components/Settings").then((m) => ({ default: m.Settings })));
+const LockScreen = lazy(() => import("@/components/LockScreen").then((m) => ({ default: m.LockScreen })));
 const ScheduledDialog = lazy(() => import("@/components/ScheduledDialog").then((m) => ({ default: m.ScheduledDialog })));
 const ImportDialog = lazy(() => import("@/components/ImportDialog").then((m) => ({ default: m.ImportDialog })));
 const ShortcutsHelp = lazy(() => import("@/components/Shortcuts").then((m) => ({ default: m.ShortcutsHelp })));
 
 export default function App() {
-  const { ready, needsOnboarding, density, paletteOpen, settingsOpen, helpOpen, importOpen, scheduledOpen } = useMail(
-    useShallow((s) => ({ scheduledOpen: s.scheduledOpen && s.scheduled.length > 0, importOpen: s.importOpen, ready: s.ready, needsOnboarding: s.needsOnboarding, density: s.density, paletteOpen: s.paletteOpen, settingsOpen: s.settingsTab !== null, helpOpen: s.helpOpen })),
+  const { ready, needsOnboarding, density, paletteOpen, settingsOpen, helpOpen, importOpen, scheduledOpen, locked, autoLockSecs, lockEnabled } = useMail(
+    useShallow((s) => ({ locked: s.lock?.locked === true, autoLockSecs: s.lock?.timeoutSecs ?? 0, lockEnabled: (s.lock?.method ?? "off") !== "off", scheduledOpen: s.scheduledOpen && s.scheduled.length > 0, importOpen: s.importOpen, ready: s.ready, needsOnboarding: s.needsOnboarding, density: s.density, paletteOpen: s.paletteOpen, settingsOpen: s.settingsTab !== null, helpOpen: s.helpOpen })),
   );
   const composing = useComposer((s) => s.draft !== null);
   useShortcuts();
@@ -36,11 +38,12 @@ export default function App() {
     const unlisten: Promise<() => void>[] = [];
     import("@tauri-apps/api/event").then(({ listen }) => {
       unlisten.push(listen<SyncedPayload>("mail:synced", (e) => {
-        void useMail.getState().reload({ silent: true });
-        void notifyNewMail(e.payload);
+        const locked = useMail.getState().lock?.locked === true;
+        if (!locked) void useMail.getState().reload({ silent: true }); // verrouillé, le moteur refuserait
+        void notifyNewMail(e.payload, locked);
       }));
       unlisten.push(listen<{ accountId: string; remaining: number }>("mail:backfill", (e) => useMail.getState().setBackfill(e.payload.accountId, e.payload.remaining)));
-      unlisten.push(listen("mail:status", () => void useMail.getState().refreshAccounts()));
+      unlisten.push(listen("mail:status", () => { if (useMail.getState().lock?.locked !== true) void useMail.getState().refreshAccounts(); }));
       unlisten.push(listen<{ subject: string; error: string | null } | null>("scheduled:changed", (e) => {
         const { toast, refreshScheduled } = useMail.getState();
         void refreshScheduled();
@@ -50,7 +53,10 @@ export default function App() {
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));
   }, []);
 
+  useAutoLock(autoLockSecs, lockEnabled && !locked);
+
   if (!ready) return <div className="h-full bg-bg" {...dragRegion} />;
+  if (locked) return <Suspense fallback={null}><LockScreen /></Suspense>;
 
   return (
     <TooltipProvider delayDuration={350}>

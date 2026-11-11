@@ -1,10 +1,13 @@
-import type { Account, Backend, Detected, SendReport, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, Detected, SendReport, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
 
 const NOW = Date.now();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
+
+/** Verrouillage de la démonstration (mot de passe : demo1234). */
+const LOCK: LockStatus = { method: "off", locked: false, timeoutSecs: 0, systemAvailable: true };
 
 const QUEUE: { id: number; accountId: string; message: OutgoingMessage; sendAt: number }[] = [];
 
@@ -326,5 +329,15 @@ export const demoBackend: Backend = {
   removeAccount: () => Promise.reject(new Error("Mode démo : la suppression de compte est désactivée.")),
   openAttachment: () => delay(undefined, 60),
   inlineImages: () => delay({}, 10),
+  lockStatus: () => delay({ ...LOCK }, 20),
+  unlockPassword: (password) => (password === "demo1234" ? ((LOCK.locked = false), delay(undefined, 200)) : Promise.reject(new Error("mot de passe incorrect"))),
+  unlockSystem: () => ((LOCK.locked = false), delay(undefined, 300)),
+  resetApp: () => ((LOCK.method = "off"), (LOCK.locked = false), delay(undefined, 200)),
+  lockNow: () => ((LOCK.locked = true), delay(undefined, 20)),
+  setLock: (method, timeoutSecs) => {
+    Object.assign(LOCK, { method, timeoutSecs });
+    return delay({ ...LOCK }, 100);
+  },
+  diskEncryption: () => delay<DiskEncryption>("on", 30),
   mcpInfo: () => delay<McpInfo>({ binaryPath: "/Applications/Envelope.app/Contents/MacOS/envelope-mcp", dbPath: "~/Library/Application Support/dev.envelope.app/envelope.db" }, 40),
 };

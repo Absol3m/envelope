@@ -1,7 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Bot, Check, Copy, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { type Account, type McpInfo } from "@/lib/api";
+import { type Account, type LockMethod, type McpInfo } from "@/lib/api";
 import { senderLabel } from "@/lib/compose";
 import { relativeTime } from "@/lib/format";
 import { serverDraftsEnabled, setServerDrafts } from "@/lib/composer";
@@ -10,14 +10,15 @@ import { notificationsEnabled, sendNative, setNotificationsEnabled } from "@/lib
 import { useShallow } from "zustand/react/shallow";
 import { useMail, type SettingsTab } from "@/lib/store";
 import type { ColorsPref, ThemePref } from "@/lib/theme";
-import { cn } from "@/lib/utils";
+import { cn, errText } from "@/lib/utils";
 import { ShortcutList } from "./Shortcuts";
 import { AddAccountForm } from "./AddAccountForm";
-import { SETTINGS_LABEL } from "@/lib/platform";
+import { isMac, isWindows, SETTINGS_LABEL } from "@/lib/platform";
 import { Avatar, btnPrimary, IconButton, inputCls } from "./ui/primitives";
 
 const TABS: { id: SettingsTab; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { id: "accounts", label: "Comptes", icon: UserRound },
+  { id: "security", label: "Sécurité", icon: ShieldCheck },
   { id: "agent", label: "Agent IA (MCP)", icon: Bot },
   { id: "appearance", label: "Apparence", icon: Palette },
   { id: "shortcuts", label: "Raccourcis", icon: Keyboard },
@@ -240,6 +241,7 @@ function AgentPanel() {
 
   return (
     <>
+      <p className="mb-5 rounded-lg bg-warn/10 px-3 py-2 text-[12.5px]">Le serveur MCP lit la base directement, sans passer par Envelope : il ne respecte pas le verrouillage et refuse de démarrer tant qu'il est actif (option <code>--allow-locked</code> pour passer outre, en connaissance de cause).</p>
       <div className="mb-7 flex items-center gap-4 rounded-2xl bg-gradient-to-br from-accent/12 to-[#8b5cf6]/10 p-5">
         <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-bg text-accent shadow-card"><Bot size={24} strokeWidth={1.6} /></span>
         <div className="min-w-0 flex-1">
@@ -352,6 +354,78 @@ function DraftsSection() {
   );
 }
 
+const SYSTEM_LOCK_LABEL = isMac ? "Touch ID ou mot de passe du Mac" : isWindows ? "Windows Hello (visage, empreinte, code PIN)" : "Authentification du système";
+const AUTO_LOCK: [number, string][] = [[0, "Jamais"], [60, "1 minute"], [300, "5 minutes"], [900, "15 minutes"], [1800, "30 minutes"], [3600, "1 heure"]];
+
+/** Verrouillage de l'application : désactivé, par le système (Touch ID, Windows Hello) ou par un mot de passe. */
+function LockSection() {
+  const { backend, lock, setLockStatus, toast } = useMail(useShallow((s) => ({ backend: s.backend, lock: s.lock, setLockStatus: s.setLockStatus, toast: s.toast })));
+  const [method, setMethod] = useState<LockMethod>(lock?.method ?? "off");
+  const [timeout, setTimeoutSecs] = useState(lock?.timeoutSecs ?? 0);
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [current, setCurrent] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!lock) return null;
+  const active = lock.method;
+  const changed = method !== active || timeout !== lock.timeoutSecs || (method === "password" && password !== "");
+  const passwordProblem = method === "password" && (password !== "" || active !== "password")
+    ? password.length < 8 ? "Au moins 8 caractères." : password !== confirmation ? "Les deux saisies diffèrent." : null
+    : null;
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const next = await backend.setLock(method, timeout, method === "password" && password ? password : undefined, active === "password" ? current : undefined);
+      setLockStatus(next);
+      setPassword(""); setConfirmation(""); setCurrent("");
+      toast({ message: method === "off" ? "Verrouillage désactivé" : "Verrouillage enregistré" });
+    } catch (e) {
+      toast({ message: `Enregistrement impossible — ${errText(e)}`, tone: "error", duration: 6000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const options: [LockMethod, string][] = [["off", "Désactivé"], ...(lock.systemAvailable ? [["system", SYSTEM_LOCK_LABEL] as [LockMethod, string]] : []), ["password", "Mot de passe d'Envelope"]];
+  return (
+    <Section title="Verrouillage" hint="Demande de s'authentifier à l'ouverture d'Envelope et après un temps d'inactivité. Tant qu'il est verrouillé, l'application ne donne accès à aucun message. Ce n'est pas un chiffrement : un programme qui lit directement les fichiers, une sauvegarde ou le serveur MCP (qui refuse de démarrer tant que le verrouillage est actif) ne sont pas arrêtés. Pour protéger le disque lui-même, activez le chiffrement du système.">
+      <fieldset className="flex max-w-[460px] flex-col gap-2">
+        <legend className="sr-only">Méthode de verrouillage</legend>
+        {options.map(([id, label]) => (
+          <label key={id} className="flex cursor-default items-center gap-2.5 text-[13px]">
+            <input type="radio" name="lock-method" checked={method === id} onChange={() => setMethod(id)} className="accent-[var(--accent)]" />
+            {label}
+          </label>
+        ))}
+        {!lock.systemAvailable && <p className="text-[12px] text-muted">Pas d'authentification native sur ce système : utilisez un mot de passe.</p>}
+      </fieldset>
+      {method !== "off" && (
+        <div className="mt-3 flex max-w-[460px] flex-col gap-2.5">
+          <label className="flex items-center gap-2.5 text-[13px]">
+            <span className="w-44 shrink-0 text-muted">Verrouiller après</span>
+            <select aria-label="Délai d'inactivité" value={timeout} onChange={(e) => setTimeoutSecs(Number(e.target.value))} className={cn(inputCls, "px-2")}>
+              {AUTO_LOCK.map(([secs, label]) => <option key={secs} value={secs}>{secs === 0 ? "Jamais (au lancement seulement)" : label}</option>)}
+            </select>
+          </label>
+          {method === "password" && (
+            <>
+              <input type="password" aria-label="Nouveau mot de passe" autoComplete="new-password" placeholder={active === "password" ? "Nouveau mot de passe (laisser vide pour le garder)" : "Mot de passe (8 caractères au moins)"} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
+              {(password !== "" || active !== "password") && <input type="password" aria-label="Confirmer le mot de passe" autoComplete="new-password" placeholder="Confirmer le mot de passe" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} className={inputCls} />}
+              {passwordProblem && password !== "" && <p className="text-[12px] text-danger">{passwordProblem}</p>}
+            </>
+          )}
+        </div>
+      )}
+      {active === "password" && changed && (
+        <input type="password" aria-label="Mot de passe actuel" autoComplete="current-password" placeholder="Mot de passe actuel (pour confirmer le changement)" value={current} onChange={(e) => setCurrent(e.target.value)} className={cn(inputCls, "mt-3 max-w-[460px]")} />
+      )}
+      {active === "system" && changed && <p className="mt-3 text-[12px] text-muted">Le système vous demandera de vous authentifier pour confirmer le changement.</p>}
+      <button type="button" disabled={!changed || busy || passwordProblem !== null || (active === "password" && !current)} onClick={() => void save()} className={cn(btnPrimary, "mt-4")}>Enregistrer</button>
+    </Section>
+  );
+}
+
 function NotificationsSection() {
   const [on, setOn] = useState(notificationsEnabled);
   const toast = useMail((s) => s.toast);
@@ -425,6 +499,7 @@ export function Settings() {
             <Dialog.Close asChild><IconButton label="Fermer" className="absolute right-3 top-3"><X size={16} /></IconButton></Dialog.Close>
             <h2 className="mb-5 text-[18px] font-semibold tracking-tight">{TABS.find((t) => t.id === settingsTab)?.label}</h2>
             {settingsTab === "accounts" && <AccountsPanel />}
+            {settingsTab === "security" && <LockSection />}
             {settingsTab === "agent" && <AgentPanel />}
             {settingsTab === "appearance" && <AppearancePanel />}
             {settingsTab === "shortcuts" && <ShortcutList />}

@@ -1,5 +1,5 @@
 import { Command } from "cmdk";
-import { Bot, Download, Forward, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, PenSquare, RefreshCw, Reply, ReplyAll, Search, Settings, Star, Sun, Trash2, Undo2 } from "lucide-react";
+import { Bot, Download, Forward, Inbox, Keyboard, Lock, Mail, MailOpen, Monitor, Moon, PenSquare, RefreshCw, Reply, ReplyAll, Search, Settings, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { useState } from "react";
 import { useComposer } from "@/lib/composer";
@@ -79,6 +79,7 @@ export function Palette() {
         </Command.Group>
 
         <Command.Group heading="Application">
+          {s.lock && s.lock.method !== "off" && <Item icon={Lock} onSelect={run(() => void s.lockNow())}>Verrouiller Envelope</Item>}
           <Item icon={Undo2} hint={["Z"]} onSelect={run(() => void useComposer.getState().undoSend())}>Annuler l'envoi</Item>
           <Item icon={RefreshCw} onSelect={run(() => s.accounts.forEach((a) => void s.backend.syncNow(a.id)))}>Synchroniser maintenant</Item>
           <Item icon={Download} onSelect={run(() => s.setImportOpen(true))}>Importer des dossiers locaux (Thunderbird…)</Item>

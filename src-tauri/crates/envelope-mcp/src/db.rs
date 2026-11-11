@@ -31,3 +31,61 @@ pub async fn open_readonly(path: &Path) -> Result<SqlitePool, String> {
         .await
         .map_err(|e| format!("ouverture de {} : {e}", path.display()))
 }
+
+/// Le verrouillage de l'application est-il actif ? (réglage `lock.method` ≠ `off`). Le serveur MCP lit le fichier de
+/// la base directement, sans passer par l'application : il ne connaît pas l'état « verrouillé » et ne peut pas
+/// l'imposer. Il refuse donc de démarrer tant qu'un verrouillage est configuré, sauf demande explicite.
+/// Une base sans table `settings` (ancienne version) n'a pas de verrouillage.
+pub async fn lock_enabled(pool: &SqlitePool) -> bool {
+    sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = 'lock.method'")
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|m| m != "off")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn pool(with_table: bool) -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        if with_table {
+            sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        pool
+    }
+
+    #[tokio::test]
+    async fn verrouillage_detecte_dans_les_reglages() {
+        assert!(
+            !lock_enabled(&pool(false).await).await,
+            "ancienne base : pas de verrouillage"
+        );
+        let p = pool(true).await;
+        assert!(!lock_enabled(&p).await, "aucun réglage");
+        sqlx::query("INSERT INTO settings VALUES ('lock.method', 'off')")
+            .execute(&p)
+            .await
+            .unwrap();
+        assert!(!lock_enabled(&p).await);
+        sqlx::query("UPDATE settings SET value = 'password'")
+            .execute(&p)
+            .await
+            .unwrap();
+        assert!(lock_enabled(&p).await);
+        sqlx::query("UPDATE settings SET value = 'system'")
+            .execute(&p)
+            .await
+            .unwrap();
+        assert!(lock_enabled(&p).await);
+    }
+}

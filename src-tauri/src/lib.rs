@@ -8,7 +8,9 @@ mod db;
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub mod dev;
+mod diskcrypt;
 mod error;
+mod lock;
 mod mail;
 mod mcp;
 mod picks;
@@ -34,6 +36,25 @@ pub struct AppState {
     pub actions: tokio::sync::Mutex<()>,
     /// Chemins choisis dans les sélecteurs natifs (import, export) : l'interface n'en voit que des jetons.
     pub picks: picks::Picks,
+}
+
+/// Barrière du verrouillage : tant que l'application est verrouillée, toute commande hors celles du
+/// déverrouillage (`lock::ALLOWED_WHEN_LOCKED`) est refusée **ici**, quoi que fasse l'interface.
+fn gated<R: tauri::Runtime>(
+    inner: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    move |invoke| {
+        let locked = invoke
+            .message
+            .webview_ref()
+            .try_state::<lock::Lock>()
+            .map_or(true, |l| l.is_locked()); // échoue fermé : verrou introuvable = verrouillé
+        if lock::blocks(locked, invoke.message.command()) {
+            invoke.resolver.reject("l'application est verrouillée");
+            return true;
+        }
+        inner(invoke)
+    }
 }
 
 /// Fenêtre principale, aux conventions de chaque système :
@@ -109,6 +130,7 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             let db_path = db::db_path(&data_dir);
             let pool = tauri::async_runtime::block_on(db::init(&db_path))?;
+            let lock_config = tauri::async_runtime::block_on(lock::load_config(&pool))?;
             tracing::info!("base SQLite prête : {}", db_path.display());
 
             let attachments_dir = data_dir.join("attachments");
@@ -119,6 +141,7 @@ pub fn run() {
                 attachments_dir.clone(),
                 raw_dir.clone(),
             );
+            app.manage(lock::Lock::new(lock_config));
             app.manage(AppState {
                 db: pool,
                 db_path,
@@ -136,8 +159,15 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(gated(tauri::generate_handler![
             commands::app_info,
+            commands::lock_status,
+            commands::unlock_password,
+            commands::unlock_system,
+            commands::reset_app,
+            commands::lock_now,
+            commands::set_lock,
+            commands::disk_encryption,
             commands::system_appearance,
             commands::list_accounts,
             commands::add_account,
@@ -185,7 +215,86 @@ pub fn run() {
             commands::open_attachment,
             commands::inline_images,
             commands::mcp_info,
-        ])
+        ]))
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+    use tauri::ipc::{CallbackFn, InvokeBody};
+    use tauri::test::{
+        get_ipc_response, mock_builder, mock_context, noop_assets, MockRuntime, INVOKE_KEY,
+    };
+
+    #[tauri::command]
+    fn secret() -> &'static str {
+        "contenu des e-mails"
+    }
+
+    /// Même nom que la vraie commande : celle-ci doit rester joignable verrouillé.
+    #[tauri::command]
+    fn lock_status(lock: tauri::State<'_, lock::Lock>) -> bool {
+        lock.is_locked()
+    }
+
+    fn call(
+        webview: &tauri::WebviewWindow<MockRuntime>,
+        cmd: &str,
+    ) -> std::result::Result<tauri::ipc::InvokeResponseBody, serde_json::Value> {
+        get_ipc_response(
+            webview,
+            tauri::webview::InvokeRequest {
+                cmd: cmd.into(),
+                callback: CallbackFn(0),
+                error: CallbackFn(1),
+                url: if cfg!(windows) {
+                    "http://tauri.localhost"
+                } else {
+                    "tauri://localhost"
+                }
+                .parse()
+                .unwrap(),
+                body: InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.to_string(),
+            },
+        )
+    }
+
+    fn webview(
+        method: lock::Method,
+    ) -> (tauri::App<MockRuntime>, tauri::WebviewWindow<MockRuntime>) {
+        let app = mock_builder()
+            .manage(lock::Lock::new(lock::Config {
+                method,
+                timeout_secs: 0,
+            }))
+            .invoke_handler(gated(tauri::generate_handler![secret, lock_status]))
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let w = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        (app, w)
+    }
+
+    #[test]
+    fn verrouille_seules_les_commandes_de_deverrouillage_passent() {
+        let (_app, w) = webview(lock::Method::Password); // verrouillé dès le lancement
+        let refused = call(&w, "secret").expect_err("refusée");
+        assert!(refused.to_string().contains("verrouillée"), "{refused}");
+        let status = call(&w, "lock_status").expect("autorisée");
+        assert!(status.deserialize::<bool>().unwrap());
+    }
+
+    #[test]
+    fn deverrouille_ou_sans_verrouillage_tout_passe() {
+        let (_app, w) = webview(lock::Method::Off);
+        assert_eq!(
+            call(&w, "secret").unwrap().deserialize::<String>().unwrap(),
+            "contenu des e-mails"
+        );
+    }
 }

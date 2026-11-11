@@ -1,14 +1,14 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
-import { useState, type DragEvent } from "react";
-import { Bot, Check, ChevronsUpDown, Clock, Download, FolderPlus, HardDrive, Inbox, Layers, MoreHorizontal, PenSquare, RefreshCw, Settings } from "lucide-react";
-import type { FolderRow } from "@/lib/api";
+import { useEffect, useState, type DragEvent } from "react";
+import { Bot, Check, ChevronsUpDown, Clock, Download, Lock, ShieldCheck, TriangleAlert, FolderPlus, HardDrive, Inbox, Layers, MoreHorizontal, PenSquare, RefreshCw, Settings } from "lucide-react";
+import type { DiskEncryption, FolderRow } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
 import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
 import { DRAG_TYPE, LOCAL_ACCOUNT, parseDragIds, isDestination, NAV_MAILBOXES, NAV_SMART, sameView, type View, type NavItem as NavItemData } from "@/lib/views";
 import { cn } from "@/lib/utils";
-import { dragRegion, isMac, SETTINGS_LABEL } from "@/lib/platform";
+import { dragRegion, isMac, isWindows, SETTINGS_LABEL } from "@/lib/platform";
 import { IconButton, Spinner, Tip } from "./ui/primitives";
 
 type Icon = NavItemData["icon"];
@@ -139,8 +139,31 @@ function NameInput({ value, onChange, onDone, onCancel }: { value: string; onCha
   );
 }
 
+/** Comment activer le chiffrement du disque, selon le système. */
+const ENABLE_ENCRYPTION = isMac
+  ? "Activez FileVault : Réglages Système › Confidentialité et sécurité › FileVault."
+  : isWindows
+    ? "Activez le chiffrement de l'appareil ou BitLocker : Paramètres › Confidentialité et sécurité › Chiffrement de l'appareil."
+    : "Chiffrez le disque (LUKS), de préférence à l'installation de la distribution.";
+
+/** Pastille de chiffrement du disque : verte s'il est chiffré, triangle jaune sinon ; rien si le système ne le dit pas. */
+function DiskEncryptionBadge() {
+  const backend = useMail((s) => s.backend);
+  const [state, setState] = useState<DiskEncryption>("unknown");
+  useEffect(() => { backend.diskEncryption().then(setState, () => {}); }, [backend]);
+  if (state === "unknown") return null;
+  const on = state === "on";
+  return (
+    <Tip label={on ? "Disque chiffré par le système : vos e-mails sont protégés si l'ordinateur est volé." : `Disque non chiffré : vos e-mails sont lisibles par quiconque accède au disque. ${ENABLE_ENCRYPTION}`} side="top">
+      <span role="img" aria-label={on ? "Disque chiffré" : "Disque non chiffré"} tabIndex={0} className={cn("inline-flex h-7 w-7 items-center justify-center rounded-md", on ? "text-success" : "text-warn")}>
+        {on ? <ShieldCheck size={14} /> : <TriangleAlert size={14} />}
+      </span>
+    </Tip>
+  );
+}
+
 export function Sidebar() {
-  const { accounts, folders, accountFilter, view, setView, setAccount, openSettings, backend, moveTo, scheduledCount, setScheduledOpen } = useMail(useShallow((s) => ({ scheduledCount: s.scheduled.length, setScheduledOpen: s.setScheduledOpen, moveTo: s.moveTo, accounts: s.accounts, folders: s.folders, accountFilter: s.accountFilter, view: s.view, setView: s.setView, setAccount: s.setAccount, openSettings: s.openSettings, backend: s.backend })));
+  const { accounts, folders, accountFilter, view, setView, setAccount, openSettings, backend, moveTo, scheduledCount, setScheduledOpen, lockEnabled, lockNow } = useMail(useShallow((s) => ({ lockEnabled: (s.lock?.method ?? "off") !== "off", lockNow: s.lockNow, scheduledCount: s.scheduled.length, setScheduledOpen: s.setScheduledOpen, moveTo: s.moveTo, accounts: s.accounts, folders: s.folders, accountFilter: s.accountFilter, view: s.view, setView: s.setView, setAccount: s.setAccount, openSettings: s.openSettings, backend: s.backend })));
   const scoped = folders.filter((f) => f.accountId !== LOCAL_ACCOUNT && (!accountFilter || f.accountId === accountFilter));
   const localFolders = folders.filter((f) => f.accountId === LOCAL_ACCOUNT);
   const unread = (role: string) => scoped.filter((f) => f.role === role).reduce((n, f) => n + f.unreadCount, 0);
@@ -248,9 +271,15 @@ export function Sidebar() {
             <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-success" /> Sync {relativeTime(lastSync)}</span>
           )}
         </div>
+        <DiskEncryptionBadge />
         <IconButton label="Synchroniser" tooltipSide="top" onClick={() => accounts.forEach((a) => void backend.syncNow(a.id))}>
           <RefreshCw size={15} />
         </IconButton>
+        {lockEnabled && (
+          <IconButton label="Verrouiller Envelope" tooltipSide="top" onClick={() => void lockNow()}>
+            <Lock size={15} />
+          </IconButton>
+        )}
         <IconButton label="Agent IA (MCP)" tooltipSide="top" onClick={() => openSettings("agent")}>
           <Bot size={15} />
         </IconButton>

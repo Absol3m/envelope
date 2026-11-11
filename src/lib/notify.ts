@@ -18,8 +18,11 @@ export const setNotificationsEnabled = (on: boolean) => pref.set("notifications"
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /** Titre et corps de la notification : un message → expéditeur + objet ; plusieurs → récapitulatif. */
-export function notificationText(p: Pick<SyncedPayload, "fresh" | "freshTotal">): { title: string; body: string } | null {
-  if (!p.freshTotal || !p.fresh.length) return null;
+export function notificationText(p: Pick<SyncedPayload, "fresh" | "freshTotal">, hidden = false): { title: string; body: string } | null {
+  if (!p.freshTotal) return null;
+  // Application verrouillée : ni expéditeur ni objet sur l'écran (le moteur n'en envoie d'ailleurs pas).
+  if (hidden) return { title: "Envelope", body: p.freshTotal === 1 ? "Nouveau message" : `${p.freshTotal} nouveaux messages` };
+  if (!p.fresh.length) return null;
   if (p.freshTotal === 1) {
     const [m] = p.fresh;
     return { title: clip(m.from, 60), body: clip(m.subject.trim() || "(sans objet)", 120) };
@@ -37,8 +40,8 @@ export async function sendNative(msg: { title: string; body: string }) {
 }
 
 /** Nouveau message : notification seulement si l'application n'est pas au premier plan. */
-export async function notifyNewMail(p: SyncedPayload) {
-  const msg = notificationText(p);
+export async function notifyNewMail(p: SyncedPayload, locked = false) {
+  const msg = notificationText(p, locked);
   if (!msg || !notificationsEnabled() || document.hasFocus()) return;
   try {
     await sendNative(msg);

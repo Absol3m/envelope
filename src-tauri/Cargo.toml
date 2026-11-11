@@ -60,6 +60,7 @@ utf7-imap = "0.3"         # noms de dossiers IMAP (UTF-7 modifié, RFC 3501)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-manual-roots"] }  # jetons OAuth2, autoconfig, désabonnement ; certificats vérifiés par le système (tls.rs)
 sha2 = "0.11"           # PKCE (S256)
 base64 = "0.23"
+argon2 = "0.6"        # empreinte du mot de passe de verrouillage (Argon2id)
 hex = "0.4"           # empreinte du message brut en hexadécimal
 dunce = "1"             # chemins Windows sans préfixe \\?\ (ouverture des pièces jointes)
 
@@ -89,4 +90,10 @@ keyring = { version = "3", features = ["windows-native"] }
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test"] }  # application factice : test de la barrière de verrouillage
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }  # certificat de test (STARTTLS)
+
+# Authentification native de l'utilisateur : Touch ID / mot de passe du Mac, Windows Hello. (Linux : pas de
+# dispositif commun sans règle polkit installée en administrateur → mot de passe d'application.)
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+robius-authentication = "0.3"

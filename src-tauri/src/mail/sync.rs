@@ -19,7 +19,7 @@ use futures::{FutureExt, TryStreamExt};
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use tauri::async_runtime::JoinHandle;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 
 use crate::error::{AppError, Result};
@@ -217,13 +217,22 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
             last_full = Instant::now();
         }
         ctx.set_status("idle", None).await;
+        // Application verrouillée : ni expéditeur ni objet dans l'événement (le nombre suffit à une notification).
+        let locked = ctx
+            .app
+            .try_state::<crate::lock::Lock>()
+            .map_or(true, |l| l.is_locked());
         let _ = ctx.app.emit(
             "mail:synced",
             SyncedEvent {
                 account_id: ctx.account_id.clone(),
                 new_messages,
                 fresh_total: fresh.len(),
-                fresh: fresh.into_iter().take(MAX_FRESH).collect(),
+                fresh: if locked {
+                    Vec::new()
+                } else {
+                    fresh.into_iter().take(MAX_FRESH).collect()
+                },
             },
         );
 

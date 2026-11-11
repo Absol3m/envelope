@@ -217,6 +217,19 @@ export interface ScheduledSend {
   error: string | null;
 }
 
+export type LockMethod = "off" | "system" | "password";
+/** État du verrouillage de l'application (voir `src-tauri/src/lock.rs`). */
+export interface LockStatus {
+  method: LockMethod;
+  locked: boolean;
+  /** Verrouillage automatique après cette durée d'inactivité, en secondes (0 = jamais). */
+  timeoutSecs: number;
+  /** Le système offre une authentification native (Touch ID, Windows Hello…) ici. */
+  systemAvailable: boolean;
+}
+
+export type DiskEncryption = "on" | "off" | "unknown";
+
 export interface Template {
   id: number;
   name: string;
@@ -284,6 +297,17 @@ export interface Backend {
   unsubscribe(messageId: number): Promise<void>;
   openAttachment(id: number): Promise<void>;
   inlineImages(messageId: number): Promise<Record<string, string>>;
+  lockStatus(): Promise<LockStatus>;
+  unlockPassword(password: string): Promise<void>;
+  /** Ouvre l'invite d'authentification du système (Touch ID, Windows Hello) ; se termine quand elle est close. */
+  unlockSystem(): Promise<void>;
+  lockNow(): Promise<void>;
+  /** Secours verrouillé : efface les données locales et le verrouillage (les e-mails restent sur les serveurs). */
+  resetApp(): Promise<void>;
+  /** `currentPassword` : exigé pour modifier un verrouillage par mot de passe déjà actif. */
+  setLock(method: LockMethod, timeoutSecs: number, password?: string, currentPassword?: string): Promise<LockStatus>;
+  /** Le disque qui contient les données est-il chiffré par le système (FileVault, BitLocker, LUKS) ? */
+  diskEncryption(): Promise<DiskEncryption>;
   mcpInfo(): Promise<McpInfo>;
   /** Pastille de non-lus sur l'icône de l'application (0 : aucune). */
   setBadge(count: number): Promise<void>;
@@ -353,5 +377,12 @@ export const tauriBackend: Backend = {
   deleteTemplate: (id) => invoke("delete_template", { id }),
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   inlineImages: (messageId) => invoke("inline_images", { messageId }),
+  lockStatus: () => invoke("lock_status"),
+  unlockPassword: (password) => invoke("unlock_password", { password }),
+  unlockSystem: () => invoke("unlock_system"),
+  lockNow: () => invoke("lock_now"),
+  resetApp: () => invoke("reset_app"),
+  setLock: (method, timeoutSecs, password, currentPassword) => invoke("set_lock", { method, timeoutSecs, password, currentPassword }),
+  diskEncryption: () => invoke("disk_encryption"),
   mcpInfo: () => invoke("mcp_info"),
 };

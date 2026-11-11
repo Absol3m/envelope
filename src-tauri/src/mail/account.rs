@@ -258,6 +258,23 @@ pub fn load_oauth(account_id: &str) -> Result<oauth::OAuthTokens> {
         &entry(account_id, OAUTH)?.get_password()?,
     )?)
 }
+/// Secret de l'application elle-même (hors compte) dans le trousseau du système ; `kind` en désigne l'usage.
+pub fn store_app_secret(kind: &str, value: &str) -> Result<()> {
+    Ok(entry("app", kind)?.set_password(value)?)
+}
+pub fn load_app_secret(kind: &str) -> Result<Option<String>> {
+    match entry("app", kind)?.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+pub fn delete_app_secret(kind: &str) {
+    if let Ok(e) = entry("app", kind) {
+        let _ = e.delete_credential();
+    }
+}
+
 /// Identifiants d'application OAuth2 (par fournisseur, partagés par tous les comptes).
 fn client_entry(provider: OAuthProvider) -> Result<keyring::Entry> {
     entry("oauth-client", provider.as_str())
