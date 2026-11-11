@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
 import type { Draft } from "../compose";
-import { attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
+import { applyTemplate, templateBody, attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
   id: 1, messageId: "m1@x", references: [] as string[], folderId: 1, subject: "Budget", fromName: "Alice", fromAddr: "alice@x.fr",
@@ -144,5 +144,29 @@ describe("rappel de pièce jointe oubliée", () => {
   it("ignore la citation et la signature", () => {
     expect(forgotAttachment(draft("<p>Merci !</p><p>--<br>Envoyé avec pièce jointe</p>"))).toBe(false);
     expect(forgotAttachment(draft("<p>Merci !</p><blockquote><p>voir pièce jointe</p></blockquote>"))).toBe(false);
+  });
+});
+
+describe("modèles", () => {
+  const tpl = { subject: "Relance", bodyHtml: "<p>Bonjour,</p>" };
+  it("place le corps avant la signature et donne l'objet s'il est vide", () => {
+    const d = applyTemplate(emptyDraft("a", "Alice"), tpl);
+    expect(d.subject).toBe("Relance");
+    expect(d.html.startsWith("<p>Bonjour,</p><p>--")).toBe(true);
+  });
+  it("garde l'objet déjà saisi et le texte déjà écrit", () => {
+    const d = applyTemplate({ ...emptyDraft("a"), subject: "Mon objet", html: "<p>Début</p>" }, tpl);
+    expect(d.subject).toBe("Mon objet");
+    expect(d.html).toBe("<p>Bonjour,</p><p>Début</p>");
+  });
+});
+
+describe("corps de modèle", () => {
+  it("retire la signature du compte et la citation d'une réponse", () => {
+    const d = { ...emptyDraft("a", "Alice"), html: `<p>Merci !</p>${signatureHtml("Alice")}<p>Le 1er, Bob a écrit :</p><blockquote><p>texte cité</p></blockquote>` };
+    expect(templateBody(d, "Alice")).toBe("<p>Merci !</p>");
+  });
+  it("garde un corps sans signature ni citation, et ignore le paragraphe vide initial", () => {
+    expect(templateBody({ ...emptyDraft("a", "Alice"), html: `<p></p><p>Bonjour</p>${signatureHtml("Alice")}` }, "Alice")).toBe("<p>Bonjour</p>");
   });
 });

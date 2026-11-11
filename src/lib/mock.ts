@@ -1,10 +1,14 @@
-import type { Account, Backend, Detected, SendReport, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, Detected, SendReport, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
 
 const NOW = Date.now();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
+
+const TEMPLATES: Template[] = [
+  { id: 1, name: "Accusé de réception", subject: "Re : votre demande", bodyHtml: "<p>Bonjour,</p><p>Nous avons bien reçu votre message et revenons vers vous sous 48 h.</p><p>Cordialement,</p>" },
+];
 
 const ACCOUNTS: Account[] = [
   { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord" },
@@ -273,6 +277,18 @@ export const demoBackend: Backend = {
     const a = ACCOUNTS.find((x) => x.id === id);
     if (a) a.signature = signature;
     return delay(undefined, 60);
+  },
+  listTemplates: () => delay([...TEMPLATES].sort((a, b) => a.name.localeCompare(b.name)), 40),
+  saveTemplate: (t) => {
+    const i = TEMPLATES.findIndex((x) => x.name.toLowerCase() === t.name.trim().toLowerCase());
+    const saved = { ...t, name: t.name.trim(), id: i >= 0 ? TEMPLATES[i].id : Math.max(0, ...TEMPLATES.map((x) => x.id)) + 1 };
+    if (i >= 0) TEMPLATES[i] = saved; else TEMPLATES.push(saved);
+    return delay(saved, 60);
+  },
+  deleteTemplate: (id) => {
+    const i = TEMPLATES.findIndex((x) => x.id === id);
+    if (i >= 0) TEMPLATES.splice(i, 1);
+    return delay(undefined, 40);
   },
   removeAccount: () => Promise.reject(new Error("Mode démo : la suppression de compte est désactivée.")),
   openAttachment: () => delay(undefined, 60),

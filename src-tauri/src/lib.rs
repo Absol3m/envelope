@@ -12,6 +12,7 @@ mod error;
 mod mail;
 mod mcp;
 mod picks;
+mod templates;
 mod tls;
 
 use std::path::PathBuf;
@@ -145,6 +146,9 @@ pub fn run() {
             commands::clear_oauth_client,
             commands::remove_account,
             commands::set_account_signature,
+            commands::list_templates,
+            commands::save_template,
+            commands::delete_template,
             commands::unsubscribe,
             commands::sync_now,
             commands::list_folders,

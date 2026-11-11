@@ -186,6 +186,21 @@ export function htmlToPlain(html: string): string {
   return render(doc.body).replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** Applique un modèle : son corps passe avant la signature et les citations, son objet ne remplace pas un objet déjà saisi. */
+export function applyTemplate(d: Draft, t: { subject: string; bodyHtml: string }): Draft {
+  return { ...d, subject: d.subject.trim() ? d.subject : t.subject, html: t.bodyHtml + d.html.replace(/^<p><\/p>/, "") };
+}
+
+/** Corps à enregistrer comme modèle : le texte de l'auteur, sans la signature du compte ni la citation d'une réponse. */
+export function templateBody(d: Draft, signature: string): string {
+  let html = d.html;
+  const sig = signatureHtml(signature);
+  if (sig) html = html.replace(sig, "");
+  const quote = html.indexOf("<blockquote");
+  if (quote >= 0) html = html.slice(0, Math.max(0, html.lastIndexOf("<p>", quote))); // l'en-tête « X a écrit » précède la citation
+  return html.replace(/^(<p><\/p>)+/, "");
+}
+
 /** Mots qui annoncent une pièce jointe (français, anglais) ; « joint » seul est exclu (le joint de culasse). */
 const ATTACHMENT_WORDS = /(?<![\p{L}\p{N}])(?:pi[eè]ces?\s+jointes?|ci[-\s]?joint(?:e|es|s)?|(?:je|nous)\s+(?:vous\s+)?(?:joins|joignons)|attach(?:ed|ment|ments|ing)|enclosed)(?![\p{L}\p{N}])/iu;
 

@@ -192,6 +192,13 @@ export interface McpInfo {
   dbPath: string;
 }
 
+export interface Template {
+  id: number;
+  name: string;
+  subject: string;
+  bodyHtml: string;
+}
+
 /** Tout ce dont l'interface a besoin du « serveur » : l'implémentation réelle (Tauri) ou la démo. */
 export interface Backend {
   readonly demo: boolean;
@@ -236,6 +243,10 @@ export interface Backend {
   suggestContacts(accountId: string | null, query: string): Promise<Addr[]>;
   removeAccount(accountId: string): Promise<void>;
   setAccountSignature(accountId: string, signature: string): Promise<void>;
+  listTemplates(): Promise<Template[]>;
+  /** Un modèle du même nom est remplacé. */
+  saveTemplate(template: Omit<Template, "id">): Promise<Template>;
+  deleteTemplate(id: number): Promise<void>;
   /** Désabonne de la liste d'un message (POST en un clic ou message mailto). */
   unsubscribe(messageId: number): Promise<void>;
   openAttachment(id: number): Promise<void>;
@@ -298,6 +309,9 @@ export const tauriBackend: Backend = {
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
   unsubscribe: (messageId) => invoke("unsubscribe", { messageId }),
   setAccountSignature: (accountId, signature) => invoke("set_account_signature", { accountId, signature }),
+  listTemplates: () => invoke("list_templates"),
+  saveTemplate: (template) => invoke("save_template", { template }),
+  deleteTemplate: (id) => invoke("delete_template", { id }),
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   inlineImages: (messageId) => invoke("inline_images", { messageId }),
   mcpInfo: () => invoke("mcp_info"),

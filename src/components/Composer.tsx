@@ -1,8 +1,10 @@
-import { Paperclip, Send, Trash2, X } from "lucide-react";
+import * as Dropdown from "@radix-ui/react-dropdown-menu";
+import { FileText, Paperclip, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { serverDraftsEnabled, useComposer } from "@/lib/composer";
-import { swapSignature } from "@/lib/compose";
+import type { Template } from "@/lib/api";
+import { applyTemplate, htmlToPlain, swapSignature, templateBody } from "@/lib/compose";
 import { fileSize } from "@/lib/format";
 import { useMail } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -18,14 +20,27 @@ export function Composer() {
   const draft = useComposer((s) => s.draft);
   const syncState = useComposer((s) => s.syncState);
   const { update, close, discard, send, attach, detach } = useComposer(useShallow((s) => ({ update: s.update, close: s.close, discard: s.discard, send: s.send, attach: s.attach, detach: s.detach })));
-  const { backend, accounts } = useMail(useShallow((s) => ({ backend: s.backend, accounts: s.accounts })));
+  const { backend, accounts, toast } = useMail(useShallow((s) => ({ backend: s.backend, accounts: s.accounts, toast: s.toast })));
   const [showCc, setShowCc] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  /** Change quand un modèle remplace le corps : l'éditeur relit alors le contenu. */
+  const [rev, setRev] = useState(0);
 
   useEffect(() => setShowCc(false), [draft?.id]);
 
   if (!draft) return null;
+  const fail = (what: string) => (e: unknown) => toast({ message: `${what} impossible — ${String(e)}`, tone: "error" });
+  const loadTemplates = () => void backend.listTemplates().then(setTemplates).catch(fail("Chargement des modèles"));
+  const insertTemplate = (t: Template) => { update(applyTemplate(draft, t)); setRev((r) => r + 1); };
+  const saveAsTemplate = async () => {
+    const name = draft.subject.trim() || htmlToPlain(draft.html).slice(0, 40).trim();
+    if (!name) return toast({ message: "Écrivez un objet ou un texte avant d'enregistrer un modèle.", tone: "error" });
+    const signature = accounts.find((a) => a.id === draft.accountId)?.signature ?? "";
+    await backend.saveTemplate({ name, subject: draft.subject, bodyHtml: templateBody(draft, signature) }).then(() => toast({ message: `Modèle « ${name} » enregistré` })).catch(fail("Enregistrement"));
+  };
+  const removeTemplate = (t: Template) => void backend.deleteTemplate(t.id).then(() => setTemplates((l) => l.filter((x) => x.id !== t.id))).catch(fail("Suppression"));
   const ccOpen = showCc || draft.cc.length > 0 || draft.bcc.length > 0;
   const replying = draft.mode === "reply" || draft.mode === "replyAll";
 
@@ -99,7 +114,7 @@ export function Composer() {
           Déposez pour joindre
         </div>
       )}
-      <RichEditor key={`${draft.id}:${draft.accountId}`} html={draft.html} onChange={(html) => update({ html })} focusAtStart={replying} />
+      <RichEditor key={`${draft.id}:${draft.accountId}:${rev}`} html={draft.html} onChange={(html) => update({ html })} focusAtStart={replying} />
 
       {draft.attachments.length > 0 && (
         <ul className="flex max-h-[84px] shrink-0 flex-wrap gap-1.5 overflow-y-auto border-t border-border px-3 py-2" aria-label="Pièces jointes">
@@ -126,6 +141,24 @@ export function Composer() {
           onChange={(e) => { void attach(Array.from(e.target.files ?? [])); e.target.value = ""; }}
         />
         <IconButton label="Joindre un fichier" onClick={() => fileInput.current?.click()}><Paperclip size={16} /></IconButton>
+        <Dropdown.Root onOpenChange={(o) => o && loadTemplates()}>
+          <Dropdown.Trigger asChild>
+            <IconButton label="Modèles" tooltipSide="top"><FileText size={16} /></IconButton>
+          </Dropdown.Trigger>
+          <Dropdown.Portal>
+            <Dropdown.Content side="top" align="start" sideOffset={8} className="anim-fade-in z-[70] min-w-[220px] max-w-[320px] rounded-xl border border-border bg-elevated p-1 text-[13px] shadow-pop">
+              {templates.length === 0 && <div className="px-2.5 py-1.5 text-muted">Aucun modèle enregistré</div>}
+              {templates.map((t) => (
+                <Dropdown.Item key={t.id} onSelect={() => insertTemplate(t)} className="group/tpl flex cursor-default items-center gap-2 rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">
+                  <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                  <button type="button" aria-label={`Supprimer le modèle ${t.name}`} onClick={(e) => { e.stopPropagation(); removeTemplate(t); }} className="press hidden rounded p-0.5 text-muted hover:bg-active hover:text-danger group-data-[highlighted]/tpl:block"><X size={12} /></button>
+                </Dropdown.Item>
+              ))}
+              <Dropdown.Separator className="my-1 h-px bg-border" />
+              <Dropdown.Item onSelect={() => void saveAsTemplate()} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">Enregistrer ce message comme modèle</Dropdown.Item>
+            </Dropdown.Content>
+          </Dropdown.Portal>
+        </Dropdown.Root>
         <span className="flex-1" />
         <IconButton label="Supprimer le brouillon" onClick={discard}><Trash2 size={16} /></IconButton>
       </footer>

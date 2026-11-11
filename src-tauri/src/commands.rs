@@ -18,6 +18,7 @@ use crate::mail::mbox;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
+use crate::templates::{self, Template};
 use crate::AppState;
 use envelope_core::addr::Addr;
 use envelope_core::contacts;
@@ -235,6 +236,21 @@ pub async fn set_account_signature(
         ));
     }
     account::set_signature(&state.db, &account_id, signature.trim_end()).await
+}
+
+#[tauri::command]
+pub async fn list_templates(state: State<'_, AppState>) -> Result<Vec<Template>> {
+    templates::list(&state.db).await
+}
+
+#[tauri::command]
+pub async fn save_template(state: State<'_, AppState>, template: Template) -> Result<Template> {
+    templates::save(&state.db, &template).await
+}
+
+#[tauri::command]
+pub async fn delete_template(state: State<'_, AppState>, id: i64) -> Result<()> {
+    templates::delete(&state.db, id).await
 }
 
 #[tauri::command]
