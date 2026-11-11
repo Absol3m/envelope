@@ -239,6 +239,21 @@ pub async fn set_account_signature(
 }
 
 #[tauri::command]
+pub async fn add_identity(
+    state: State<'_, AppState>,
+    account_id: String,
+    name: String,
+    email: String,
+) -> Result<()> {
+    account::add_identity(&state.db, &account_id, &name, &email).await
+}
+
+#[tauri::command]
+pub async fn remove_identity(state: State<'_, AppState>, id: i64) -> Result<()> {
+    account::remove_identity(&state.db, id).await
+}
+
+#[tauri::command]
 pub async fn list_templates(state: State<'_, AppState>) -> Result<Vec<Template>> {
     templates::list(&state.db).await
 }

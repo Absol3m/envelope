@@ -236,6 +236,8 @@ pub struct DraftData {
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
     pub attachments: Vec<DraftAttachment>,
+    /// Adresse d'expéditeur écrite dans le brouillon (celle du compte, ou un alias).
+    pub from_email: String,
 }
 
 /// Lit un brouillon dans son message brut.
@@ -259,6 +261,7 @@ pub fn parse_draft(raw: &[u8], id: String, account_id: String) -> Result<DraftDa
         body_text: parsed.body_text.unwrap_or_default(),
         in_reply_to: parsed.in_reply_to,
         references: parsed.references,
+        from_email: parsed.from_addr,
         attachments: parsed
             .attachments
             .into_iter()
@@ -329,6 +332,7 @@ mod tests {
             sync_status: "idle".into(),
             sync_error: None,
             signature: String::new(),
+            identities: vec![],
         }
     }
 
@@ -348,6 +352,7 @@ mod tests {
                 data_base64: STANDARD.encode(b"%PDF-1.4 contenu"),
             }],
             draft_id: Some(draft_id.into()),
+            from_email: None,
         }
     }
 

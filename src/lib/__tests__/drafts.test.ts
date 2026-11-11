@@ -127,7 +127,7 @@ describe("brouillons enregistrés sur le serveur", () => {
   });
 
   it("rouvrir un brouillon du serveur ne le renvoie pas tant qu'il n'a pas changé", async () => {
-    const remote: DraftData = { id: "distant-1", accountId: "a", to: ["Bob <bob@y.fr>"], cc: [], bcc: [], subject: "Devis", bodyHtml: "<p>Bonjour</p>", bodyText: "Bonjour", inReplyTo: null, references: [], attachments: [{ filename: "a.pdf", mimeType: "application/pdf", dataBase64: "AAEC" }] };
+    const remote: DraftData = { id: "distant-1", accountId: "a", fromEmail: "me@x.fr", to: ["Bob <bob@y.fr>"], cc: [], bcc: [], subject: "Devis", bodyHtml: "<p>Bonjour</p>", bodyText: "Bonjour", inReplyTo: null, references: [], attachments: [{ filename: "a.pdf", mimeType: "application/pdf", dataBase64: "AAEC" }] };
     fakeBackend({ remote });
     await useComposer.getState().openDraft(7);
     const d = useComposer.getState().draft!;

@@ -1,7 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Bot, Check, Copy, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { type McpInfo } from "@/lib/api";
+import { type Account, type McpInfo } from "@/lib/api";
+import { senderLabel } from "@/lib/compose";
 import { relativeTime } from "@/lib/format";
 import { serverDraftsEnabled, setServerDrafts } from "@/lib/composer";
 import { customName, FREE_FONTS, type FontPref } from "@/lib/font";
@@ -117,6 +118,39 @@ function SignatureField({ id, email, value }: { id: string; email: string; value
   );
 }
 
+/** Alias d'envoi d'un compte : liste, ajout (adresse + nom affiché) et retrait. */
+function IdentitiesField({ account }: { account: Account }) {
+  const { backend, refreshAccounts, toast } = useMail(useShallow((s) => ({ backend: s.backend, refreshAccounts: s.refreshAccounts, toast: s.toast })));
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const run = (job: Promise<void>, failure: string) => job.then(refreshAccounts).catch((e) => toast({ message: `${failure} — ${String(e)}`, tone: "error" }));
+  return (
+    <div>
+      <span className="mb-1 block text-[12px] text-muted">{account.email}</span>
+      <ul className="mb-2 space-y-1">
+        {account.identities.map((i) => (
+          <li key={i.id} className="flex items-center gap-2 rounded-lg bg-hover px-2.5 py-1 text-[13px]">
+            <span className="min-w-0 flex-1 truncate">{senderLabel(i.name, i.email)}</span>
+            <button type="button" aria-label={`Retirer ${i.email}`} onClick={() => void run(backend.removeIdentity(i.id), "Suppression impossible")} className="press rounded p-0.5 text-muted hover:bg-active hover:text-danger"><X size={13} /></button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!email.trim()) return;
+          void run(backend.addIdentity(account.id, name, email), "Ajout impossible").then(() => { setEmail(""); setName(""); });
+        }}
+      >
+        <input aria-label="Adresse de l'alias" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="alias@exemple.fr" className={cn(inputCls, "min-w-0 flex-[2]")} />
+        <input aria-label="Nom affiché" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="Nom affiché (facultatif)" className={cn(inputCls, "min-w-0 flex-1")} />
+        <button type="submit" className={btnPrimary}>Ajouter</button>
+      </form>
+    </div>
+  );
+}
+
 function AccountsPanel() {
   const { accounts, backend, reload, toast, init } = useMail(useShallow((s) => ({ accounts: s.accounts, backend: s.backend, reload: s.reload, toast: s.toast, init: s.init })));
   const [removing, setRemoving] = useState<string | null>(null);
@@ -166,6 +200,14 @@ function AccountsPanel() {
         <Section title="Signatures" hint="Ajoutée aux nouveaux messages et aux réponses, précédée de « -- ». Texte brut.">
           <div className="space-y-3">
             {accounts.map((a) => <SignatureField key={a.id} id={a.id} email={a.email} value={a.signature} />)}
+          </div>
+        </Section>
+      )}
+
+      {accounts.length > 0 && (
+        <Section title="Adresses d'envoi" hint="Alias de vos comptes : le serveur doit les autoriser. Choisissez l'adresse dans le champ « De » du message ; une réponse part de l'alias auquel le message a été envoyé.">
+          <div className="space-y-4">
+            {accounts.map((a) => <IdentitiesField key={a.id} account={a} />)}
           </div>
         </Section>
       )}

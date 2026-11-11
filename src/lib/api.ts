@@ -3,6 +3,13 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import type { ServerDestination } from "./views";
 
 /** Types miroirs des structures Rust (src-tauri/src/commands.rs, crates/envelope-core). */
+/** Adresse d'envoi supplémentaire (alias) d'un compte ; l'authentification reste celle du compte. */
+export interface Identity {
+  id: number;
+  name: string;
+  email: string;
+}
+
 export interface Account {
   id: string;
   email: string;
@@ -14,6 +21,7 @@ export interface Account {
   lastSyncAt: string | null;
   /** Texte brut, inséré dans les nouveaux messages et les réponses. */
   signature: string;
+  identities: Identity[];
 }
 /** Dossier trouvé dans une source d'import (profil Thunderbird, dossier de boîtes mbox ou Maildir). */
 export interface ImportFolder {
@@ -167,6 +175,8 @@ export interface OutgoingMessage {
   attachments: { filename: string; mimeType: string; dataBase64: string }[];
   /** Brouillon dont ce message est la version finale : supprimé du serveur après l'envoi. */
   draftId?: string;
+  /** Adresse d'expéditeur : celle du compte (défaut) ou l'un de ses alias. */
+  fromEmail?: string;
 }
 /** Brouillon relu depuis le serveur, prêt à rouvrir dans le composer. */
 export interface DraftData {
@@ -181,6 +191,7 @@ export interface DraftData {
   inReplyTo: string | null;
   references: string[];
   attachments: { filename: string; mimeType: string; dataBase64: string }[];
+  fromEmail: string;
 }
 /** Sort de la copie dans « Envoyés » : déposée, rangée par le serveur (Gmail) ou impossible (cause). */
 export type SentCopy = "saved" | "server" | { failed: string };
@@ -243,6 +254,8 @@ export interface Backend {
   suggestContacts(accountId: string | null, query: string): Promise<Addr[]>;
   removeAccount(accountId: string): Promise<void>;
   setAccountSignature(accountId: string, signature: string): Promise<void>;
+  addIdentity(accountId: string, name: string, email: string): Promise<void>;
+  removeIdentity(id: number): Promise<void>;
   listTemplates(): Promise<Template[]>;
   /** Un modèle du même nom est remplacé. */
   saveTemplate(template: Omit<Template, "id">): Promise<Template>;
@@ -309,6 +322,8 @@ export const tauriBackend: Backend = {
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
   unsubscribe: (messageId) => invoke("unsubscribe", { messageId }),
   setAccountSignature: (accountId, signature) => invoke("set_account_signature", { accountId, signature }),
+  addIdentity: (accountId, name, email) => invoke("add_identity", { accountId, name, email }),
+  removeIdentity: (id) => invoke("remove_identity", { id }),
   listTemplates: () => invoke("list_templates"),
   saveTemplate: (template) => invoke("save_template", { template }),
   deleteTemplate: (id) => invoke("delete_template", { id }),

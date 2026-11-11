@@ -146,6 +146,8 @@ pub fn run() {
             commands::clear_oauth_client,
             commands::remove_account,
             commands::set_account_signature,
+            commands::add_identity,
+            commands::remove_identity,
             commands::list_templates,
             commands::save_template,
             commands::delete_template,

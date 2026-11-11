@@ -11,8 +11,8 @@ const TEMPLATES: Template[] = [
 ];
 
 const ACCOUNTS: Account[] = [
-  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord" },
-  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "" },
+  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr" }] },
+  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "", identities: [] },
 ];
 
 const ROLES = ["inbox", "drafts", "sent", "archive", "junk", "trash"] as const;
@@ -277,6 +277,15 @@ export const demoBackend: Backend = {
     const a = ACCOUNTS.find((x) => x.id === id);
     if (a) a.signature = signature;
     return delay(undefined, 60);
+  },
+  addIdentity: (accountId, name, email) => {
+    const a = ACCOUNTS.find((x) => x.id === accountId);
+    if (a) a.identities.push({ id: Math.max(0, ...ACCOUNTS.flatMap((x) => x.identities.map((i) => i.id))) + 1, name, email });
+    return delay(undefined, 60);
+  },
+  removeIdentity: (id) => {
+    for (const a of ACCOUNTS) a.identities = a.identities.filter((i) => i.id !== id);
+    return delay(undefined, 40);
   },
   listTemplates: () => delay([...TEMPLATES].sort((a, b) => a.name.localeCompare(b.name)), 40),
   saveTemplate: (t) => {

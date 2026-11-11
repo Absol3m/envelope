@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { attachmentError, draftFrom, forgotAttachment, draftFromServer, emptyDraft, isBlank, readAsBase64, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
+import { attachmentError, draftFrom, forgotAttachment, draftFromServer, emptyDraft, knownAlias, isBlank, readAsBase64, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
 import { pref } from "./pref";
 import { useMail } from "./store";
 
@@ -70,7 +70,13 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let saving = false;
 let waiting: Draft | null = null;
 
-const signature = (d: Draft) => JSON.stringify([d.accountId, d.to, d.cc, d.bcc, d.subject, d.html, d.attachments.map((a) => a.id)]);
+/** Message à envoyer ou enregistrer : un alias supprimé depuis n'est plus utilisé comme expéditeur. */
+const outgoing = (d: Draft) => {
+  const account = useMail.getState().accounts.find((a) => a.id === d.accountId);
+  return toOutgoing({ ...d, fromEmail: knownAlias(account, d.fromEmail) });
+};
+
+const signature = (d: Draft) => JSON.stringify([d.accountId, d.fromEmail, d.to, d.cc, d.bcc, d.subject, d.html, d.attachments.map((a) => a.id)]);
 
 function deleteFromServer(id: string) {
   const account = onServer.get(id);
@@ -91,7 +97,7 @@ async function saveToServer(draft: Draft) {
   saving = true;
   useComposer.setState({ syncState: "saving" });
   try {
-    await backend.saveDraft(draft.accountId, toOutgoing(draft));
+    await backend.saveDraft(draft.accountId, outgoing(draft));
     onServer.set(draft.id, draft.accountId);
     lastSig.set(draft.id, sig);
     useComposer.setState({ syncState: "saved" });
@@ -133,7 +139,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       const thread = selectedId === null ? undefined : details[selectedId];
       const account = accounts.find((a) => a.id === thread?.accountId);
       if (!thread || !account || !thread.messages.length) return toast("Ouvrez une conversation pour répondre.");
-      open(draftFrom(mode, thread, account.email, account.signature));
+      open(draftFrom(mode, thread, account.email, account.signature, account.identities.map((i) => i.email)));
     },
 
     update(patch) {
@@ -145,7 +151,9 @@ export const useComposer = create<ComposerState>((set, get) => {
 
     async openDraft(threadId) {
       try {
-        const draft = draftFromServer(await useMail.getState().backend.openDraft(threadId));
+        const data = await useMail.getState().backend.openDraft(threadId);
+        const account = useMail.getState().accounts.find((a) => a.id === data.accountId);
+        const draft = { ...draftFromServer(data), fromEmail: knownAlias(account, data.fromEmail) };
         onServer.set(draft.id, draft.accountId);
         lastSig.set(draft.id, signature(draft)); // tel que sur le serveur : pas de nouvel enregistrement tant que rien ne change
         discarded.delete(draft.id);
@@ -220,7 +228,7 @@ export const useComposer = create<ComposerState>((set, get) => {
         timer: setTimeout(async () => {
           pendingSend = null;
           try {
-            const report = await useMail.getState().backend.sendEmail(draft.accountId, toOutgoing(draft));
+            const report = await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
             onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi
             lastSig.delete(draft.id);
             const failure = typeof report.sentCopy === "object" ? report.sentCopy.failed : null;

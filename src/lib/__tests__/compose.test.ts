@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
 import type { Draft } from "../compose";
-import { applyTemplate, templateBody, attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
+import { applyTemplate, knownAlias, senderOptions, templateBody, attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
   id: 1, messageId: "m1@x", references: [] as string[], folderId: 1, subject: "Budget", fromName: "Alice", fromAddr: "alice@x.fr",
@@ -168,5 +168,38 @@ describe("corps de modèle", () => {
   });
   it("garde un corps sans signature ni citation, et ignore le paragraphe vide initial", () => {
     expect(templateBody({ ...emptyDraft("a", "Alice"), html: `<p></p><p>Bonjour</p>${signatureHtml("Alice")}` }, "Alice")).toBe("<p>Bonjour</p>");
+  });
+});
+
+describe("réponse depuis un alias", () => {
+  it("répond depuis l'alias auquel le message a été envoyé, sans l'ajouter en copie", () => {
+    const t = thread([msg({ to: [{ name: null, address: "contact@x.fr" }, { name: "Bob", address: "bob@x.fr" }] })]);
+    const d = draftFrom("replyAll", t, "me@x.fr", "", ["contact@x.fr"]);
+    expect(d.fromEmail).toBe("contact@x.fr");
+    expect(d.cc.map((r) => r.address)).toEqual(["bob@x.fr", "carol@x.fr"]);
+  });
+  it("garde l'adresse du compte quand le message n'a pas été adressé à un alias", () => {
+    expect(draftFrom("reply", thread(), "me@x.fr", "", ["contact@x.fr"]).fromEmail).toBeUndefined();
+  });
+  it("un message envoyé depuis un alias est « de moi » : on répond à ses destinataires", () => {
+    const t = thread([msg({ fromAddr: "contact@x.fr", to: [{ name: null, address: "alice@x.fr" }] })]);
+    expect(draftFrom("reply", t, "me@x.fr", "", ["contact@x.fr"]).to.map((r) => r.address)).toEqual(["alice@x.fr"]);
+  });
+  it("l'alias part dans le message à envoyer", () => {
+    expect(toOutgoing({ ...emptyDraft("a"), fromEmail: "contact@x.fr" }).fromEmail).toBe("contact@x.fr");
+  });
+});
+
+describe("expéditeurs", () => {
+  const acct = (identities: { id: number; name: string; email: string }[]) => ({ id: "a", email: "me@x.fr", displayName: "Moi", provider: "imap", authKind: "password" as const, syncStatus: "idle" as const, syncError: null, lastSyncAt: null, signature: "", identities });
+  it("liste chaque compte puis ses alias", () => {
+    const o = senderOptions([acct([{ id: 1, name: "Pro", email: "contact@x.fr" }])]);
+    expect(o.map((x) => [x.alias, x.label])).toEqual([["", "Moi <me@x.fr>"], ["contact@x.fr", "Pro <contact@x.fr>"]]);
+  });
+  it("un alias supprimé n'est plus reconnu", () => {
+    const a = acct([{ id: 1, name: "", email: "Contact@x.fr" }]);
+    expect(knownAlias(a, "contact@x.fr")).toBe("Contact@x.fr");
+    expect(knownAlias(acct([]), "contact@x.fr")).toBeUndefined();
+    expect(knownAlias(a, undefined)).toBeUndefined();
   });
 });

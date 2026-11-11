@@ -128,6 +128,7 @@ async fn send_mailto(account: &Account, cred: &Credential, mailto: &str) -> Resu
         references: vec![],
         attachments: vec![],
         draft_id: None,
+        from_email: None,
     };
     smtp::send(account, cred, &out).await.map(drop)
 }

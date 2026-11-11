@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { serverDraftsEnabled, useComposer } from "@/lib/composer";
 import type { Template } from "@/lib/api";
-import { applyTemplate, htmlToPlain, swapSignature, templateBody } from "@/lib/compose";
+import { applyTemplate, htmlToPlain, knownAlias, senderOptions, swapSignature, templateBody } from "@/lib/compose";
 import { fileSize } from "@/lib/format";
 import { useMail } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,8 @@ export function Composer() {
     await backend.saveTemplate({ name, subject: draft.subject, bodyHtml: templateBody(draft, signature) }).then(() => toast({ message: `Modèle « ${name} » enregistré` })).catch(fail("Enregistrement"));
   };
   const removeTemplate = (t: Template) => void backend.deleteTemplate(t.id).then(() => setTemplates((l) => l.filter((x) => x.id !== t.id))).catch(fail("Suppression"));
+  const senders = senderOptions(accounts);
+  const sender = senders.find((x) => x.accountId === draft.accountId && x.alias.toLowerCase() === (knownAlias(accounts.find((a) => a.id === draft.accountId), draft.fromEmail) ?? "").toLowerCase()) ?? senders[0];
   const ccOpen = showCc || draft.cc.length > 0 || draft.bcc.length > 0;
   const replying = draft.mode === "reply" || draft.mode === "replyAll";
 
@@ -72,19 +74,21 @@ export function Composer() {
         <IconButton label="Fermer (brouillon conservé)" kbd="Échap" onClick={close}><X size={16} /></IconButton>
       </header>
 
-      {accounts.length > 1 && (
+      {senders.length > 1 && (
         <div className="flex min-h-[38px] items-center gap-2 border-b border-border px-4 text-[13px]">
           <span className="w-6 shrink-0 text-[12px] text-muted">De</span>
           <select
-            aria-label="Compte expéditeur"
-            value={draft.accountId}
+            aria-label="Expéditeur"
+            value={sender.key}
             onChange={(e) => {
+              const next = senders.find((x) => x.key === e.target.value);
+              if (!next) return;
               const sig = (id: string) => accounts.find((a) => a.id === id)?.signature ?? "";
-              update({ accountId: e.target.value, html: swapSignature(draft.html, sig(draft.accountId), sig(e.target.value)) });
+              update({ accountId: next.accountId, fromEmail: next.alias || undefined, html: swapSignature(draft.html, sig(draft.accountId), sig(next.accountId)) });
             }}
             className="min-w-0 flex-1 bg-transparent py-1.5 outline-none"
           >
-            {accounts.map((a) => <option key={a.id} value={a.id}>{a.displayName ? `${a.displayName} <${a.email}>` : a.email}</option>)}
+            {senders.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
           </select>
         </div>
       )}

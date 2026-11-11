@@ -48,6 +48,15 @@ pub struct ServerConfig {
     pub security: Security,
 }
 
+/// Adresse d'envoi supplémentaire d'un compte (alias), avec le nom affiché.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct Identity {
+    pub id: i64,
+    pub name: String,
+    pub email: String,
+}
+
 /// Compte tel que stocké en base (sans secret).
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +77,9 @@ pub struct Account {
     pub sync_status: String,
     pub sync_error: Option<String>,
     pub signature: String,
+    /// Alias d'envoi (table `identities`), remplis par `list` et `get`.
+    #[sqlx(skip)]
+    pub identities: Vec<Identity>,
 }
 
 pub const ACCOUNT_COLUMNS: &str = "id, email, display_name, provider, auth_kind, username, \
@@ -336,21 +348,103 @@ pub const LOCAL_ID: &str = "local";
 
 /// Comptes de messagerie (le compte local n'est pas un compte : ni synchro, ni envoi, ni suppression).
 pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>> {
-    Ok(sqlx::query_as(&format!(
+    let mut accounts: Vec<Account> = sqlx::query_as(&format!(
         "SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE provider <> 'local' ORDER BY created_at"
     ))
     .fetch_all(pool)
-    .await?)
+    .await?;
+    let identities: Vec<(String, i64, String, String)> =
+        sqlx::query_as("SELECT account_id, id, name, email FROM identities ORDER BY id")
+            .fetch_all(pool)
+            .await?;
+    for (account_id, id, name, email) in identities {
+        if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
+            a.identities.push(Identity { id, name, email });
+        }
+    }
+    Ok(accounts)
 }
 
 pub async fn get(pool: &SqlitePool, id: &str) -> Result<Account> {
-    sqlx::query_as(&format!(
+    let mut account: Account = sqlx::query_as(&format!(
         "SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE id = ?"
     ))
     .bind(id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AppError::NotFound(format!("compte {id}")))
+    .ok_or_else(|| AppError::NotFound(format!("compte {id}")))?;
+    account.identities =
+        sqlx::query_as("SELECT id, name, email FROM identities WHERE account_id = ? ORDER BY id")
+            .bind(id)
+            .fetch_all(pool)
+            .await?;
+    Ok(account)
+}
+
+/// Ajoute un alias d'envoi ; la même adresse (sans tenir compte de la casse) n'existe qu'une fois par compte.
+pub async fn add_identity(
+    pool: &SqlitePool,
+    account_id: &str,
+    name: &str,
+    email: &str,
+) -> Result<()> {
+    let email = email.trim();
+    let name = name.trim();
+    if name.chars().count() > 100 {
+        return Err(AppError::Invalid("nom trop long (100 caractères)".into()));
+    }
+    // Analyse d'adresse par lettre (bibliothèque éprouvée), pas d'expression maison.
+    let parsed: lettre::Address = email
+        .parse()
+        .map_err(|_| AppError::Invalid(format!("adresse invalide : {email}")))?;
+    sqlx::query("INSERT INTO identities (account_id, name, email) VALUES (?, ?, ?)")
+        .bind(account_id)
+        .bind(name)
+        .bind(parsed.to_string())
+        .execute(pool)
+        .await
+        .map_err(|e| match e {
+            sqlx::Error::Database(d) if d.is_unique_violation() => {
+                AppError::Invalid("cette adresse existe déjà pour ce compte".into())
+            }
+            e => e.into(),
+        })?;
+    Ok(())
+}
+
+pub async fn remove_identity(pool: &SqlitePool, id: i64) -> Result<()> {
+    sqlx::query("DELETE FROM identities WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Expéditeur d'un message : le compte lui-même, ou l'un de ses alias (jamais une adresse libre).
+/// Renvoie une `Mailbox` : lettre encode correctement un nom contenant des caractères spéciaux.
+pub fn sender(account: &Account, from_email: Option<&str>) -> Result<lettre::message::Mailbox> {
+    let own = account.display_name.clone().filter(|n| !n.is_empty());
+    let (name, email) = match from_email
+        .map(str::trim)
+        .filter(|e| !e.eq_ignore_ascii_case(&account.email))
+    {
+        None => (own, account.email.as_str()),
+        Some(e) => {
+            let id = account
+                .identities
+                .iter()
+                .find(|i| i.email.eq_ignore_ascii_case(e))
+                .ok_or_else(|| AppError::Invalid(format!("adresse d'expéditeur inconnue : {e}")))?;
+            (
+                Some(id.name.clone()).filter(|n| !n.is_empty()).or(own),
+                id.email.as_str(),
+            )
+        }
+    };
+    let address = email
+        .parse()
+        .map_err(|_| AppError::Invalid(format!("adresse invalide : {email}")))?;
+    Ok(lettre::message::Mailbox::new(name, address))
 }
 
 pub async fn set_signature(pool: &SqlitePool, id: &str, signature: &str) -> Result<()> {
@@ -377,4 +471,79 @@ pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
         .await?;
     delete_secrets(id);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn pool_with_account() -> SqlitePool {
+        let pool = crate::db::init_memory().await.unwrap();
+        sqlx::query("INSERT INTO accounts (id,email,username,imap_host,smtp_host,display_name) VALUES ('a','me@x.fr','a','i','s','Moi')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn alias_ajoute_liste_refuse_en_double_et_supprime_avec_le_compte() {
+        let pool = pool_with_account().await;
+        add_identity(&pool, "a", " Pro ", "contact@x.fr")
+            .await
+            .unwrap();
+        assert!(
+            add_identity(&pool, "a", "", "CONTACT@x.fr").await.is_err(),
+            "doublon (casse ignorée)"
+        );
+        assert!(add_identity(&pool, "a", "", "pas une adresse")
+            .await
+            .is_err());
+        let acct = get(&pool, "a").await.unwrap();
+        assert_eq!(acct.identities.len(), 1);
+        assert_eq!(
+            (
+                acct.identities[0].name.as_str(),
+                acct.identities[0].email.as_str()
+            ),
+            ("Pro", "contact@x.fr")
+        );
+        assert_eq!(list(&pool).await.unwrap()[0].identities.len(), 1);
+        remove_identity(&pool, acct.identities[0].id).await.unwrap();
+        assert!(get(&pool, "a").await.unwrap().identities.is_empty());
+        add_identity(&pool, "a", "", "autre@x.fr").await.unwrap();
+        sqlx::query("DELETE FROM accounts WHERE id = 'a'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM identities")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn expediteur_limite_au_compte_et_a_ses_alias() {
+        let pool = pool_with_account().await;
+        add_identity(&pool, "a", "Pro", "contact@x.fr")
+            .await
+            .unwrap();
+        add_identity(&pool, "a", "", "sans-nom@x.fr").await.unwrap();
+        let acct = get(&pool, "a").await.unwrap();
+        let show = |m: lettre::message::Mailbox| (m.name, m.email.to_string());
+        let moi = (Some("Moi".to_string()), "me@x.fr".to_string());
+        assert_eq!(show(sender(&acct, None).unwrap()), moi);
+        assert_eq!(show(sender(&acct, Some("ME@x.fr")).unwrap()), moi);
+        assert_eq!(
+            show(sender(&acct, Some("Contact@x.fr")).unwrap()),
+            (Some("Pro".to_string()), "contact@x.fr".to_string())
+        );
+        // Alias sans nom : celui du compte.
+        assert_eq!(
+            sender(&acct, Some("sans-nom@x.fr")).unwrap().name,
+            Some("Moi".to_string())
+        );
+        assert!(sender(&acct, Some("usurpe@autre.fr")).is_err());
+    }
 }

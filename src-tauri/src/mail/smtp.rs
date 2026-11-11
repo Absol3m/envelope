@@ -7,7 +7,7 @@ use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::Deserialize;
 
 use crate::error::{AppError, Result};
-use crate::mail::account::{Account, Credential, Security};
+use crate::mail::account::{self, Account, Credential, Security};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,6 +29,9 @@ pub struct OutgoingMessage {
     /// Brouillon dont ce message est la version finale : il est supprimé du serveur une fois l'envoi réussi.
     #[serde(default)]
     pub draft_id: Option<String>,
+    /// Adresse d'expéditeur : celle du compte (défaut) ou l'un de ses alias.
+    #[serde(default)]
+    pub from_email: Option<String>,
 }
 
 /// Pièce jointe fournie par l'interface (contenu en base64).
@@ -129,13 +132,9 @@ pub fn build_draft(account: &Account, out: &OutgoingMessage) -> Result<Message> 
 }
 
 fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Message> {
-    let from = match &account.display_name {
-        Some(n) if !n.is_empty() => format!("{n} <{}>", account.email),
-        _ => account.email.clone(),
-    };
-    let mut b = Message::builder()
-        .from(mailbox(&from)?)
-        .subject(out.subject.clone());
+    let from = account::sender(account, out.from_email.as_deref())?;
+    let me = from.email.clone();
+    let mut b = Message::builder().from(from).subject(out.subject.clone());
     if draft {
         let id = out
             .draft_id
@@ -148,7 +147,6 @@ fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Messag
         b = b.keep_bcc().header(DraftId(id.to_string()));
         if out.to.is_empty() && out.cc.is_empty() && out.bcc.is_empty() {
             // Jamais envoyé : l'enveloppe SMTP exige pourtant un destinataire, on met l'expéditeur.
-            let me = mailbox(&account.email)?.email;
             b = b.envelope(
                 lettre::address::Envelope::new(Some(me.clone()), vec![me]).map_err(smtp_err)?,
             );
@@ -275,6 +273,7 @@ mod tests {
             sync_status: "idle".into(),
             sync_error: None,
             signature: String::new(),
+            identities: vec![],
         }
     }
 
@@ -290,6 +289,7 @@ mod tests {
             references: vec![],
             attachments,
             draft_id: None,
+            from_email: None,
         }
     }
 
@@ -328,6 +328,23 @@ mod tests {
         assert_eq!(header_filename("../../etc/passwd"), "passwd");
         assert_eq!(header_filename("a\"b\r\n.pdf"), "ab.pdf");
         assert_eq!(header_filename("  "), "pièce-jointe");
+    }
+
+    #[test]
+    fn expediteur_alias_dans_l_en_tete_et_refus_d_une_adresse_libre() {
+        let mut a = account();
+        a.identities.push(account::Identity {
+            id: 1,
+            name: "Pro".into(),
+            email: "contact@x.fr".into(),
+        });
+        let mut out = outgoing(vec![], None);
+        out.from_email = Some("contact@x.fr".into());
+        let text =
+            String::from_utf8_lossy(&build_message(&a, &out).unwrap().formatted()).to_string();
+        assert!(text.contains("From: Pro <contact@x.fr>"), "{text}");
+        out.from_email = Some("usurpe@autre.fr".into());
+        assert!(build_message(&a, &out).is_err());
     }
 
     #[test]

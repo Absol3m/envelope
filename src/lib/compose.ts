@@ -1,5 +1,5 @@
 import { sanitizeFragment } from "./sanitize";
-import type { Addr, DetailMessage, DraftData, OutgoingMessage, ThreadDetail } from "./api";
+import type { Account, Addr, DetailMessage, DraftData, OutgoingMessage, ThreadDetail } from "./api";
 
 export type ComposeMode = "new" | "reply" | "replyAll" | "forward";
 
@@ -23,6 +23,8 @@ export interface Draft {
   /** Identifie le brouillon : l'éditeur est recréé quand il change. */
   id: string;
   accountId: string;
+  /** Alias d'envoi ; absent = l'adresse du compte. */
+  fromEmail?: string;
   mode: ComposeMode;
   to: Recipient[];
   cc: Recipient[];
@@ -82,6 +84,7 @@ export function toOutgoing(d: Draft): OutgoingMessage {
     references: d.references,
     attachments: d.attachments.map((a) => ({ filename: a.name, mimeType: a.mimeType, dataBase64: a.dataBase64 })),
     draftId: d.id,
+    fromEmail: d.fromEmail,
   };
 }
 
@@ -243,12 +246,30 @@ const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { dateStyle:
 const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const toRecipient = (a: Addr): Recipient => ({ address: a.address, name: a.name });
 
-/** Brouillon de réponse / transfert à partir de la conversation. `own` : adresse du compte. */
-export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetail, own: string, signature = ""): Draft {
+/** « Nom <adresse> », ou l'adresse seule. */
+export const senderLabel = (name: string | null | undefined, email: string) => (name ? `${name} <${email}>` : email);
+
+/** Expéditeurs possibles : chaque compte puis ses alias (`alias` : adresse de l'alias, vide pour le compte). */
+export function senderOptions(accounts: Account[]) {
+  return accounts.flatMap((a) => [
+    { key: `${a.id}|`, accountId: a.id, alias: "", label: senderLabel(a.displayName, a.email) },
+    ...a.identities.map((i) => ({ key: `${a.id}|${i.email}`, accountId: a.id, alias: i.email, label: senderLabel(i.name, i.email) })),
+  ]);
+}
+
+/** L'alias de `fromEmail` s'il existe encore sur ce compte ; sinon rien (le compte lui-même écrit). */
+export const knownAlias = (account: Account | undefined, fromEmail: string | undefined) =>
+  account?.identities.find((i) => i.email.toLowerCase() === fromEmail?.toLowerCase())?.email;
+
+/** Brouillon de réponse / transfert à partir de la conversation. `own` : adresse du compte ; `aliases` : ses autres adresses d'envoi. */
+export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetail, own: string, signature = "", aliases: string[] = []): Draft {
+  const isMine = (address: string) => [own, ...aliases].some((m) => sameAddr(m, address));
   const msgs = thread.messages;
   // On répond au dernier message reçu ; si tous sont de nous, au dernier.
-  const target = [...msgs].reverse().find((m) => !sameAddr(m.fromAddr, own)) ?? msgs[msgs.length - 1];
-  const base = emptyDraft(thread.accountId);
+  const target = [...msgs].reverse().find((m) => !isMine(m.fromAddr)) ?? msgs[msgs.length - 1];
+  // On répond depuis l'adresse à laquelle le message a été envoyé, si c'est un alias.
+  const fromEmail = aliases.find((alias) => [...target.to, ...target.cc].some((a) => sameAddr(a.address, alias)));
+  const base = { ...emptyDraft(thread.accountId), fromEmail };
   const header = `Le ${when(target.date)}, ${who(target.fromName, target.fromAddr)} a écrit :`;
 
   if (mode === "forward") {
@@ -263,11 +284,11 @@ export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetai
     return { ...base, mode, subject: withPrefix("Fwd", thread.subject), html: `<p></p>${signatureHtml(signature)}${head}${bodyHtmlOf(target)}` };
   }
 
-  const fromMe = sameAddr(target.fromAddr, own);
+  const fromMe = isMine(target.fromAddr);
   const primary: Recipient[] = fromMe ? target.to.map(toRecipient) : [{ address: target.fromAddr, name: target.fromName }];
   let cc: Recipient[] = [];
   if (mode === "replyAll") {
-    const seen = new Set([own.toLowerCase(), ...primary.map((r) => r.address.toLowerCase())]);
+    const seen = new Set([own, ...aliases, ...primary.map((r) => r.address)].map((m) => m.toLowerCase()));
     cc = [...target.to, ...target.cc].filter((a) => !seen.has(a.address.toLowerCase()) && seen.add(a.address.toLowerCase())).map(toRecipient);
   }
   const refs = [...target.references, ...(target.messageId ? [target.messageId] : [])];
