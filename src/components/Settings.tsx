@@ -3,7 +3,7 @@ import { Bot, Check, Copy, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCh
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { type McpInfo } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
-import { notificationsEnabled, setNotificationsEnabled } from "@/lib/notify";
+import { notificationsEnabled, sendNative, setNotificationsEnabled } from "@/lib/notify";
 import { useShallow } from "zustand/react/shallow";
 import { useMail, type SettingsTab } from "@/lib/store";
 import type { ColorsPref, ThemePref } from "@/lib/theme";
@@ -247,12 +247,21 @@ function AgentPanel() {
 
 function NotificationsSection() {
   const [on, setOn] = useState(notificationsEnabled);
+  const toast = useMail((s) => s.toast);
+  const test = async () => {
+    try {
+      await sendNative({ title: "Envelope", body: "Les notifications fonctionnent." });
+    } catch (e) {
+      toast({ message: `Notification impossible — ${String(e)}`, tone: "error", duration: 6000 });
+    }
+  };
   return (
     <Section title="Notifications" hint="Une notification du système à l'arrivée d'un message dans la boîte de réception, quand Envelope n'est pas au premier plan.">
       <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
         <span className="flex-1">Notifier les nouveaux messages</span>
         <Switch checked={on} onChange={(v) => { setOn(v); setNotificationsEnabled(v); }} label="Notifier les nouveaux messages" />
       </label>
+      <button className="press mt-3 h-8 rounded-lg border border-border bg-bg px-3 text-[12.5px] font-medium hover:bg-hover" onClick={() => void test()}>Envoyer une notification de test</button>
     </Section>
   );
 }

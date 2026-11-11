@@ -29,15 +29,20 @@ export function notificationText(p: Pick<SyncedPayload, "fresh" | "freshTotal">)
   return { title: `${p.freshTotal} nouveaux messages`, body: clip(`${senders.join(", ")}${more > 0 ? ` et ${more} autre${more > 1 ? "s" : ""}` : ""}`, 140) };
 }
 
-/** Notification native (plugin officiel), seulement si l'application n'est pas au premier plan. */
+/** Envoie une notification native (plugin officiel) ; lève une erreur si le système la refuse. */
+export async function sendNative(msg: { title: string; body: string }) {
+  const { isPermissionGranted, requestPermission, sendNotification } = await import("@tauri-apps/plugin-notification");
+  if (!(await isPermissionGranted()) && (await requestPermission()) !== "granted") throw new Error("autorisation refusée par le système");
+  sendNotification(msg);
+}
+
+/** Nouveau message : notification seulement si l'application n'est pas au premier plan. */
 export async function notifyNewMail(p: SyncedPayload) {
   const msg = notificationText(p);
   if (!msg || !notificationsEnabled() || document.hasFocus()) return;
   try {
-    const { isPermissionGranted, requestPermission, sendNotification } = await import("@tauri-apps/plugin-notification");
-    if (!(await isPermissionGranted()) && (await requestPermission()) !== "granted") return;
-    sendNotification(msg);
-  } catch {
-    /* notifications indisponibles sur ce système : sans conséquence */
+    await sendNative(msg);
+  } catch (e) {
+    console.warn("notification impossible :", e); // sans conséquence pour l'utilisateur
   }
 }
