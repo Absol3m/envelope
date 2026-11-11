@@ -158,7 +158,12 @@ fn transport(account: &Account, cred: &Credential) -> Result<AsyncSmtpTransport<
         Security::Starttls => {
             AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host).map_err(smtp_err)?
         }
-        Security::None => AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host),
+        // Le mot de passe partirait en clair : refusé (comme pour IMAP).
+        Security::None => {
+            return Err(AppError::Invalid(
+                "SMTP : connexion non chiffrée refusée (choisissez TLS ou STARTTLS)".into(),
+            ))
+        }
     }
     .port(account.smtp_port as u16);
 

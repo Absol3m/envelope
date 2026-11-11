@@ -14,7 +14,24 @@ const SOURCES: Record<Detected["source"], string> = {
   mx: "fournisseur d'hébergement du domaine",
   guess: "supposés",
 };
-const tls = (host: string, port: number): ServerConfig => ({ host, port, security: "tls" });
+type Sec = "tls" | "starttls";
+/** Ports usuels selon le chiffrement : TLS implicite (993 / 465) ou STARTTLS (143 / 587). */
+const PORTS = { imap: { tls: 993, starttls: 143 }, smtp: { tls: 465, starttls: 587 } } as const;
+const server = (host: string, port: string, security: Sec): ServerConfig => ({ host, port: Number(port) || 0, security });
+
+/** Serveur saisi à la main : hôte, chiffrement (le port usuel suit) et port. */
+function ServerRow({ kind, label, value, onChange, field }: { kind: "imap" | "smtp"; label: string; value: { host: string; security: Sec; port: string }; onChange(v: { host: string; security: Sec; port: string }): void; field: string }) {
+  return (
+    <div className="flex gap-2">
+      <input className={cn(field, "min-w-0 flex-1")} autoComplete="off" spellCheck={false} placeholder={`Serveur ${label}`} value={value.host} onChange={(e) => onChange({ ...value, host: e.target.value })} />
+      <select aria-label={`Chiffrement ${label}`} className={cn(field, "w-[104px] shrink-0 px-2")} value={value.security} onChange={(e) => { const security = e.target.value as Sec; onChange({ ...value, security, port: String(PORTS[kind][security]) }); }}>
+        <option value="tls">TLS</option>
+        <option value="starttls">STARTTLS</option>
+      </select>
+      <input aria-label={`Port ${label}`} className={cn(field, "w-[68px] shrink-0 px-2 text-center")} inputMode="numeric" value={value.port} onChange={(e) => onChange({ ...value, port: e.target.value.replace(/\D/g, "").slice(0, 5) })} />
+    </div>
+  );
+}
 
 /** Ajout d'un compte : les serveurs sont détectés à la saisie de l'adresse ; OAuth si le fournisseur le permet. */
 export function AddAccountForm({ large = false }: { large?: boolean }) {
@@ -22,7 +39,8 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [client, setClient] = useState({ id: "", secret: "" });
-  const [manual, setManual] = useState({ imap: "", smtp: "" });
+  const [imapSrv, setImapSrv] = useState<{ host: string; security: Sec; port: string }>({ host: "", security: "tls", port: "993" });
+  const [smtpSrv, setSmtpSrv] = useState<{ host: string; security: Sec; port: string }>({ host: "", security: "tls", port: "465" });
   const [detected, setDetected] = useState<Detected | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [status, setStatus] = useState<OAuthStatus>({ google: false, microsoft: false });
@@ -41,7 +59,7 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
     setDetecting(true);
     const t = setTimeout(() => {
       backend.detectServers(addr)
-        .then((d) => { if (!stale) { setDetected(d); setManual({ imap: d.imap.host, smtp: d.smtp.host }); } })
+        .then((d) => { if (!stale) { setDetected(d); setImapSrv({ host: d.imap.host, security: "tls", port: "993" }); setSmtpSrv({ host: d.smtp.host, security: "tls", port: "465" }); } })
         .catch(() => {})
         .finally(() => { if (!stale) setDetecting(false); });
     }, 400);
@@ -81,7 +99,7 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
     email: addr,
     password,
     // Hôtes corrigés à la main (détection par hypothèse uniquement) ; sinon le serveur redétecte.
-    ...(guessed && detected ? { imap: tls(manual.imap.trim(), detected.imap.port), smtp: tls(manual.smtp.trim(), detected.smtp.port) } : {}),
+    ...(guessed ? { imap: server(imapSrv.host.trim(), imapSrv.port, imapSrv.security), smtp: server(smtpSrv.host.trim(), smtpSrv.port, smtpSrv.security) } : {}),
   }));
 
   return (
@@ -133,13 +151,13 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
       ) : (
         <>
           {guessed && (
-            <div className="grid grid-cols-2 gap-2">
-              <input className={field} autoComplete="off" spellCheck={false} placeholder="Serveur IMAP" value={manual.imap} onChange={(e) => setManual({ ...manual, imap: e.target.value })} />
-              <input className={field} autoComplete="off" spellCheck={false} placeholder="Serveur SMTP" value={manual.smtp} onChange={(e) => setManual({ ...manual, smtp: e.target.value })} />
+            <div className="space-y-2">
+              <ServerRow kind="imap" label="IMAP" value={imapSrv} onChange={setImapSrv} field={field} />
+              <ServerRow kind="smtp" label="SMTP" value={smtpSrv} onChange={setSmtpSrv} field={field} />
             </div>
           )}
           <input className={field} type="password" autoComplete="off" placeholder="Mot de passe (ou mot de passe d'application)" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <button className={wide} disabled={busy || detecting || !detected || !password || (guessed && (!manual.imap.trim() || !manual.smtp.trim()))}>
+          <button className={wide} disabled={busy || detecting || !detected || !password || (guessed && (!imapSrv.host.trim() || !smtpSrv.host.trim() || !Number(imapSrv.port) || !Number(smtpSrv.port)))}>
             {busy && <Spinner />}
             {large ? "Se connecter" : "Ajouter"}
           </button>
