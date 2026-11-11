@@ -191,7 +191,9 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
     let cred = account::resolve_credential(&acct).await?;
     let mut session = imap::connect(&acct, &cred).await?;
     *backoff = MIN_BACKOFF; // connexion OK
-    let idle_supported = session.capabilities().await?.has_str("IDLE");
+    let caps = session.capabilities().await?;
+    let idle_supported = caps.has_str("IDLE");
+    let condstore = caps.has_str("CONDSTORE");
 
     let mut full = true;
     let mut last_full = Instant::now();
@@ -209,8 +211,16 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
             .iter()
             .filter(|f| full || f.role.as_deref() == Some("inbox"))
         {
-            new_messages +=
-                sync_folder(&mut session, ctx, f, &mut touched, &mut fresh, full).await?;
+            new_messages += sync_folder(
+                &mut session,
+                ctx,
+                f,
+                &mut touched,
+                &mut fresh,
+                full,
+                condstore,
+            )
+            .await?;
         }
         ingest::refresh_threads(&ctx.pool, &touched).await?;
         if full {
@@ -301,6 +311,49 @@ struct FolderRec {
     uid_validity: Option<i64>,
 }
 
+/// Etat d'un dossier tel que le serveur l'annonce à la sélection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::FromRow)]
+struct Marks {
+    uid_validity: Option<i64>,
+    uid_next: Option<i64>,
+    highest_modseq: Option<i64>,
+    #[sqlx(rename = "count")]
+    exists: i64,
+}
+
+/// Etat du dossier à sa dernière réconciliation **complète** des drapeaux (et quand elle a eu lieu).
+#[derive(Debug, sqlx::FromRow)]
+struct Reconciled {
+    #[sqlx(flatten)]
+    marks: Marks,
+    done_at: Option<i64>,
+}
+
+/// Lecture de l'état de dernière réconciliation complète d'un dossier (`count` : -1 = jamais).
+const RECONCILED_SQL: &str =
+    "SELECT uid_validity, reconciled_uid_next AS uid_next, reconciled_modseq AS highest_modseq, \
+     COALESCE(reconciled_count, -1) AS count, reconciled_at AS done_at FROM folders WHERE id = ?";
+
+/// Même inchangé, un dossier est réconcilié au moins une fois par jour : filet contre un serveur qui tiendrait mal
+/// ses compteurs (proxy, bogue), au prix d'une lecture des drapeaux par dossier et par jour.
+const RECONCILE_MAX_AGE_SECS: i64 = 24 * 3600;
+
+impl Marks {
+    /// Le dossier est identique à celui de la dernière réconciliation complète : même `UIDVALIDITY`, même `UIDNEXT`
+    /// (aucune arrivée), même nombre de messages (aucune suppression) et même `HIGHESTMODSEQ` (CONDSTORE : aucun
+    /// changement de drapeau), et celle-ci date de moins d'un jour. Sans `HIGHESTMODSEQ` (serveur sans CONDSTORE) on
+    /// ne peut rien affirmer : jamais « inchangé ».
+    fn unchanged_since(self, saved: &Reconciled, now: i64) -> bool {
+        self.highest_modseq.is_some()
+            && self.uid_validity.is_some()
+            && self.uid_next.is_some()
+            && self == saved.marks
+            && saved
+                .done_at
+                .is_some_and(|t| (0..RECONCILE_MAX_AGE_SECS).contains(&(now - t)))
+    }
+}
+
 /// Décode l'UTF-7 modifié des noms de dossiers IMAP (RFC 3501 §5.1.3) : `Envoy&AOk-s` → `Envoyés`.
 /// (Données du serveur, donc non fiables : on s'appuie sur une bibliothèque dédiée.)
 pub fn decode_mutf7(s: &str) -> String {
@@ -368,8 +421,19 @@ async fn sync_folder(
     touched: &mut HashSet<i64>,
     fresh: &mut Vec<FreshMail>,
     full: bool,
+    condstore: bool,
 ) -> Result<usize> {
-    let mbox = session.select(&f.path).await?;
+    // Etat à la dernière réconciliation complète, lu avant toute mise à jour de ce dossier.
+    let saved: Reconciled = sqlx::query_as(RECONCILED_SQL)
+        .bind(f.id)
+        .fetch_one(&ctx.pool)
+        .await?;
+    // CONDSTORE activé à la sélection (certains serveurs ne donnent HIGHESTMODSEQ qu'ainsi) quand il est annoncé.
+    let mbox = if condstore {
+        session.select_condstore(&f.path).await?
+    } else {
+        session.select(&f.path).await?
+    };
     let uid_validity = mbox.uid_validity.map(i64::from);
     let uid_next = mbox.uid_next.map(i64::from);
 
@@ -392,10 +456,28 @@ async fn sync_folder(
             .execute(&ctx.pool)
             .await?;
     }
+    let marks = Marks {
+        uid_validity,
+        uid_next,
+        highest_modseq: mbox.highest_modseq.map(|m| m as i64),
+        exists: mbox.exists as i64,
+    };
     sqlx::query("UPDATE folders SET uid_validity = ?, uid_next = ?, highest_modseq = ?, total_count = ? WHERE id = ?")
-        .bind(uid_validity).bind(uid_next).bind(mbox.highest_modseq.map(|m| m as i64)).bind(mbox.exists as i64).bind(f.id)
-        .execute(&ctx.pool).await?;
+        .bind(marks.uid_validity)
+        .bind(marks.uid_next)
+        .bind(marks.highest_modseq)
+        .bind(marks.exists)
+        .bind(f.id)
+        .execute(&ctx.pool)
+        .await?;
 
+    // Rien n'a bougé depuis la dernière réconciliation complète : ni arrivée, ni suppression, ni changement de
+    // drapeau. Pas de requête, pas de relecture des drapeaux, rien à récupérer.
+    let now = chrono::Utc::now().timestamp();
+    if marks.unchanged_since(&saved, now) {
+        tracing::debug!(folder = %f.path, "dossier inchangé : rien à faire");
+        return Ok(0);
+    }
     reconcile(session, ctx, f.id, touched, full).await?;
 
     // Nouveaux messages.
@@ -439,6 +521,18 @@ async fn sync_folder(
     }
 
     ingest::refresh_folder_unread(&ctx.pool, f.id).await?;
+    // État « entièrement réconcilié » : seulement après une passe COMPLÈTE menée à bien. Une passe partielle ne relit
+    // que les messages récents : l'enregistrer ferait croire que l'historique est à jour.
+    if full {
+        sqlx::query("UPDATE folders SET reconciled_uid_next = ?, reconciled_modseq = ?, reconciled_count = ?, reconciled_at = ? WHERE id = ?")
+            .bind(marks.uid_next)
+            .bind(marks.highest_modseq)
+            .bind(marks.exists)
+            .bind(now)
+            .bind(f.id)
+            .execute(&ctx.pool)
+            .await?;
+    }
     Ok(count)
 }
 
@@ -759,7 +853,97 @@ async fn reconcile(
 
 #[cfg(test)]
 mod tests {
-    use super::decode_mutf7;
+    use super::{decode_mutf7, Marks, Reconciled, RECONCILED_SQL, RECONCILE_MAX_AGE_SECS};
+
+    const NOW: i64 = 1_000_000;
+    fn marks() -> Marks {
+        Marks {
+            uid_validity: Some(7),
+            uid_next: Some(101),
+            highest_modseq: Some(900),
+            exists: 40,
+        }
+    }
+    fn saved(done_at: Option<i64>) -> Reconciled {
+        Reconciled {
+            marks: marks(),
+            done_at,
+        }
+    }
+
+    #[test]
+    fn inchange_seulement_si_tout_est_identique_et_recent() {
+        assert!(marks().unchanged_since(&saved(Some(NOW - 60)), NOW));
+        // Un champ diffère : drapeau (MODSEQ), arrivée (UIDNEXT), suppression (nombre), dossier recréé (UIDVALIDITY).
+        for changed in [
+            Marks {
+                highest_modseq: Some(901),
+                ..marks()
+            },
+            Marks {
+                uid_next: Some(102),
+                ..marks()
+            },
+            Marks {
+                exists: 39,
+                ..marks()
+            },
+            Marks {
+                uid_validity: Some(8),
+                ..marks()
+            },
+        ] {
+            assert!(
+                !changed.unchanged_since(&saved(Some(NOW - 60)), NOW),
+                "{changed:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn jamais_inchange_sans_condstore_sans_reconciliation_ou_si_trop_ancienne() {
+        // Le serveur ne donne pas HIGHESTMODSEQ : on ne peut rien affirmer sur les drapeaux.
+        let no_modseq = Marks {
+            highest_modseq: None,
+            ..marks()
+        };
+        let same = Reconciled {
+            marks: no_modseq,
+            done_at: Some(NOW),
+        };
+        assert!(!no_modseq.unchanged_since(&same, NOW));
+        // Jamais réconcilié (enregistrement NULL) : on réconcilie.
+        assert!(!marks().unchanged_since(&saved(None), NOW));
+        // Réconciliation de plus d'un jour : forcée, même si tout est identique (filet de sécurité).
+        assert!(!marks().unchanged_since(&saved(Some(NOW - RECONCILE_MAX_AGE_SECS)), NOW));
+        assert!(marks().unchanged_since(&saved(Some(NOW - RECONCILE_MAX_AGE_SECS + 1)), NOW));
+        // Horloge qui recule : pas de confiance aveugle.
+        assert!(!marks().unchanged_since(&saved(Some(NOW + 10)), NOW));
+    }
+
+    #[tokio::test]
+    async fn etat_de_reconciliation_relu_depuis_la_base() {
+        let pool = crate::db::init_memory().await.unwrap();
+        sqlx::query("INSERT INTO accounts (id,email,username,imap_host,smtp_host) VALUES ('a','me@x.fr','a','i','s')").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO folders (id, account_id, path, name, uid_validity) VALUES (900,'a','INBOX','INBOX',7)").execute(&pool).await.unwrap();
+        // Jamais réconcilié : rien ne doit pouvoir passer pour « inchangé ».
+        let never: Reconciled = sqlx::query_as(RECONCILED_SQL)
+            .bind(900)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!((never.marks.exists, never.done_at), (-1, None));
+        assert!(!marks().unchanged_since(&never, NOW));
+        // Après une réconciliation complète enregistrée.
+        sqlx::query("UPDATE folders SET reconciled_uid_next = 101, reconciled_modseq = 900, reconciled_count = 40, reconciled_at = ? WHERE id = 900").bind(NOW - 5).execute(&pool).await.unwrap();
+        let done: Reconciled = sqlx::query_as(RECONCILED_SQL)
+            .bind(900)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(done.marks, marks());
+        assert!(marks().unchanged_since(&done, NOW));
+    }
 
     #[test]
     fn mutf7() {
