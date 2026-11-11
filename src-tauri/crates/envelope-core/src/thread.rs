@@ -168,7 +168,14 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<Thre
             .push(")");
     }
     if let Some(account) = &q.account_id {
-        qb.push(" AND t.account_id = ").push_bind(account);
+        // Une recherche couvre aussi les archives locales (« Sur cet ordinateur »), quel que soit le compte choisi.
+        if q.query.as_deref().is_some_and(|t| !t.trim().is_empty()) {
+            qb.push(" AND t.account_id IN (")
+                .push_bind(account)
+                .push(", 'local')");
+        } else {
+            qb.push(" AND t.account_id = ").push_bind(account);
+        }
     }
     if q.starred_only {
         qb.push(" AND t.is_starred = 1");

@@ -39,6 +39,8 @@ async fn fixture() -> (Server<EnvelopeTools>, PathBuf) {
     .unwrap();
     sqlx::migrate!("../../migrations").run(&rw).await.unwrap();
     for sql in [
+        // Le fixture fixe ses identifiants : on écarte le compte local créé par la migration.
+        "DELETE FROM accounts WHERE id = 'local'",
         "INSERT INTO accounts (id,email,username,imap_host,smtp_host,provider) VALUES ('a','me@x.fr','me','i','s','imap')",
         "INSERT INTO folders (id,account_id,path,name,role,unread_count,total_count) VALUES (1,'a','INBOX','INBOX','inbox',2,3)",
         "INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (1,'a','Budget trimestriel','2026-03-02T11:00:00Z'), (2,'a','Facture','2026-03-03T09:00:00Z')",

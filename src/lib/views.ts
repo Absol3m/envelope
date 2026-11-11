@@ -1,17 +1,23 @@
-import { Archive, FileText, Inbox, Mail, Paperclip, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
+import { Archive, FileText, HardDrive, Inbox, Mail, Paperclip, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
 import type { ComponentType } from "react";
 
 export type Role = "inbox" | "sent" | "drafts" | "archive" | "junk" | "trash";
 
 /** Dossiers où l'on peut déplacer une conversation (miroir de `Destination` côté Rust). */
-export type Destination = Extract<Role, "inbox" | "archive" | "junk" | "trash">;
+export type Destination = Extract<Role, "inbox" | "archive" | "junk" | "trash"> | "local";
+
+/** Destinations qui passent par le serveur (tout sauf l'archivage local). */
+export type ServerDestination = Exclude<Destination, "local">;
+
+/** Compte spécial « Sur cet ordinateur » : dossiers locaux, sans serveur (miroir de `account::LOCAL_ID`). */
+export const LOCAL_ACCOUNT = "local";
 
 export type View =
   | { kind: "role"; role: Role }
   | { kind: "starred" }
   | { kind: "unread" }
   | { kind: "attachments" }
-  | { kind: "folder"; folderId: number; name: string };
+  | { kind: "folder"; folderId: number; name: string; /** Dossier local (sans serveur). */ local?: boolean };
 
 export interface NavItem {
   view: View;
@@ -59,6 +65,7 @@ export const DESTINATIONS: Record<Destination, { label: string; icon: NavItem["i
   inbox: { label: "Remettre dans la boîte de réception", icon: Inbox, key: "I", done: "Conversation remise dans la boîte de réception", doneMany: "remises dans la boîte de réception", already: "Cette conversation est déjà dans la boîte de réception.", failed: "Déplacement impossible" },
   archive: { label: "Archiver", icon: Archive, key: "E", done: "Conversation archivée", doneMany: "archivées", already: "Cette conversation est déjà archivée.", failed: "Archivage impossible" },
   trash: { label: "Mettre à la corbeille", icon: Trash2, key: "#", done: "Conversation mise à la corbeille", doneMany: "mises à la corbeille", already: "Cette conversation est déjà à la corbeille.", failed: "Suppression impossible" },
+  local: { label: "Archiver sur cet ordinateur", icon: HardDrive, key: "L", done: "Conversation archivée sur cet ordinateur", doneMany: "archivées sur cet ordinateur", already: "Cette conversation est déjà stockée sur cet ordinateur.", failed: "Archivage local impossible" },
   junk: { label: "Signaler comme spam", icon: ShieldAlert, key: "!", done: "Conversation signalée comme spam", doneMany: "signalées comme spam", already: "Cette conversation est déjà dans le spam.", failed: "Signalement impossible" },
 };
 export const isDestination = (role: string): role is Destination => Object.hasOwn(DESTINATIONS, role);
@@ -66,6 +73,7 @@ export const DESTINATION_IDS = Object.keys(DESTINATIONS) as Destination[];
 
 /** Destinations proposées depuis cette vue : jamais la vue courante ; « remettre dans la boîte de réception » seulement depuis archives, spam et corbeille. */
 export function destinationsFor(view: View): Destination[] {
+  if (view.kind === "folder" && view.local) return NO_DESTINATIONS; // les dossiers locaux n'ont pas de serveur : on y déplace par glisser
   const here = view.kind === "role" ? view.role : null;
   let list = DESTINATIONS_BY_PLACE.get(here);
   if (!list) {
@@ -76,9 +84,11 @@ export function destinationsFor(view: View): Destination[] {
   return list; // même tableau d'un appel à l'autre : les lignes de la liste restent mémoïsées
 }
 const DESTINATIONS_BY_PLACE = new Map<Role | null, Destination[]>();
+const NO_DESTINATIONS: Destination[] = [];
 
 /** Où se trouve une conversation, d'après son dernier message (résultats de recherche : tous dossiers confondus). */
-export function placeOf(t: { folderId: number | null; folderName: string | null; folderRole: string | null }): View | null {
+export function placeOf(t: { accountId: string; folderId: number | null; folderName: string | null; folderRole: string | null }): View | null {
+  if (t.accountId === LOCAL_ACCOUNT && t.folderId !== null) return { kind: "folder", folderId: t.folderId, name: t.folderName ?? "", local: true };
   if (t.folderRole && Object.hasOwn(ROLE_SET, t.folderRole)) return { kind: "role", role: t.folderRole as Role };
   return t.folderId !== null ? { kind: "folder", folderId: t.folderId, name: t.folderName ?? "" } : null;
 }
@@ -88,7 +98,10 @@ const ROLE_SET: Record<Role, true> = { inbox: true, sent: true, drafts: true, ar
 export const DRAG_TYPE = "application/x-envelope-thread";
 
 /** Corbeille et spam : les seules boîtes où l'on supprime pour de bon (et que l'on peut vider). */
-export const isPurgeView = (v: View): v is { kind: "role"; role: "trash" | "junk" } => v.kind === "role" && (v.role === "trash" || v.role === "junk");
+/** Vue où l'on peut supprimer pour de bon : corbeille, spam, et dossiers locaux (où rien d'autre ne retient le message). */
+export const isPurgeView = (v: View): boolean => (v.kind === "role" && (v.role === "trash" || v.role === "junk")) || (v.kind === "folder" && v.local === true);
+/** Corbeille ou spam d'un compte : les seules vues qu'on peut vider d'un geste. */
+export const isEmptiableView = (v: View): v is { kind: "role"; role: "trash" | "junk" } => v.kind === "role" && (v.role === "trash" || v.role === "junk");
 
 /** Identifiants de conversations d'un glisser (tableau JSON) ; tout autre contenu est ignoré. */
 export function parseDragIds(raw: string): number[] {

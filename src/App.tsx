@@ -37,6 +37,7 @@ export default function App() {
         void useMail.getState().reload({ silent: true });
         void notifyNewMail(e.payload);
       }));
+      unlisten.push(listen<{ accountId: string; remaining: number }>("mail:backfill", (e) => useMail.getState().setBackfill(e.payload.accountId, e.payload.remaining)));
       unlisten.push(listen("mail:status", () => void useMail.getState().refreshAccounts()));
     });
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));

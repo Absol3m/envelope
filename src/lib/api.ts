@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
-import type { Destination } from "./views";
+import type { ServerDestination } from "./views";
 
 /** Types miroirs des structures Rust (src-tauri/src/commands.rs, crates/envelope-core). */
 export interface Account {
@@ -152,8 +152,14 @@ export interface Backend {
   getThread(id: number): Promise<ThreadDetail>;
   setRead(threadId: number, read: boolean): Promise<void>;
   setStarred(threadId: number, starred: boolean): Promise<void>;
-  moveThread(threadId: number, folderId: number, to: Destination): Promise<void>;
+  moveThread(threadId: number, folderId: number, to: ServerDestination): Promise<void>;
   deleteThread(threadId: number, folderId: number): Promise<void>;
+  /** Archive en local (copie vérifiée sur cet ordinateur, puis suppression sur le serveur) ; entre dossiers locaux : simple déplacement. */
+  archiveLocal(threadId: number, folderId: number, localFolderId: number): Promise<void>;
+  createLocalFolder(name: string): Promise<number>;
+  renameLocalFolder(folderId: number, name: string): Promise<void>;
+  /** Seulement si le dossier est vide. */
+  deleteLocalFolder(folderId: number): Promise<void>;
   emptyFolder(folderId: number): Promise<void>;
   /** Confirmation native (boîte de dialogue de l'OS) avant une action irréversible. */
   confirm(message: string, okLabel: string): Promise<boolean>;
@@ -201,6 +207,10 @@ export const tauriBackend: Backend = {
   setStarred: (threadId, starred) => invoke("set_thread_starred", { threadId, starred }),
   moveThread: (threadId, folderId, to) => invoke("move_thread", { threadId, folderId, to }),
   deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
+  archiveLocal: (threadId, folderId, localFolderId) => invoke("archive_local", { threadId, folderId, localFolderId }),
+  createLocalFolder: (name) => invoke("create_local_folder", { name }),
+  renameLocalFolder: (folderId, name) => invoke("rename_local_folder", { folderId, name }),
+  deleteLocalFolder: (folderId) => invoke("delete_local_folder", { folderId }),
   emptyFolder: (folderId) => invoke("empty_folder", { folderId }),
   setBadge: async (count) => {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");

@@ -14,12 +14,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_imap::extensions::idle::IdleResponse;
-use async_imap::types::{Flag, NameAttribute};
+use async_imap::types::{Fetch, Flag, NameAttribute};
 use base64::{
     alphabet, engine::general_purpose::GeneralPurpose,
     engine::general_purpose::GeneralPurposeConfig, engine::DecodePaddingMode, Engine,
 };
-use futures::TryStreamExt;
+use futures::{FutureExt, TryStreamExt};
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use tauri::async_runtime::JoinHandle;
@@ -28,9 +28,15 @@ use tokio::sync::Notify;
 
 use crate::error::{AppError, Result};
 use crate::mail::imap::{self, ImapSession};
-use crate::mail::{account, ingest};
+use crate::mail::{account, ingest, rawstore};
 
 const INITIAL_WINDOW: i64 = 200;
+/// Lot de l'historique rapatrié (messages par requête IMAP) et durée maximale d'une série de lots
+/// avant de rendre la main à la synchro courante (nouveaux messages, demandes manuelles).
+const BACKFILL_BATCH: i64 = 100;
+const BACKFILL_BUDGET: Duration = Duration::from_secs(15);
+/// Hors passe complète, nombre de messages récents par dossier dont on réaligne les drapeaux.
+const RECONCILE_RECENT: i64 = 2000;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const FULL_SYNC_EVERY: Duration = Duration::from_secs(10 * 60);
 const MIN_BACKOFF: Duration = Duration::from_secs(5);
@@ -41,6 +47,7 @@ struct Ctx {
     pool: SqlitePool,
     app: AppHandle,
     attachments_dir: PathBuf,
+    raw_dir: PathBuf,
     account_id: String,
     notify: Arc<Notify>,
 }
@@ -54,6 +61,7 @@ pub struct SyncManager {
     pool: SqlitePool,
     app: AppHandle,
     attachments_dir: PathBuf,
+    raw_dir: PathBuf,
     tasks: Mutex<HashMap<String, Task>>,
 }
 
@@ -88,11 +96,17 @@ struct StatusEvent {
 }
 
 impl SyncManager {
-    pub fn new(pool: SqlitePool, app: AppHandle, attachments_dir: PathBuf) -> Arc<Self> {
+    pub fn new(
+        pool: SqlitePool,
+        app: AppHandle,
+        attachments_dir: PathBuf,
+        raw_dir: PathBuf,
+    ) -> Arc<Self> {
         Arc::new(Self {
             pool,
             app,
             attachments_dir,
+            raw_dir,
             tasks: Mutex::new(HashMap::new()),
         })
     }
@@ -112,6 +126,7 @@ impl SyncManager {
             pool: self.pool.clone(),
             app: self.app.clone(),
             attachments_dir: self.attachments_dir.clone(),
+            raw_dir: self.raw_dir.clone(),
             account_id: account_id.clone(),
             notify: notify.clone(),
         };
@@ -198,7 +213,8 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
             .iter()
             .filter(|f| full || f.role.as_deref() == Some("inbox"))
         {
-            new_messages += sync_folder(&mut session, ctx, f, &mut touched, &mut fresh).await?;
+            new_messages +=
+                sync_folder(&mut session, ctx, f, &mut touched, &mut fresh, full).await?;
         }
         ingest::refresh_threads(&ctx.pool, &touched).await?;
         if full {
@@ -214,6 +230,14 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
                 fresh: fresh.into_iter().take(MAX_FRESH).collect(),
             },
         );
+
+        // Historique : un ou plusieurs lots, puis on repasse par la synchro courante (pas d'attente).
+        let more = backfill(&mut session, ctx, &folders).await?;
+        if more {
+            let forced = ctx.notify.notified().now_or_never().is_some();
+            full = forced || last_full.elapsed() >= FULL_SYNC_EVERY;
+            continue;
+        }
 
         let inbox = folders
             .iter()
@@ -370,6 +394,7 @@ async fn sync_folder(
     f: &FolderRec,
     touched: &mut HashSet<i64>,
     fresh: &mut Vec<FreshMail>,
+    full: bool,
 ) -> Result<usize> {
     let mbox = session.select(&f.path).await?;
     let uid_validity = mbox.uid_validity.map(i64::from);
@@ -388,12 +413,17 @@ async fn sync_folder(
             .bind(f.id)
             .execute(&ctx.pool)
             .await?;
+        // Les UID ont changé : l'historique est à rapatrier depuis le début.
+        sqlx::query("UPDATE folders SET backfill_next = NULL WHERE id = ?")
+            .bind(f.id)
+            .execute(&ctx.pool)
+            .await?;
     }
     sqlx::query("UPDATE folders SET uid_validity = ?, uid_next = ?, highest_modseq = ?, total_count = ? WHERE id = ?")
         .bind(uid_validity).bind(uid_next).bind(mbox.highest_modseq.map(|m| m as i64)).bind(mbox.exists as i64).bind(f.id)
         .execute(&ctx.pool).await?;
 
-    reconcile(session, ctx, f.id, touched).await?;
+    reconcile(session, ctx, f.id, touched, full).await?;
 
     // Nouveaux messages.
     let last_uid: i64 =
@@ -415,47 +445,21 @@ async fn sync_folder(
             )
             .await?;
         while let Some(item) = stream.try_next().await? {
-            let Some(uid) = item.uid.map(i64::from) else {
-                continue;
-            };
-            if uid < start {
+            if !item.uid.is_some_and(|u| i64::from(u) >= start) {
                 continue; // « n:* » renvoie toujours le dernier message, même plus ancien que n
             }
-            let Some(raw) = item.body() else { continue };
-            let Some(parsed) = ingest::parse(raw, item.internal_date().map(|d| d.timestamp()))
-            else {
-                tracing::warn!(folder = %f.path, uid, "message illisible ignoré");
+            let Some(stored) = ingest_item(ctx, f, &item, false).await? else {
                 continue;
-            };
-            let flags = ingest::Flags {
-                seen: item.flags().any(|fl| matches!(fl, Flag::Seen)),
-                flagged: item.flags().any(|fl| matches!(fl, Flag::Flagged)),
             };
             // Notifier seulement l'arrivée d'un nouveau message dans la boîte de réception : pas la
             // première synchro (last_uid = 0), qui rapatrie l'historique.
-            if last_uid > 0 && f.role.as_deref() == Some("inbox") && !flags.seen {
+            if last_uid > 0 && f.role.as_deref() == Some("inbox") && !stored.seen {
                 fresh.push(FreshMail {
-                    from: parsed
-                        .from_name
-                        .clone()
-                        .filter(|n| !n.trim().is_empty())
-                        .unwrap_or_else(|| parsed.from_addr.clone()),
-                    subject: parsed.subject.clone(),
+                    from: stored.from,
+                    subject: stored.subject,
                 });
             }
-            let tid = ingest::store(
-                &ctx.pool,
-                &ctx.attachments_dir,
-                ingest::MessageLoc {
-                    account_id: &ctx.account_id,
-                    folder_id: f.id,
-                    uid,
-                    size: item.size.map(i64::from),
-                },
-                flags,
-                parsed,
-            )
-            .await?;
+            let tid = stored.thread_id;
             touched.insert(tid);
             count += 1;
         }
@@ -465,12 +469,247 @@ async fn sync_folder(
     Ok(count)
 }
 
+/// Ce que la synchro retient d'un message qu'elle vient de ranger.
+struct Stored {
+    thread_id: i64,
+    seen: bool,
+    from: String,
+    subject: String,
+}
+
+/// Range un message récupéré en entier (`UID FETCH … BODY.PEEK[]`) : le brut d'abord (source de
+/// vérité), puis l'index. `lazy_attachments` : voir `ingest::StoreOpts`. `None` si l'élément n'a ni
+/// UID ni corps, ou si le message est illisible.
+async fn ingest_item(
+    ctx: &Ctx,
+    f: &FolderRec,
+    item: &Fetch,
+    lazy_attachments: bool,
+) -> Result<Option<Stored>> {
+    let (Some(uid), Some(raw)) = (item.uid.map(i64::from), item.body()) else {
+        return Ok(None);
+    };
+    let Some(parsed) = ingest::parse(raw, item.internal_date().map(|d| d.timestamp())) else {
+        tracing::warn!(folder = %f.path, uid, "message illisible ignoré");
+        return Ok(None);
+    };
+    let flags = ingest::Flags {
+        seen: item.flags().any(|fl| matches!(fl, Flag::Seen)),
+        flagged: item.flags().any(|fl| matches!(fl, Flag::Flagged)),
+    };
+    let from = parsed
+        .from_name
+        .clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| parsed.from_addr.clone());
+    let subject = parsed.subject.clone();
+    let raw_hash = rawstore::put(&ctx.raw_dir, raw).await?;
+    let thread_id = ingest::store_with(
+        &ctx.pool,
+        &ctx.attachments_dir,
+        ingest::MessageLoc {
+            account_id: &ctx.account_id,
+            folder_id: f.id,
+            uid,
+            size: item.size.map(i64::from),
+        },
+        flags,
+        parsed,
+        ingest::StoreOpts {
+            raw_hash: Some(&raw_hash),
+            lazy_attachments,
+        },
+    )
+    .await?;
+    Ok(Some(Stored {
+        thread_id,
+        seen: flags.seen,
+        from,
+        subject,
+    }))
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct BackfillEvent {
+    account_id: String,
+    /// Messages du serveur pas encore rapatriés (0 : historique complet).
+    remaining: i64,
+    total: i64,
+}
+
+/// Rapatrie l'historique : d'abord les messages sans brut (d'avant le magasin), puis les lots de
+/// plus en plus anciens de chaque dossier. Au moins un lot par appel, au plus `BACKFILL_BUDGET`.
+/// Retourne `true` s'il reste du travail.
+async fn backfill(session: &mut ImapSession, ctx: &Ctx, folders: &[FolderRec]) -> Result<bool> {
+    let started = Instant::now();
+    let mut touched = HashSet::new();
+    let mut ran = false;
+    let more = loop {
+        let more = rehydrate(session, ctx, folders).await?
+            || backfill_batch(session, ctx, folders, &mut touched).await?;
+        ran |= more;
+        if !more || started.elapsed() >= BACKFILL_BUDGET {
+            break more;
+        }
+        // Une demande manuelle ou un réveil : on la rend à la boucle principale, qui la traitera.
+        if ctx.notify.notified().now_or_never().is_some() {
+            ctx.notify.notify_one();
+            break true;
+        }
+    };
+    if !ran {
+        return Ok(false); // rien à rapatrier (cas courant) : ni requête ni événement
+    }
+    if !touched.is_empty() {
+        ingest::refresh_threads(&ctx.pool, &touched).await?;
+    }
+    let (remaining, total): (i64, i64) = sqlx::query_as(
+        "SELECT COALESCE(SUM(MAX(f.total_count - (SELECT COUNT(*) FROM messages m WHERE m.folder_id = f.id), 0)), 0), \
+                COALESCE(SUM(f.total_count), 0) \
+         FROM folders f WHERE f.account_id = ? AND COALESCE(f.role, '') <> 'all'",
+    )
+    .bind(&ctx.account_id)
+    .fetch_one(&ctx.pool)
+    .await?;
+    let _ = ctx.app.emit(
+        "mail:backfill",
+        BackfillEvent {
+            account_id: ctx.account_id.clone(),
+            remaining: if more { remaining.max(1) } else { 0 },
+            total,
+        },
+    );
+    Ok(more)
+}
+
+/// Récupère le message brut des messages qui n'en ont pas (synchronisés avant le magasin brut) et
+/// relit leurs en-têtes de désabonnement. Un lot par appel ; `true` s'il a travaillé.
+async fn rehydrate(session: &mut ImapSession, ctx: &Ctx, folders: &[FolderRec]) -> Result<bool> {
+    let Some(folder_id) = sqlx::query_scalar::<_, i64>(
+        "SELECT folder_id FROM messages WHERE account_id = ? AND raw_hash IS NULL LIMIT 1",
+    )
+    .bind(&ctx.account_id)
+    .fetch_optional(&ctx.pool)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let uids: Vec<i64> = sqlx::query_scalar(
+        "SELECT uid FROM messages WHERE folder_id = ? AND raw_hash IS NULL ORDER BY uid DESC LIMIT ?",
+    )
+    .bind(folder_id)
+    .bind(BACKFILL_BATCH)
+    .fetch_all(&ctx.pool)
+    .await?;
+    let Some(folder) = folders.iter().find(|f| f.id == folder_id) else {
+        // Dossier non synchronisé : rien à récupérer, on ne réessaie pas.
+        sqlx::query("UPDATE messages SET raw_hash = '' WHERE folder_id = ? AND raw_hash IS NULL")
+            .bind(folder_id)
+            .execute(&ctx.pool)
+            .await?;
+        return Ok(true);
+    };
+    session.select(&folder.path).await?;
+    let set = uids
+        .iter()
+        .map(i64::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut stream = session.uid_fetch(set, "(UID BODY.PEEK[])").await?;
+    while let Some(item) = stream.try_next().await? {
+        let (Some(uid), Some(raw)) = (item.uid, item.body()) else {
+            continue;
+        };
+        let hash = rawstore::put(&ctx.raw_dir, raw).await?;
+        let unsub = ingest::parse(raw, None).and_then(|m| m.unsubscribe);
+        sqlx::query(
+            "UPDATE messages SET raw_hash = ?, unsub_url = ?, unsub_mailto = ?, unsub_one_click = ? \
+             WHERE folder_id = ? AND uid = ?",
+        )
+        .bind(hash)
+        .bind(unsub.as_ref().and_then(|u| u.url.as_deref()))
+        .bind(unsub.as_ref().and_then(|u| u.mailto.as_deref()))
+        .bind(unsub.as_ref().is_some_and(|u| u.one_click))
+        .bind(folder_id)
+        .bind(i64::from(uid))
+        .execute(&ctx.pool)
+        .await?;
+    }
+    drop(stream);
+    // Absents du serveur (supprimés depuis) : on ne les redemande pas.
+    sqlx::query("UPDATE messages SET raw_hash = '' WHERE folder_id = ? AND raw_hash IS NULL AND uid IN (SELECT value FROM json_each(?))")
+        .bind(folder_id)
+        .bind(serde_json::to_string(&uids)?)
+        .execute(&ctx.pool)
+        .await?;
+    Ok(true)
+}
+
+/// Un lot de l'historique du premier dossier incomplet. `true` s'il y a eu (ou s'il reste) du travail.
+async fn backfill_batch(
+    session: &mut ImapSession,
+    ctx: &Ctx,
+    folders: &[FolderRec],
+    touched: &mut HashSet<i64>,
+) -> Result<bool> {
+    for f in folders {
+        let stored: Option<i64> =
+            sqlx::query_scalar("SELECT backfill_next FROM folders WHERE id = ?")
+                .bind(f.id)
+                .fetch_one(&ctx.pool)
+                .await?;
+        let cursor = match stored {
+            Some(c) => c,
+            None => {
+                let min: Option<i64> =
+                    sqlx::query_scalar("SELECT MIN(uid) FROM messages WHERE folder_id = ?")
+                        .bind(f.id)
+                        .fetch_one(&ctx.pool)
+                        .await?;
+                match min {
+                    Some(m) => m,
+                    None => continue, // dossier vide en local : rien avant
+                }
+            }
+        };
+        if cursor <= 1 {
+            continue;
+        }
+        let lo = (cursor - BACKFILL_BATCH).max(1);
+        session.select(&f.path).await?;
+        let mut stream = session
+            .uid_fetch(
+                format!("{lo}:{}", cursor - 1),
+                "(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[])",
+            )
+            .await?;
+        while let Some(item) = stream.try_next().await? {
+            let Some(stored) = ingest_item(ctx, f, &item, true).await? else {
+                continue;
+            };
+            let tid = stored.thread_id;
+            touched.insert(tid);
+        }
+        drop(stream);
+        sqlx::query("UPDATE folders SET backfill_next = ? WHERE id = ?")
+            .bind(lo)
+            .bind(f.id)
+            .execute(&ctx.pool)
+            .await?;
+        ingest::refresh_folder_unread(&ctx.pool, f.id).await?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 /// Aligne flags (lu/suivi) et suppressions sur la fenêtre de messages déjà en cache.
 async fn reconcile(
     session: &mut ImapSession,
     ctx: &Ctx,
     folder_id: i64,
     touched: &mut HashSet<i64>,
+    full: bool,
 ) -> Result<()> {
     let min_uid: Option<i64> =
         sqlx::query_scalar("SELECT MIN(uid) FROM messages WHERE folder_id = ?")
@@ -479,6 +718,20 @@ async fn reconcile(
             .await?;
     let Some(min_uid) = min_uid else {
         return Ok(());
+    };
+    // Hors passe complète, on ne réaligne que les messages récents : avec l'historique rapatrié,
+    // relire les drapeaux de dizaines de milliers de messages à chaque réveil serait du gâchis.
+    let min_uid = if full {
+        min_uid
+    } else {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT uid FROM messages WHERE folder_id = ? ORDER BY uid DESC LIMIT 1 OFFSET ?",
+        )
+        .bind(folder_id)
+        .bind(RECONCILE_RECENT)
+        .fetch_optional(&ctx.pool)
+        .await?
+        .unwrap_or(min_uid)
     };
 
     let mut server: HashMap<i64, (bool, bool)> = HashMap::new();
@@ -499,9 +752,10 @@ async fn reconcile(
         }
     }
     let local: Vec<(i64, i64, bool, bool, Option<i64>)> = sqlx::query_as(
-        "SELECT id, uid, is_read, is_starred, thread_id FROM messages WHERE folder_id = ?",
+        "SELECT id, uid, is_read, is_starred, thread_id FROM messages WHERE folder_id = ? AND uid >= ?",
     )
     .bind(folder_id)
+    .bind(min_uid)
     .fetch_all(&ctx.pool)
     .await?;
     let mut tx = ctx.pool.begin().await?;

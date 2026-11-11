@@ -4,7 +4,7 @@ import { pref } from "./pref";
 import { demoBackend } from "./mock";
 import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
-import { DESTINATIONS, isInboxView, isPurgeView, placeOf, type Destination, type View } from "./views";
+import { DESTINATIONS, isEmptiableView, isInboxView, isPurgeView, LOCAL_ACCOUNT, placeOf, type Destination, type View } from "./views";
 
 export type { View };
 
@@ -42,6 +42,8 @@ interface State {
   backend: Backend;
   ready: boolean;
   needsOnboarding: boolean;
+  /** Historique encore à rapatrier du serveur, par compte (absent ou 0 : complet). */
+  backfill: Readonly<Record<string, number>>;
   accounts: Account[];
   folders: FolderRow[];
   accountFilter: string | null;
@@ -72,6 +74,7 @@ interface State {
   enterDemo(): Promise<void>;
   reload(opts?: { silent?: boolean }): Promise<void>;
   refreshAccounts(): Promise<void>;
+  setBackfill(accountId: string, remaining: number): void;
   loadMore(): Promise<void>;
   setView(v: View): void;
   setAccount(id: string | null): void;
@@ -86,7 +89,8 @@ interface State {
   toggleRead(ids: Ids): void;
   toggleStar(ids: Ids): void;
   /** Archive, corbeille ou spam, avec fenêtre d'annulation. */
-  moveTo(ids: Ids, to: Destination): void;
+  /** `targetFolderId` : dossier local visé quand `to` vaut « local » (par défaut « Archives »). */
+  moveTo(ids: Ids, to: Destination, targetFolderId?: number): void;
   /** Suppression définitive depuis la corbeille ou le spam, après confirmation. */
   deleteForever(ids: Ids): Promise<void>;
   /** Vide la corbeille ou le spam affiché (tous les comptes de la vue), après confirmation. */
@@ -257,6 +261,7 @@ export const useMail = create<State>((set, get) => {
     backend: demoBackend,
     ready: false,
     needsOnboarding: false,
+    backfill: {},
     accounts: [],
     folders: [],
     ...NAV_RESET,
@@ -307,6 +312,10 @@ export const useMail = create<State>((set, get) => {
       } catch { /* conservé */ }
       await loadFolders();
       await fetchThreads(true, opts?.silent);
+    },
+
+    setBackfill(accountId, remaining) {
+      set((s) => (s.backfill[accountId] === remaining ? s : { backfill: { ...s.backfill, [accountId]: remaining } }));
     },
 
     async refreshAccounts() {
@@ -415,19 +424,27 @@ export const useMail = create<State>((set, get) => {
       }
     },
 
-    moveTo(ids, to) {
+    moveTo(ids, to, targetFolderId) {
       const s = get();
       const dest = DESTINATIONS[to];
+      // Archivage local : dossier visé (par défaut le premier dossier local, « Archives »).
+      const target = to === "local" ? (targetFolderId ?? s.folders.find((f) => f.accountId === LOCAL_ACCOUNT)?.id) : undefined;
+      if (to === "local" && target === undefined) return s.toast({ message: dest.failed, tone: "error" });
       const moves = toIds(ids).flatMap((id) => {
         const thread = s.threads.find((t) => t.id === id);
         const from = thread && sourceFolder(s, thread);
-        return from && from.role !== to ? [{ id, from: from.id }] : [];
+        if (!thread || !from) return [];
+        // Une conversation locale n'a pas de serveur : elle ne va que vers un autre dossier local.
+        if (thread.accountId === LOCAL_ACCOUNT && to !== "local") return [];
+        return (to === "local" ? from.id !== target : from.role !== to) ? [{ id, from: from.id }] : [];
       });
       if (moves.length === 0) return s.toast({ message: dest.already });
 
       hideAndAdvance(moves.map((m) => m.id));
-      // Exécuté aussitôt (comme Gmail ou Apple Mail) : l'annulation fait l'opération inverse.
-      void settleBatch(moves, (m) => get().backend.moveThread(m.id, m.from, to)).then(({ done, failed, reason }) => {
+      // Exécuté aussitôt (comme Gmail ou Apple Mail). Archivage local : copie vérifiée, puis suppression sur le serveur.
+      type Move = { id: number; from: number };
+      const run = to === "local" ? (m: Move) => get().backend.archiveLocal(m.id, m.from, target!) : (m: Move) => get().backend.moveThread(m.id, m.from, to);
+      void settleBatch(moves, run).then(({ done, failed, reason }) => {
         setHidden(failed.map((m) => m.id), false);
         if (done.length > 0) {
           dropThreads(done.map((m) => m.id));
@@ -443,7 +460,9 @@ export const useMail = create<State>((set, get) => {
       const n = count(toIds(ids));
       if (n === 0) return;
       const what = n === 1 ? "cette conversation" : `ces ${n} conversations`;
-      if (!(await get().backend.confirm(`Supprimer définitivement ${what} ? Cette action est irréversible.`, "Supprimer"))) return;
+      const local = get().threads.some((t) => toIds(ids).includes(t.id) && t.accountId === LOCAL_ACCOUNT);
+      const warning = local ? "Elle n'existe que sur cet ordinateur : il n'y a pas de copie sur un serveur. Cette action est irréversible." : "Cette action est irréversible.";
+      if (!(await get().backend.confirm(`Supprimer définitivement ${what} ? ${warning}`, "Supprimer"))) return;
       // L'état a pu changer pendant la boîte de dialogue : on repart de l'état courant.
       const s = get();
       const deletes = toIds(ids).flatMap((id) => {
@@ -465,7 +484,7 @@ export const useMail = create<State>((set, get) => {
     async emptyView() {
       const s = get();
       const view = s.view;
-      if (!isPurgeView(view)) return;
+      if (!isEmptiableView(view)) return;
       const folders = s.folders.filter((f) => f.role === view.role && (!s.accountFilter || f.accountId === s.accountFilter));
       const what = view.role === "trash" ? "la corbeille" : "le spam";
       if (folders.length === 0 || !(await s.backend.confirm(`Vider ${what} ? Les conversations seront supprimées définitivement.`, "Vider"))) return;

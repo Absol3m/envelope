@@ -10,6 +10,8 @@ use crate::mail::account::{self, Account, NewAccount};
 use crate::mail::actions::{self, Action, Destination};
 use crate::mail::autoconfig;
 use crate::mail::imap;
+use crate::mail::ingest;
+use crate::mail::local;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
@@ -406,16 +408,77 @@ pub async fn move_thread(
     Ok(())
 }
 
-/// Suppression définitive : seulement depuis la corbeille ou le spam.
+/// Suppression définitive : depuis la corbeille ou le spam d'un compte, ou depuis un dossier local.
 #[tauri::command]
 pub async fn delete_thread(
     state: State<'_, AppState>,
     thread_id: i64,
     folder_id: i64,
 ) -> Result<()> {
-    run_action(&state, thread_id, Action::Delete { folder_id })
+    let _guard = state.actions.lock().await;
+    if is_local_folder(&state, folder_id).await? {
+        return local::delete_messages(&state.db, thread_id, folder_id).await;
+    }
+    actions::apply(&state.db, thread_id, Action::Delete { folder_id })
         .await
         .map(drop)
+}
+
+async fn is_local_folder(state: &AppState, folder_id: i64) -> Result<bool> {
+    Ok(
+        sqlx::query_scalar::<_, String>("SELECT account_id FROM folders WHERE id = ?")
+            .bind(folder_id)
+            .fetch_optional(&state.db)
+            .await?
+            .is_some_and(|a| a == account::LOCAL_ID),
+    )
+}
+
+/// Archive la conversation en local : copie vérifiée sur cet ordinateur, puis suppression sur le
+/// serveur. Depuis un dossier local, la déplace simplement vers un autre dossier local.
+#[tauri::command]
+pub async fn archive_local(
+    state: State<'_, AppState>,
+    thread_id: i64,
+    folder_id: i64,
+    local_folder_id: i64,
+) -> Result<()> {
+    let _guard = state.actions.lock().await;
+    if is_local_folder(&state, folder_id).await? {
+        return local::move_within(&state.db, thread_id, folder_id, local_folder_id).await;
+    }
+    let accounts = local::archive(
+        &state.db,
+        &state.attachments_dir,
+        &state.raw_dir,
+        thread_id,
+        folder_id,
+        local_folder_id,
+    )
+    .await?;
+    for account in &accounts {
+        state.sync.trigger(account);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_local_folder(state: State<'_, AppState>, name: String) -> Result<i64> {
+    local::create_folder(&state.db, &name).await
+}
+
+#[tauri::command]
+pub async fn rename_local_folder(
+    state: State<'_, AppState>,
+    folder_id: i64,
+    name: String,
+) -> Result<()> {
+    local::rename_folder(&state.db, folder_id, &name).await
+}
+
+#[tauri::command]
+pub async fn delete_local_folder(state: State<'_, AppState>, folder_id: i64) -> Result<()> {
+    local::delete_folder(&state.db, folder_id).await
 }
 
 #[tauri::command]
@@ -435,10 +498,20 @@ async fn attachment_path(state: &AppState, attachment_id: i64) -> Result<std::pa
             .fetch_optional(&state.db)
             .await?
             .flatten();
-    let path = tokio::fs::canonicalize(
-        stored.ok_or_else(|| AppError::NotFound(format!("pièce jointe {attachment_id}")))?,
-    )
-    .await?;
+    let path = match stored {
+        Some(p) => std::path::PathBuf::from(p),
+        // Historique rapatrié : le contenu est extrait du message brut à la première ouverture.
+        None => {
+            ingest::materialize_attachment(
+                &state.db,
+                &state.attachments_dir,
+                &state.raw_dir,
+                attachment_id,
+            )
+            .await?
+        }
+    };
+    let path = tokio::fs::canonicalize(path).await?;
     let root = tokio::fs::canonicalize(&state.attachments_dir).await?;
     if !path.starts_with(&root) {
         return Err(AppError::Invalid(

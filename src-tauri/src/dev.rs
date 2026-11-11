@@ -342,3 +342,54 @@ pub async fn seed_local(db_path: &Path, count: usize) -> Result<()> {
     }
     Ok(())
 }
+
+/// Archive en local la première conversation de la boîte de réception dont l'objet contient
+/// `subject` (essai de bout en bout : copie vérifiée, puis suppression sur le serveur).
+pub async fn archive_local_by_subject(data_dir: &Path, subject: &str) -> Result<String> {
+    use crate::mail::{account, local};
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let pool = crate::db::init(&crate::db::db_path(data_dir)).await?;
+    let (thread_id, folder_id, title): (i64, i64, String) = sqlx::query_as(
+        "SELECT m.thread_id, m.folder_id, m.subject FROM messages m JOIN folders f ON f.id = m.folder_id \
+         WHERE f.role = 'inbox' AND m.thread_id IS NOT NULL AND m.subject LIKE ?1 ESCAPE '\\' ORDER BY m.date DESC LIMIT 1",
+    )
+    .bind(envelope_core::search::like_contains(subject))
+    .fetch_optional(&pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("aucun message « {subject} » dans la boîte de réception")))?;
+    let target: i64 =
+        sqlx::query_scalar("SELECT id FROM folders WHERE account_id = ? AND name = 'Archives'")
+            .bind(account::LOCAL_ID)
+            .fetch_one(&pool)
+            .await?;
+    local::archive(
+        &pool,
+        &data_dir.join("attachments"),
+        &data_dir.join("raw"),
+        thread_id,
+        folder_id,
+        target,
+    )
+    .await?;
+    Ok(title)
+}
+
+/// Nombre de messages de la boîte de réception **du serveur** dont l'objet contient `subject`.
+pub async fn server_inbox_count(data_dir: &Path, subject: &str) -> Result<usize> {
+    use crate::mail::{account, imap};
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let pool = crate::db::init(&crate::db::db_path(data_dir)).await?;
+    let acct = account::list(&pool)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::NotFound("compte".into()))?;
+    let cred = account::resolve_credential(&acct).await?;
+    let mut session = imap::connect(&acct, &cred).await?;
+    session.select("INBOX").await?;
+    let found = session
+        .uid_search(format!("SUBJECT \"{}\"", subject.replace('"', "")))
+        .await?;
+    let _ = session.logout().await;
+    Ok(found.len())
+}

@@ -1,11 +1,12 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useState, type DragEvent } from "react";
-import { Bot, Check, ChevronsUpDown, Inbox, Layers, PenSquare, RefreshCw, Settings } from "lucide-react";
+import { Bot, Check, ChevronsUpDown, FolderPlus, HardDrive, Inbox, Layers, MoreHorizontal, PenSquare, RefreshCw, Settings } from "lucide-react";
+import type { FolderRow } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
 import { useComposer } from "@/lib/composer";
 import { useMail } from "@/lib/store";
-import { DRAG_TYPE, parseDragIds, isDestination, NAV_MAILBOXES, NAV_SMART, sameView, type View, type NavItem as NavItemData } from "@/lib/views";
+import { DRAG_TYPE, LOCAL_ACCOUNT, parseDragIds, isDestination, NAV_MAILBOXES, NAV_SMART, sameView, type View, type NavItem as NavItemData } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { dragRegion, isMac, SETTINGS_LABEL } from "@/lib/platform";
 import { IconButton, Spinner, Tip } from "./ui/primitives";
@@ -42,9 +43,90 @@ function NavItem({ icon: Icon, label, count, active, onClick, onDrop }: { icon: 
   );
 }
 
+/** Dossiers locaux (« Sur cet ordinateur ») : créer, renommer, supprimer (si vide) ; on y dépose des conversations. */
+function LocalFolders({ folders, view, setView, moveTo }: { folders: FolderRow[]; view: View; setView(v: View): void; moveTo(ids: number[], to: "local", folderId: number): void }) {
+  const { backend, reload, toast } = useMail(useShallow((s) => ({ backend: s.backend, reload: s.reload, toast: s.toast })));
+  // `editing` : dossier en cours de renommage (identifiant) ou « new » ; null sinon.
+  const [editing, setEditing] = useState<number | "new" | null>(null);
+  const [name, setName] = useState("");
+  const run = async (action: () => Promise<unknown>, failure: string) => {
+    try {
+      await action();
+      await reload({ silent: true });
+    } catch (e) {
+      toast({ message: `${failure} — ${String(e)}`, tone: "error", duration: 6000 });
+    }
+  };
+  const commit = () => {
+    const id = editing;
+    const value = name.trim();
+    setEditing(null);
+    if (id === null || !value) return;
+    void run(() => (id === "new" ? backend.createLocalFolder(value) : backend.renameLocalFolder(id, value)), id === "new" ? "Création impossible" : "Renommage impossible");
+  };
+  return (
+    <>
+      <div className="flex items-center px-2.5 pb-1 pt-4 max-[1100px]:hidden">
+        <p className="flex-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint" title="Ces dossiers n'existent que sur cet ordinateur">Sur cet ordinateur</p>
+        <IconButton label="Nouveau dossier local" tooltipSide="right" onClick={() => { setName(""); setEditing("new"); }}><FolderPlus size={14} /></IconButton>
+      </div>
+      <div className="hidden pt-3 max-[1100px]:block" />
+      {folders.map((f) =>
+        editing === f.id ? (
+          <NameInput key={f.id} value={name} onChange={setName} onDone={commit} onCancel={() => setEditing(null)} />
+        ) : (
+          <div key={f.id} className="group/local relative">
+            <NavItem
+              icon={HardDrive}
+              label={f.name}
+              count={f.unreadCount}
+              active={view.kind === "folder" && view.folderId === f.id}
+              onClick={() => setView({ kind: "folder", folderId: f.id, name: f.name, local: true })}
+              onDrop={(ids) => moveTo(ids, "local", f.id)}
+            />
+            <Dropdown.Root>
+              <Dropdown.Trigger asChild>
+                <button aria-label={`Options du dossier ${f.name}`} className="press absolute right-1 top-1/2 hidden -translate-y-1/2 rounded p-1 text-muted hover:bg-hover hover:text-fg group-hover/local:block data-[state=open]:block max-[1100px]:hidden">
+                  <MoreHorizontal size={14} />
+                </button>
+              </Dropdown.Trigger>
+              <Dropdown.Portal>
+                <Dropdown.Content align="start" sideOffset={4} className="z-50 min-w-[160px] rounded-xl border border-border bg-elevated p-1 text-[13px] shadow-pop">
+                  <Dropdown.Item onSelect={() => { setName(f.name); setEditing(f.id); }} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">Renommer…</Dropdown.Item>
+                  <Dropdown.Item onSelect={() => void run(() => backend.deleteLocalFolder(f.id), "Suppression impossible")} className="cursor-default rounded-lg px-2.5 py-1.5 text-danger outline-none data-[highlighted]:bg-hover">Supprimer (si vide)</Dropdown.Item>
+                </Dropdown.Content>
+              </Dropdown.Portal>
+            </Dropdown.Root>
+          </div>
+        ),
+      )}
+      {editing === "new" && <NameInput value={name} onChange={setName} onDone={commit} onCancel={() => setEditing(null)} />}
+    </>
+  );
+}
+
+function NameInput({ value, onChange, onDone, onCancel }: { value: string; onChange(v: string): void; onDone(): void; onCancel(): void }) {
+  return (
+    <input
+      autoFocus
+      value={value}
+      maxLength={80}
+      aria-label="Nom du dossier"
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onDone}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onDone();
+        else if (e.key === "Escape") { e.stopPropagation(); onCancel(); }
+      }}
+      className="selectable my-px h-[30px] w-full rounded-md border border-accent/60 bg-bg px-2.5 text-[13px] outline-none ring-[3px] ring-accent-soft"
+    />
+  );
+}
+
 export function Sidebar() {
   const { accounts, folders, accountFilter, view, setView, setAccount, openSettings, backend, moveTo } = useMail(useShallow((s) => ({ moveTo: s.moveTo, accounts: s.accounts, folders: s.folders, accountFilter: s.accountFilter, view: s.view, setView: s.setView, setAccount: s.setAccount, openSettings: s.openSettings, backend: s.backend })));
-  const scoped = folders.filter((f) => !accountFilter || f.accountId === accountFilter);
+  const scoped = folders.filter((f) => f.accountId !== LOCAL_ACCOUNT && (!accountFilter || f.accountId === accountFilter));
+  const localFolders = folders.filter((f) => f.accountId === LOCAL_ACCOUNT);
   const unread = (role: string) => scoped.filter((f) => f.role === role).reduce((n, f) => n + f.unreadCount, 0);
   /** Boîtes où l'on peut déposer une conversation (archives, corbeille, spam, réception), sauf la vue affichée. */
   const dropFor = (v: View) => {
@@ -56,6 +138,7 @@ export function Sidebar() {
   const custom = scoped.filter((f) => f.role === null).slice(0, 8);
   const current = accounts.find((a) => a.id === accountFilter);
   const syncing = accounts.some((a) => a.syncStatus === "syncing");
+  const backfillLeft = useMail((s) => Object.values(s.backfill).reduce((n, v) => n + v, 0));
   const errored = accounts.find((a) => a.syncStatus === "error");
   const lastSync = accounts.map((a) => a.lastSyncAt).filter(Boolean).sort().pop() ?? null;
 
@@ -129,6 +212,8 @@ export function Sidebar() {
             ))}
           </>
         )}
+
+        <LocalFolders folders={localFolders} view={view} setView={setView} moveTo={moveTo} />
       </nav>
 
       <div className="flex items-center gap-1 border-t border-border px-2.5 py-2 max-[1100px]:flex-col">
@@ -137,6 +222,8 @@ export function Sidebar() {
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent">Mode démo</span>
           ) : errored ? (
             <span className="flex items-center gap-1.5 text-danger" title={errored.syncError ?? undefined}>● Erreur de synchro</span>
+          ) : backfillLeft > 0 ? (
+            <span className="flex items-center gap-1.5" title="Les anciens messages sont téléchargés en arrière-plan : ils deviennent cherchables au fur et à mesure."><Spinner size={11} /> Archive : {backfillLeft.toLocaleString("fr-FR")} restants</span>
           ) : syncing ? (
             <span className="flex items-center gap-1.5"><Spinner size={11} /> Synchronisation…</span>
           ) : (

@@ -331,9 +331,13 @@ pub async fn insert(pool: &SqlitePool, r: &NewAccountRow<'_>) -> Result<()> {
     Ok(())
 }
 
+/// Identifiant du compte spécial « Sur cet ordinateur » (dossiers locaux, sans serveur).
+pub const LOCAL_ID: &str = "local";
+
+/// Comptes de messagerie (le compte local n'est pas un compte : ni synchro, ni envoi, ni suppression).
 pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>> {
     Ok(sqlx::query_as(&format!(
-        "SELECT {ACCOUNT_COLUMNS} FROM accounts ORDER BY created_at"
+        "SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE provider <> 'local' ORDER BY created_at"
     ))
     .fetch_all(pool)
     .await?)
@@ -362,6 +366,11 @@ pub async fn set_signature(pool: &SqlitePool, id: &str, signature: &str) -> Resu
 }
 
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
+    if id == LOCAL_ID {
+        return Err(AppError::Invalid(
+            "le stockage local ne peut pas être supprimé : il contient des mails archivés".into(),
+        ));
+    }
     sqlx::query("DELETE FROM accounts WHERE id = ?")
         .bind(id)
         .execute(pool)

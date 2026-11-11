@@ -120,6 +120,9 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
     }
     let accounts: Vec<String> = by_account.keys().map(|a| a.to_string()).collect();
     for (account_id, folders) in by_account {
+        if account_id == account::LOCAL_ID {
+            continue; // dossiers locaux : pas de serveur, la base suffit
+        }
         let acct = account::get(pool, account_id).await?;
         let cred = account::resolve_credential(&acct).await?;
         let mut session = imap::connect(&acct, &cred).await?;
@@ -171,7 +174,12 @@ async fn propagate(
     Ok(())
 }
 
-async fn store_flag(session: &mut ImapSession, uids: &str, flag: &str, on: bool) -> Result<()> {
+pub(crate) async fn store_flag(
+    session: &mut ImapSession,
+    uids: &str,
+    flag: &str,
+    on: bool,
+) -> Result<()> {
     let op = if on { "+FLAGS.SILENT" } else { "-FLAGS.SILENT" };
     session
         .uid_store(uids, format!("{op} ({flag})"))
@@ -194,7 +202,7 @@ async fn move_to(session: &mut ImapSession, uids: &str, dest: &str) -> Result<()
 }
 
 /// Efface les messages marqués `\Deleted` de cet ensemble d'UID.
-async fn expunge(session: &mut ImapSession, uids: &str) -> Result<()> {
+pub(crate) async fn expunge(session: &mut ImapSession, uids: &str) -> Result<()> {
     session
         .uid_expunge(uids)
         .await?
@@ -301,6 +309,11 @@ mod tests {
     /// 1 conversation de 2 messages dans INBOX (1 non lu) ; retourne (pool, folder_id).
     async fn setup() -> (SqlitePool, i64) {
         let pool = crate::db::init_memory().await.unwrap();
+        // Ces tests fixent leurs identifiants : on écarte le compte local créé par la migration.
+        sqlx::query("DELETE FROM accounts WHERE id = 'local'")
+            .execute(&pool)
+            .await
+            .unwrap();
         for sql in [
             "INSERT INTO accounts (id,email,username,imap_host,smtp_host) VALUES ('a','a@x.fr','a','i','s')",
             "INSERT INTO folders (id,account_id,path,name,role) VALUES (1,'a','INBOX','INBOX','inbox')",

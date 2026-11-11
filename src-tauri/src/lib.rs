@@ -23,6 +23,8 @@ pub struct AppState {
     pub db: SqlitePool,
     pub db_path: PathBuf,
     pub attachments_dir: PathBuf,
+    /// Magasin des messages bruts (voir `mail::rawstore`).
+    pub raw_dir: PathBuf,
     pub sync: Arc<mail::sync::SyncManager>,
     /// Sérialise les actions IMAP (archiver, marquer lu…).
     pub actions: tokio::sync::Mutex<()>,
@@ -90,15 +92,18 @@ pub fn run() {
             tracing::info!("base SQLite prête : {}", db_path.display());
 
             let attachments_dir = data_dir.join("attachments");
+            let raw_dir = data_dir.join("raw");
             let sync = mail::sync::SyncManager::new(
                 pool.clone(),
                 app.handle().clone(),
                 attachments_dir.clone(),
+                raw_dir.clone(),
             );
             app.manage(AppState {
                 db: pool,
                 db_path,
                 attachments_dir,
+                raw_dir,
                 sync: sync.clone(),
                 actions: tokio::sync::Mutex::new(()),
             });
@@ -134,6 +139,10 @@ pub fn run() {
             commands::set_thread_starred,
             commands::move_thread,
             commands::delete_thread,
+            commands::archive_local,
+            commands::create_local_folder,
+            commands::rename_local_folder,
+            commands::delete_local_folder,
             commands::empty_folder,
             commands::open_attachment,
             commands::inline_images,

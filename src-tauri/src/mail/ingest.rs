@@ -11,7 +11,7 @@ use envelope_core::addr::{self, Addr};
 use mail_parser::{Address, HeaderValue, MessageParser, MimeHeaders};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::mail::unsubscribe;
 use envelope_core::thread::Unsubscribe;
 
@@ -225,12 +225,33 @@ pub struct MessageLoc<'a> {
     pub size: Option<i64>,
 }
 
+/// Options de stockage d'un message.
+#[derive(Default)]
+pub struct StoreOpts<'a> {
+    /// Empreinte du message brut déjà rangé dans le magasin (`rawstore`).
+    pub raw_hash: Option<&'a str>,
+    /// `false` : métadonnées des pièces jointes seulement ; leur contenu est extrait du message
+    /// brut à la première ouverture (historique rapatrié : pas de copie disque systématique).
+    pub lazy_attachments: bool,
+}
+
 pub async fn store(
     pool: &SqlitePool,
     attachments_dir: &Path,
     loc: MessageLoc<'_>,
     flags: Flags,
     m: ParsedMessage,
+) -> Result<i64> {
+    store_with(pool, attachments_dir, loc, flags, m, StoreOpts::default()).await
+}
+
+pub async fn store_with(
+    pool: &SqlitePool,
+    attachments_dir: &Path,
+    loc: MessageLoc<'_>,
+    flags: Flags,
+    m: ParsedMessage,
+    opts: StoreOpts<'_>,
 ) -> Result<i64> {
     let MessageLoc {
         account_id,
@@ -259,8 +280,8 @@ pub async fn store(
     let res = sqlx::query(
         "INSERT INTO messages (account_id, folder_id, thread_id, uid, message_id, in_reply_to, references_ids, \
          subject, from_name, from_addr, to_addrs, cc_addrs, bcc_addrs, date, snippet, body_text, body_html, \
-         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click, raw_hash) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
          ON CONFLICT(folder_id, uid) DO NOTHING",
     )
     .bind(account_id)
@@ -287,6 +308,7 @@ pub async fn store(
     .bind(m.unsubscribe.as_ref().and_then(|u| u.url.as_deref()))
     .bind(m.unsubscribe.as_ref().and_then(|u| u.mailto.as_deref()))
     .bind(m.unsubscribe.as_ref().is_some_and(|u| u.one_click))
+    .bind(opts.raw_hash)
     .execute(pool)
     .await?;
     if res.rows_affected() == 0 {
@@ -298,11 +320,19 @@ pub async fn store(
         let dir = attachments_dir
             .join(account_id)
             .join(message_row.to_string());
-        tokio::fs::create_dir_all(&dir).await?;
+        if !opts.lazy_attachments {
+            tokio::fs::create_dir_all(&dir).await?;
+        }
         for (i, a) in m.attachments.iter().enumerate() {
-            let fname = safe_filename(a.filename.as_deref().unwrap_or("attachment"));
-            let path = dir.join(format!("{i}_{fname}"));
-            tokio::fs::write(&path, &a.data).await?;
+            // Chemin NULL tant que le contenu n'est pas extrait (voir `materialize_attachment`).
+            let path = if opts.lazy_attachments {
+                None
+            } else {
+                let fname = safe_filename(a.filename.as_deref().unwrap_or("attachment"));
+                let path = dir.join(format!("{i}_{fname}"));
+                tokio::fs::write(&path, &a.data).await?;
+                Some(path.to_string_lossy().into_owned())
+            };
             sqlx::query(
                 "INSERT INTO attachments (message_id, filename, mime_type, size, content_id, is_inline, storage_path) \
                  VALUES (?,?,?,?,?,?,?)",
@@ -313,12 +343,69 @@ pub async fn store(
             .bind(a.data.len() as i64)
             .bind(&a.content_id)
             .bind(a.is_inline)
-            .bind(path.to_string_lossy().as_ref())
+            .bind(path)
             .execute(pool)
             .await?;
         }
     }
     Ok(thread_id)
+}
+
+/// Contenu de la pièce jointe de rang `rank` d'un message brut (fonction synchrone : le `Message`
+/// de mail-parser ne traverse aucune attente).
+fn extract_attachment(raw: &[u8], rank: usize) -> Result<Vec<u8>> {
+    let msg = MessageParser::default()
+        .parse(raw)
+        .ok_or_else(|| AppError::Invalid("message brut illisible".into()))?;
+    let part = msg
+        .attachments()
+        .nth(rank)
+        .ok_or_else(|| AppError::NotFound("pièce jointe absente du message".into()))?;
+    Ok(part.contents().to_vec())
+}
+
+/// Extrait une pièce jointe du message brut (historique rapatrié sans copie disque) et retourne
+/// son chemin. L'ordre est celui de l'ingestion : rang parmi les pièces jointes du message.
+pub async fn materialize_attachment(
+    pool: &SqlitePool,
+    attachments_dir: &Path,
+    raw_dir: &Path,
+    attachment_id: i64,
+) -> Result<std::path::PathBuf> {
+    let (message_id, filename, rank): (i64, Option<String>, i64) = sqlx::query_as(
+        "SELECT message_id, filename, (SELECT COUNT(*) FROM attachments o WHERE o.message_id = a.message_id AND o.id < a.id) \
+         FROM attachments a WHERE id = ?",
+    )
+    .bind(attachment_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("pièce jointe {attachment_id}")))?;
+    let (account_id, hash): (String, Option<String>) =
+        sqlx::query_as("SELECT account_id, raw_hash FROM messages WHERE id = ?")
+            .bind(message_id)
+            .fetch_one(pool)
+            .await?;
+    let hash = hash
+        .filter(|h| !h.is_empty())
+        .ok_or_else(|| AppError::NotFound("message brut indisponible".into()))?;
+    let raw = crate::mail::rawstore::get(raw_dir, &hash).await?;
+    // Analyse hors de tout `.await` : un `Message` mail-parser ne traverse pas d'attente.
+    let data = extract_attachment(&raw, rank as usize)?;
+    let dir = attachments_dir
+        .join(&account_id)
+        .join(message_id.to_string());
+    tokio::fs::create_dir_all(&dir).await?;
+    let path = dir.join(format!(
+        "{rank}_{}",
+        safe_filename(filename.as_deref().unwrap_or("attachment"))
+    ));
+    tokio::fs::write(&path, &data).await?;
+    sqlx::query("UPDATE attachments SET storage_path = ? WHERE id = ?")
+        .bind(path.to_string_lossy().as_ref())
+        .bind(attachment_id)
+        .execute(pool)
+        .await?;
+    Ok(path)
 }
 
 /// Recalcule le compteur de non lus d'un dossier.
@@ -763,6 +850,72 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    #[tokio::test]
+    async fn lazy_attachments_are_extracted_from_the_raw_message() {
+        let (pool, folder) = setup().await;
+        let base = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let (att_dir, raw_dir) = (base.join("att"), base.join("raw"));
+        let raw = "From: a@x.fr\r\nTo: me@x.fr\r\nSubject: Devis\r\nDate: Mon, 2 Mar 2026 10:00:00 +0000\r\nMessage-ID: <lazy@x>\r\n\
+MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nvoir pièce jointe\r\n\
+--B\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"devis.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\nSGVsbG8gUERG\r\n--B--\r\n";
+        let hash = crate::mail::rawstore::put(&raw_dir, raw.as_bytes())
+            .await
+            .unwrap();
+        let loc = MessageLoc {
+            account_id: "a",
+            folder_id: folder,
+            uid: 1,
+            size: None,
+        };
+        let opts = StoreOpts {
+            raw_hash: Some(&hash),
+            lazy_attachments: true,
+        };
+        store_with(
+            &pool,
+            &att_dir,
+            loc,
+            Flags::default(),
+            parse(raw.as_bytes(), None).unwrap(),
+            opts,
+        )
+        .await
+        .unwrap();
+
+        let (id, path): (i64, Option<String>) =
+            sqlx::query_as("SELECT id, storage_path FROM attachments")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(path.is_none(), "rien n'est écrit sur disque à l'ingestion");
+        assert!(!att_dir.exists());
+        let p = materialize_attachment(&pool, &att_dir, &raw_dir, id)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"Hello PDF");
+        assert!(p.starts_with(&att_dir) && p.to_string_lossy().ends_with("devis.pdf"));
+        let stored: Option<String> =
+            sqlx::query_scalar("SELECT storage_path FROM attachments WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(stored.as_deref(), Some(p.to_string_lossy().as_ref()));
+        // Message sans brut : pas d'extraction possible.
+        sqlx::query("UPDATE messages SET raw_hash = ''")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE attachments SET storage_path = NULL")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(materialize_attachment(&pool, &att_dir, &raw_dir, id)
+            .await
+            .is_err());
+        let _ = std::fs::remove_dir_all(base);
+    }
+
     #[test]
     fn list_unsubscribe_headers_are_parsed() {
         let raw = b"From: News <n@lists.example.com>\r\nTo: me@example.com\r\nSubject: Hi\r\n\
@@ -818,7 +971,7 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].address, "alice@example.com");
         // L'adresse d'un compte n'est jamais proposée ; % et _ saisis sont littéraux.
-        sqlx::query("UPDATE accounts SET email = 'alice@example.com'")
+        sqlx::query("UPDATE accounts SET email = 'alice@example.com' WHERE id = 'a'")
             .execute(&pool)
             .await
             .unwrap();

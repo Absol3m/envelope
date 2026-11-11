@@ -7,7 +7,7 @@ import type { ThreadSummary } from "@/lib/api";
 import { categorize, CATEGORY_LABELS, type Category } from "@/lib/categories";
 import { displayName, groupLabel, listDate } from "@/lib/format";
 import { dragIds, useMail, visibleThreads } from "@/lib/store";
-import { DESTINATIONS, destinationsFor, isInboxView, isPurgeView, placeOf, viewTitle, type Destination, type View } from "@/lib/views";
+import { DESTINATIONS, destinationsFor, isEmptiableView, isInboxView, isPurgeView, placeOf, viewTitle, type Destination, type View } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { dragRegion } from "@/lib/platform";
 import { Avatar, IconButton } from "./ui/primitives";
@@ -202,7 +202,7 @@ export function ThreadList() {
         <div {...dragRegion} className="flex h-[30px] items-baseline gap-2">
           <h1 {...dragRegion} className="pointer-events-none text-[17px] font-semibold tracking-tight">{query.trim() ? "Recherche" : viewTitle(view)}</h1>
           {list.length > 0 && <span {...dragRegion} className="tnum pointer-events-none text-[12px] text-faint">{list.length}</span>}
-          {purge && list.length > 0 && !query.trim() && (
+          {isEmptiableView(view) && list.length > 0 && !query.trim() && (
             <button onClick={() => void emptyView()} className="press ml-auto rounded-md px-2 py-0.5 text-[12px] font-medium text-danger hover:bg-hover">
               {view.role === "trash" ? "Vider la corbeille" : "Vider le spam"}
             </button>
