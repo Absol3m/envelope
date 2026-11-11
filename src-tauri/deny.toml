@@ -1,0 +1,43 @@
+# Contrôle des dépendances (cargo deny) : vulnérabilités connues, licences, sources.
+# Lancé par la CI (`.github/workflows/ci.yml`, job « Dépendances »).
+
+[graph]
+# Seules les cibles que l'on publie : le reste du graphe (mobile, BSD…) n'est pas livré.
+targets = [
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+]
+
+[advisories]
+# Crates non maintenues : seulement celles que nous déclarons nous-mêmes. Les autres sont tirées par Tauri (GTK3, zbus sous
+# Linux) ou des bibliothèques async, sans correctif possible de notre côté.
+unmaintained = "workspace"
+# Chaque exception dit pourquoi elle est acceptable et ce qui la lèvera.
+ignore = [
+  # SQLite embarqué (< 3.54) : fuite de mémoire si l'on ouvre un .db accompagné d'un -wal forgé par un tiers.
+  # L'application n'ouvre que sa propre base ; le serveur MCP (lecture seule) ouvre celle qu'on lui désigne : ne lui
+  # désigner qu'une base de confiance. Levée : sqlx doit passer à libsqlite3-sys >= 0.39 (sqlx-sqlite 0.9.0 exige 0.30).
+  { id = "RUSTSEC-2026-0459", reason = "base ouverte seulement si elle est à nous ; en attente de sqlx (libsqlite3-sys >= 0.39)" },
+]
+
+[licenses]
+# Compatibles avec une distribution sous AGPL-3.0-or-later.
+allow = [
+  "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-3-Clause", "ISC",
+  "Unicode-3.0", "Zlib", "MPL-2.0", "CC0-1.0", "0BSD", "BSL-1.0", "Unlicense",
+  "AGPL-3.0-or-later", # nos propres crates
+]
+
+[bans]
+multiple-versions = "allow"
+# Magasin de certificats embarqué : interdit (règle du projet, voir CLAUDE.md : certificats vérifiés par le système).
+deny = [
+  { crate = "webpki-roots" },
+  { crate = "rustls-webpki-roots" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

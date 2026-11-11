@@ -196,7 +196,7 @@ fn apply_operator(spec: &mut SearchSpec, tok: &str) -> bool {
 
 /// Ajoute à `qb` (déjà positionné dans un `WHERE`) les conditions de `spec` sur la table `messages`
 /// aliasée `m` : texte libre via FTS5, puis filtres. `false` si la saisie de texte n'est pas interrogeable.
-pub fn push_message_filters(qb: &mut QueryBuilder<'_, Sqlite>, spec: &SearchSpec) -> bool {
+pub fn push_message_filters(qb: &mut QueryBuilder<Sqlite>, spec: &SearchSpec) -> bool {
     if !spec.text.trim().is_empty() {
         let Some(fts) = build_fts_query(&spec.text) else {
             return false;
@@ -278,11 +278,11 @@ pub async fn search(
     let Some(fts) = build_fts_query(query) else {
         return Ok(vec![]);
     };
-    sqlx::query_as(&format!(
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SUMMARY_COLS} FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid \
          WHERE messages_fts MATCH ?1 AND (?2 IS NULL OR m.account_id = ?2) \
          ORDER BY rank LIMIT ?3"
-    ))
+    )))
     .bind(fts)
     .bind(account_id)
     .bind(limit.clamp(1, 200))
@@ -296,9 +296,9 @@ pub async fn list_messages(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<MessageSummary>> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SUMMARY_COLS} FROM messages m WHERE m.folder_id = ? ORDER BY m.date DESC LIMIT ? OFFSET ?"
-    ))
+    )))
     .bind(folder_id)
     .bind(limit.clamp(1, 500))
     .bind(offset.max(0))

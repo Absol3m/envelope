@@ -3,7 +3,7 @@
 ## Commandes
 - Dev : `pnpm tauri dev` · Front : `pnpm build` (tsc + vite) · Tests front : `pnpm test` (vitest)
 - Aperçu navigateur sans Tauri : `pnpm dev` → boîte de démonstration (`src/lib/mock.ts`) ; en dev, `?theme=dark&thread=2&settings=agent&palette=1` pour des captures reproductibles.
-- Rust (dans src-tauri/) : `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+- Rust (dans src-tauri/) : `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` · dépendances : `cargo deny check` (src-tauri/) + `pnpm audit --prod`
 - Serveur MCP : `cargo run -p envelope-mcp -- --db <chemin>` (stdio ; lecture seule)
 
 ## Workflow
@@ -22,7 +22,7 @@
 
 ## Conventions Rust
 - Erreurs : `AppError` (thiserror) dans src-tauri/src/error.rs ; pas d'`unwrap()` hors tests.
-- SQL : `sqlx::query*` à l'exécution (pas de macros check) ; migrations dans src-tauri/migrations/.
+- SQL : `sqlx::query*` à l'exécution (pas de macros check) ; migrations dans src-tauri/migrations/. Valeurs toujours en `.bind()` ; `sqlx::AssertSqlSafe(format!(..))` seulement pour y insérer des **constantes** (listes de colonnes), jamais une donnée venue de l'utilisateur ou d'un mail.
 - Secrets : trousseau OS uniquement, jamais en base ni dans les logs.
 - Pas de `unsafe`. Async : tokio ; ne jamais garder un `Message` mail-parser à travers un `.await`.
 

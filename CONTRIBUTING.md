@@ -11,6 +11,7 @@ En proposant une contribution, vous acceptez qu'elle soit publiée sous cette li
    pnpm install
    pnpm build && pnpm test
    cd src-tauri && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+   cargo deny check   # vulnérabilités connues, licences, sources (cargo install cargo-deny)
    ```
 4. Ouvrez une pull request vers `main`. Décrivez le problème, la solution et ce que vous avez testé (système d'exploitation compris).
 

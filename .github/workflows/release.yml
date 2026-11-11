@@ -14,13 +14,27 @@ permissions:
   contents: read
 
 jobs:
+  # Une étiquette doit pointer sur un commit de `main` (jamais sur une branche non relue).
+  guard:
+    name: Étiquette sur main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Le commit est dans main
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)
+          echo "main...$GITHUB_SHA : $status"
+          [ "$status" = identical ] || [ "$status" = behind ]
+
   # Pas de build publié si les vérifications échouent.
   ci:
     name: Vérifications
     uses: ./.github/workflows/ci.yml
 
   build:
-    needs: ci
+    needs: [guard, ci]
     name: Build – ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -100,6 +114,8 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
+      id-token: write      # attestation de provenance (signature sans clé, OIDC)
+      attestations: write
     steps:
       - name: Checkout (notes de version)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -111,6 +127,18 @@ jobs:
 
       - name: Lister les fichiers
         run: find ./dist -type f | sort
+
+      # Sommes de contrôle des fichiers publiés, et attestation de provenance (qui les a construits, depuis quel commit).
+      - name: Sommes de contrôle
+        run: |
+          cd dist
+          find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort | xargs -d '\n' sha256sum > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attestation de provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-checksums: dist/SHA256SUMS
 
       - name: Publier
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

@@ -64,7 +64,22 @@ jobs:
         run: cargo fmt --all --check
       - name: cargo clippy
         working-directory: src-tauri
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: cargo test
         working-directory: src-tauri
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
+
+  # Dépendances : vulnérabilités connues (RustSec), licences compatibles avec l'AGPL, sources autorisées, et npm.
+  audit:
+    name: Dépendances
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@f2ba7abc2abebaf185c833c3961145a3c275caad # v2.0.13
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          command: check advisories licenses bans sources
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - run: pnpm audit --prod --audit-level moderate

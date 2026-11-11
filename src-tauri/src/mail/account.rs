@@ -348,9 +348,9 @@ pub const LOCAL_ID: &str = "local";
 
 /// Comptes de messagerie (le compte local n'est pas un compte : ni synchro, ni envoi, ni suppression).
 pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>> {
-    let mut accounts: Vec<Account> = sqlx::query_as(&format!(
+    let mut accounts: Vec<Account> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE provider <> 'local' ORDER BY created_at"
-    ))
+    )))
     .fetch_all(pool)
     .await?;
     let identities: Vec<(String, i64, String, String)> =
@@ -366,9 +366,9 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>> {
 }
 
 pub async fn get(pool: &SqlitePool, id: &str) -> Result<Account> {
-    let mut account: Account = sqlx::query_as(&format!(
+    let mut account: Account = sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {ACCOUNT_COLUMNS} FROM accounts WHERE id = ?"
-    ))
+    )))
     .bind(id)
     .fetch_optional(pool)
     .await?

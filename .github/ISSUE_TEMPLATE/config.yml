@@ -1,0 +1,4 @@
+contact_links:
+  - name: Signaler une vulnérabilité (privé)
+    url: https://github.com/Absol3m/envelope/security/advisories/new
+    about: Ne publiez pas de faille dans une issue.
