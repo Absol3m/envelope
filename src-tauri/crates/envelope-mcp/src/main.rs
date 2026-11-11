@@ -1,9 +1,8 @@
 //! `envelope-mcp [--db CHEMIN]` : serveur MCP sur stdio. stdout ne porte que le protocole.
 
 use envelope_mcp::db;
-use envelope_mcp::protocol::{Info, Server};
 use envelope_mcp::tools::EnvelopeTools;
-use tokio::io::BufReader;
+use rmcp::{transport::stdio, ServiceExt};
 
 const USAGE: &str = "usage: envelope-mcp [--db CHEMIN]\n  CHEMIN par défaut : $ENVELOPE_DB, sinon le dossier de données de l'application.";
 
@@ -27,18 +26,14 @@ async fn main() {
     };
     eprintln!("envelope-mcp : base {} (lecture seule)", path.display());
 
-    let info = Info {
-        name: "envelope",
-        title: "Envelope",
-        version: env!("CARGO_PKG_VERSION"),
-        max_line: 1 << 20,
-    };
-    let mut server = Server::new(info, EnvelopeTools::new(pool));
-    if let Err(e) = server
-        .serve(BufReader::new(tokio::io::stdin()), tokio::io::stdout())
-        .await
-    {
-        fail(&format!("E/S : {e}"));
+    // Le SDK porte le protocole (JSON-RPC, cycle de vie, versions) ; on ne fournit que les outils.
+    match EnvelopeTools::new(pool).serve(stdio()).await {
+        Ok(service) => {
+            if let Err(e) = service.waiting().await {
+                fail(&format!("protocole : {e}"));
+            }
+        }
+        Err(e) => fail(&format!("démarrage : {e}")),
     }
 }
 

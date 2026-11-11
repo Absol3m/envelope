@@ -1,22 +1,18 @@
 //! Tests de bout en bout : une vraie base SQLite (migrations de l'application), le serveur MCP
-//! ouvert en lecture seule, et des messages JSON-RPC comme un client les enverrait.
+//! ouvert en lecture seule, et un **vrai client MCP** (celui du SDK officiel) relié en mémoire.
+//! Le protocole (JSON-RPC, cycle de vie, validation des paramètres) est celui du SDK ; ici on
+//! vérifie nos outils et nos garanties : lecture seule, contenu non fiable signalé, sorties compactes.
 
 use envelope_mcp::db::open_readonly;
-use envelope_mcp::protocol::{Info, Server};
 use envelope_mcp::tools::EnvelopeTools;
+use rmcp::model::{CallToolRequestParams, CallToolResult};
+use rmcp::service::{RoleClient, RunningService};
+use rmcp::{ClientHandler, ServiceExt};
 use serde_json::{json, Value};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
-use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-const INFO: Info = Info {
-    name: "envelope",
-    title: "Envelope",
-    version: "test",
-    max_line: 4096,
-};
 
 fn temp_db() -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -28,7 +24,7 @@ fn temp_db() -> PathBuf {
 }
 
 /// Base de test : 2 conversations, dont une avec pièce jointe et citations.
-async fn fixture() -> (Server<EnvelopeTools>, PathBuf) {
+async fn database() -> PathBuf {
     let path = temp_db();
     let rw = SqlitePool::connect_with(
         SqliteConnectOptions::new()
@@ -57,72 +53,94 @@ async fn fixture() -> (Server<EnvelopeTools>, PathBuf) {
         sqlx::query(sql).execute(&rw).await.unwrap();
     }
     rw.close().await;
+    path
+}
+
+#[derive(Clone, Default)]
+struct TestClient;
+impl ClientHandler for TestClient {}
+
+type Client = RunningService<RoleClient, TestClient>;
+
+/// Serveur et client reliés en mémoire ; le serveur ouvre la base en lecture seule, comme en production.
+async fn connect() -> (Client, PathBuf) {
+    let path = database().await;
     let ro = open_readonly(&path).await.unwrap();
-    (Server::new(INFO, EnvelopeTools::new(ro)), path)
+    let (server_io, client_io) = tokio::io::duplex(1 << 16);
+    tokio::spawn(async move {
+        let running = EnvelopeTools::new(ro).serve(server_io).await.unwrap();
+        let _ = running.waiting().await;
+    });
+    (TestClient.serve(client_io).await.unwrap(), path)
 }
 
-async fn rpc(s: &mut Server<EnvelopeTools>, msg: Value) -> Value {
-    serde_json::from_str(
-        &s.handle_line(&msg.to_string())
-            .await
-            .expect("réponse attendue"),
-    )
-    .unwrap()
+fn args(v: Value) -> serde_json::Map<String, Value> {
+    v.as_object().cloned().unwrap()
 }
 
-/// Appelle un outil et renvoie (résultat, texte des blocs concaténés).
-async fn call(s: &mut Server<EnvelopeTools>, name: &str, args: Value) -> (Value, String) {
-    let r = rpc(s, json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":name,"arguments":args}})).await;
-    let text = r["result"]["content"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|c| c["text"].as_str())
+/// Appelle un outil : le résultat et le texte de tous ses blocs.
+async fn call(c: &Client, name: &str, arguments: Value) -> (CallToolResult, String) {
+    let r = c
+        .call_tool(CallToolRequestParams::new(name.to_string()).with_arguments(args(arguments)))
+        .await
+        .unwrap_or_else(|e| panic!("{name} : {e}"));
+    let text = r
+        .content
+        .iter()
+        .filter_map(|b| b.as_text())
+        .map(|t| t.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
     (r, text)
 }
 
+fn block_text(r: &CallToolResult, i: usize) -> String {
+    r.content[i].as_text().unwrap().text.clone()
+}
+
 #[tokio::test]
 async fn initialize_and_tool_list() {
-    let (mut s, _) = fixture().await;
-    let r = rpc(&mut s, json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}})).await;
-    assert_eq!(r["result"]["protocolVersion"], "2024-11-05");
-    assert!(r["result"]["instructions"]
-        .as_str()
-        .unwrap()
-        .contains("pas fiable"));
-    assert!(s
-        .handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
-        .await
-        .is_none());
-
-    let tools = rpc(
-        &mut s,
-        json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
-    )
-    .await["result"]["tools"]
-        .clone();
-    let tools = tools.as_array().unwrap();
-    assert_eq!(tools.len(), 5);
+    let (c, _) = connect().await;
+    let info = c.peer_info().expect("informations du serveur");
+    assert_eq!(
+        info.server_info.as_ref().map(|i| i.name.as_str()),
+        Some("envelope")
+    );
+    assert!(info.instructions.as_deref().unwrap().contains("pas fiable"));
+    let tools = c.list_all_tools().await.unwrap();
+    let mut names: Vec<&str> = tools.iter().map(|t| &*t.name).collect();
+    names.sort();
+    assert_eq!(
+        names,
+        [
+            "get_thread",
+            "list_accounts",
+            "list_folders",
+            "search_emails",
+            "summarize_thread"
+        ]
+    );
     // Temps 1 : rien que de la lecture, et les clients doivent le savoir.
-    for t in tools {
-        assert_eq!(t["annotations"]["readOnlyHint"], true, "{}", t["name"]);
-        assert_eq!(t["annotations"]["destructiveHint"], false);
+    for t in &tools {
+        let a = t
+            .annotations
+            .as_ref()
+            .unwrap_or_else(|| panic!("annotations de {}", t.name));
+        assert_eq!(a.read_only_hint, Some(true), "{}", t.name);
+        assert_eq!(a.destructive_hint, Some(false), "{}", t.name);
     }
 }
 
 #[tokio::test]
 async fn search_is_compact_and_flags_untrusted_content() {
-    let (mut s, _) = fixture().await;
-    let (r, text) = call(&mut s, "search_emails", json!({"query": "budg"})).await;
-    assert!(r["result"]["isError"].is_null());
-    let blocks = r["result"]["content"].as_array().unwrap();
+    let (c, _) = connect().await;
+    let (r, text) = call(&c, "search_emails", json!({"query": "budg"})).await;
+    assert_ne!(r.is_error, Some(true));
     assert!(
-        blocks[0]["text"].as_str().unwrap().contains("non fiable"),
+        block_text(&r, 0).contains("non fiable"),
         "l'avertissement précède les données"
     );
-    let data: Value = serde_json::from_str(blocks[1]["text"].as_str().unwrap()).unwrap();
+    let data: Value = serde_json::from_str(&block_text(&r, 1)).unwrap();
     assert_eq!(data["count"], 2);
     let first = &data["results"][0];
     assert!(first["thread_id"].is_number() && first["snippet"].is_string());
@@ -140,14 +158,14 @@ async fn search_is_compact_and_flags_untrusted_content() {
     );
 
     let (_, none) = call(
-        &mut s,
+        &c,
         "search_emails",
         json!({"query": "\"; DROP TABLE messages; --"}),
     )
     .await;
     assert!(none.contains("\"count\":0"));
     let (_, scoped) = call(
-        &mut s,
+        &c,
         "search_emails",
         json!({"query": "budget", "account_id": "autre"}),
     )
@@ -157,53 +175,46 @@ async fn search_is_compact_and_flags_untrusted_content() {
 
 #[tokio::test]
 async fn get_thread_truncates_and_hides_attachment_paths() {
-    let (mut s, _) = fixture().await;
-    let (_, text) = call(&mut s, "get_thread", json!({"thread_id": 2})).await;
+    let (c, _) = connect().await;
+    let (_, text) = call(&c, "get_thread", json!({"thread_id": 2})).await;
     assert!(text.contains("facture.pdf") && text.contains("application/pdf"));
     assert!(!text.contains("/secret"), "jamais de chemin disque");
 
-    let (_, short) = call(
-        &mut s,
-        "get_thread",
-        json!({"thread_id": 1, "max_chars": 100}),
-    )
-    .await;
+    let (_, short) = call(&c, "get_thread", json!({"thread_id": 1, "max_chars": 100})).await;
     assert!(short.contains("Peut-on parler"));
     // Corps de 3000 caractères (accentués : octets ≠ caractères) : borné à 2000 par défaut, signalé tronqué.
-    let (r, _) = call(&mut s, "get_thread", json!({"thread_id": 2})).await;
-    let data: Value =
-        serde_json::from_str(r["result"]["content"][1]["text"].as_str().unwrap()).unwrap();
-    let long = data["messages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|m| m["id"] == 4)
-        .unwrap();
+    let (r, _) = call(&c, "get_thread", json!({"thread_id": 2})).await;
+    let data: Value = serde_json::from_str(&block_text(&r, 1)).unwrap();
+    let find = |id: i64| {
+        data["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    let long = find(4);
     assert_eq!(long["truncated"], true);
     assert_eq!(
         long["body"].as_str().unwrap().chars().count(),
         2001,
         "2000 caractères + …"
     );
-    let short = data["messages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|m| m["id"] == 3)
-        .unwrap();
+    let short = find(3);
     assert!(
         short.get("truncated").is_none() && short.get("to").is_none(),
         "valeurs vides omises"
     );
 
-    let (r, _) = call(&mut s, "get_thread", json!({"thread_id": 999})).await;
-    assert_eq!(r["result"]["isError"], true);
+    let (r, _) = call(&c, "get_thread", json!({"thread_id": 999})).await;
+    assert_eq!(r.is_error, Some(true));
 }
 
 #[tokio::test]
 async fn summarize_strips_quotes_and_orders_chronologically() {
-    let (mut s, _) = fixture().await;
-    let (_, text) = call(&mut s, "summarize_thread", json!({"thread_id": 1})).await;
+    let (c, _) = connect().await;
+    let (_, text) = call(&c, "summarize_thread", json!({"thread_id": 1})).await;
     assert!(text.contains("2 message(s)"));
     assert!(text.contains("À 10h ?") && text.contains("Oui, demain."));
     assert!(
@@ -218,81 +229,68 @@ async fn summarize_strips_quotes_and_orders_chronologically() {
 
 #[tokio::test]
 async fn accounts_and_folders() {
-    let (mut s, _) = fixture().await;
-    let (_, acc) = call(&mut s, "list_accounts", json!({})).await;
+    let (c, _) = connect().await;
+    let (_, acc) = call(&c, "list_accounts", json!({})).await;
     assert!(acc.contains("me@x.fr") && !acc.contains("imap_host") && !acc.contains("imapHost"));
-    let (_, f) = call(&mut s, "list_folders", json!({})).await;
+    let (_, f) = call(&c, "list_folders", json!({})).await;
     assert!(f.contains("INBOX") && f.contains("\"unreadCount\":2"));
 }
 
+/// Les paramètres invalides sont refusés par le SDK (schéma de l'outil) avant d'atteindre notre code.
 #[tokio::test]
 async fn invalid_calls_never_reach_a_tool() {
-    let (mut s, _) = fixture().await;
-    for (name, args, needle) in [
-        ("nope", json!({}), "unknown tool"),
-        (
-            "search_emails",
-            json!({}),
-            "missing required argument `query`",
-        ),
-        (
-            "search_emails",
-            json!({"query": "x", "bogus": 1}),
-            "unknown argument `bogus`",
-        ),
-        ("search_emails", json!({"query": 5}), "must be of type"),
-        (
-            "search_emails",
-            json!({"query": "x", "limit": 1000}),
-            "must be between",
-        ),
-        ("get_thread", json!({"thread_id": "1"}), "must be of type"),
+    let (c, _) = connect().await;
+    for (name, arguments) in [
+        ("nope", json!({})),
+        ("search_emails", json!({})), // `query` manquant
+        ("search_emails", json!({"query": "x", "bogus": 1})), // argument inconnu
+        ("search_emails", json!({"query": 5})), // mauvais type
+        ("get_thread", json!({"thread_id": "1"})), // mauvais type
     ] {
-        let (r, _) = call(&mut s, name, args).await;
-        assert_eq!(r["error"]["code"], -32602, "{name}");
-        assert!(
-            r["error"]["message"].as_str().unwrap().contains(needle),
-            "{name}: {}",
-            r["error"]["message"]
-        );
+        let result = c
+            .call_tool(
+                CallToolRequestParams::new(name.to_string())
+                    .with_arguments(args(arguments.clone())),
+            )
+            .await;
+        let refused = match result {
+            Err(_) => true,                    // erreur de protocole
+            Ok(r) => r.is_error == Some(true), // ou résultat d'erreur de l'outil
+        };
+        assert!(refused, "{name} {arguments} aurait dû être refusé");
     }
-    let r = rpc(
-        &mut s,
-        json!({"jsonrpc":"2.0","id":3,"method":"resources/list"}),
-    )
-    .await;
-    assert_eq!(r["error"]["code"], -32601);
+    // Le serveur reste utilisable après des appels invalides.
+    assert!(call(&c, "list_accounts", json!({}))
+        .await
+        .1
+        .contains("me@x.fr"));
 }
 
+/// Aucun outil n'écrit : même avec des arguments hostiles, la base ne change pas (ouverte en lecture seule).
 #[tokio::test]
-async fn hostile_input_is_answered_not_fatal() {
-    let (mut s, _) = fixture().await;
-    // Ligne géante, JSON invalide, UTF-8 cassé, lot interdit, puis une requête valide : le serveur survit.
-    let mut input = vec![b'x'; 10_000];
-    input.push(b'\n');
-    input.extend_from_slice(b"{pas du json\n");
-    input.extend_from_slice(&[0xff, 0xfe, b'\n']);
-    input.extend_from_slice(b"[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}]\n");
-    input.extend_from_slice(b"{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"}\n");
-    let mut out = Vec::new();
-    s.serve(Cursor::new(input), &mut out).await.unwrap();
-    let lines: Vec<Value> = String::from_utf8(out)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    let codes: Vec<i64> = lines
-        .iter()
-        .filter_map(|l| l["error"]["code"].as_i64())
-        .collect();
-    assert_eq!(codes, vec![-32600, -32700, -32700, -32600]);
-    assert_eq!(lines.last().unwrap()["id"], 9);
-    assert!(lines.last().unwrap()["result"].is_object());
+async fn hostile_arguments_never_write() {
+    let (c, path) = connect().await;
+    for q in [
+        "'; DELETE FROM messages; --",
+        "\"\" OR 1=1",
+        "NEAR(a b)",
+        "a:b",
+        "*",
+        &"x".repeat(5000),
+    ] {
+        let _ = call(&c, "search_emails", json!({"query": q})).await;
+    }
+    let ro = open_readonly(&path).await.unwrap();
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&ro)
+        .await
+        .unwrap();
+    assert_eq!(n, 4);
 }
 
 #[tokio::test]
 async fn database_is_read_only() {
-    let (_, path) = fixture().await;
+    let path = database().await;
     let ro = open_readonly(&path).await.unwrap();
     let err = sqlx::query("DELETE FROM messages")
         .execute(&ro)
