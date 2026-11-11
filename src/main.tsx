@@ -4,9 +4,11 @@ import App from "./App";
 import { watchSystemAppearance } from "@/lib/theme";
 import { useMail } from "@/lib/store";
 import { suppressWebviewContextMenu } from "@/lib/platform";
+import { applyFont, savedFont } from "@/lib/font";
 import "./index.css";
 
 suppressWebviewContextMenu(document);
+void applyFont(savedFont());
 // Thème posé avant le premier rendu (pas d'éclair blanc en mode sombre), puis couleurs du système.
 watchSystemAppearance(() => useMail.getState());
 if (import.meta.env.DEV) void import("./dev").then((m) => m.applyDevParams());

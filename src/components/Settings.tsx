@@ -3,6 +3,7 @@ import { Bot, Check, Copy, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCh
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { type McpInfo } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
+import { customName, FREE_FONTS, type FontPref } from "@/lib/font";
 import { notificationsEnabled, sendNative, setNotificationsEnabled } from "@/lib/notify";
 import { useShallow } from "zustand/react/shallow";
 import { useMail, type SettingsTab } from "@/lib/store";
@@ -245,6 +246,56 @@ function AgentPanel() {
 
 // ───────────── Apparence ─────────────
 
+/** Police de l'interface : celle du système par défaut, des polices libres, ou une police installée. */
+function FontSection() {
+  const { font, setFont } = useMail(useShallow((s) => ({ font: s.font, setFont: s.setFont })));
+  const isCustom = font.startsWith("custom:");
+  const [typed, setTyped] = useState(isCustom ? font.slice(7) : "");
+  const valid = customName(typed) !== null;
+  const selected = isCustom ? "custom" : font;
+  const note = FREE_FONTS.find((f) => f.id === font)?.note;
+  return (
+    <Section title="Police" hint="Par défaut, la police de votre système. Les polices libres (licence OFL) ne sont téléchargées que si vous les choisissez ; vous pouvez aussi saisir le nom d'une police installée sur cet ordinateur.">
+      <div className="flex max-w-[420px] flex-col gap-2.5">
+        <select
+          aria-label="Police de l'interface"
+          value={selected}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "custom") setFont((customName(typed) ? `custom:${customName(typed)}` : "system") as FontPref);
+            else setFont(v as FontPref);
+            if (v === "custom" && !customName(typed)) setTyped("");
+          }}
+          className={cn(inputCls, "px-2")}
+        >
+          <option value="system">Police du système (par défaut)</option>
+          {FREE_FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          <option value="custom">Une police installée…</option>
+        </select>
+        {(selected === "custom" || isCustom) && (
+          <div className="flex gap-2">
+            <input
+              aria-label="Nom de la police installée"
+              className={cn(inputCls, "min-w-0 flex-1")}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Nom exact, ex. Helvetica Neue"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && valid) setFont(`custom:${customName(typed)!}`); }}
+            />
+            <button className={btnPrimary} disabled={!valid} onClick={() => setFont(`custom:${customName(typed)!}`)}>Appliquer</button>
+          </div>
+        )}
+        {note && <p className="text-[12px] text-muted">{note}</p>}
+        <p className="rounded-lg bg-bg-subtle px-3 py-2.5 text-[13px] leading-relaxed">
+          Aa Bb Cc — Le vif zéphyr jubile sur les kumquats du clown gracieux. 0123456789
+        </p>
+      </div>
+    </Section>
+  );
+}
+
 function NotificationsSection() {
   const [on, setOn] = useState(notificationsEnabled);
   const toast = useMail((s) => s.toast);
@@ -279,6 +330,7 @@ function AppearancePanel() {
       <Section title="Densité de la liste">
         <Segmented value={s.density} onChange={s.setDensity} options={[{ value: "comfortable", label: "Confortable" }, { value: "compact", label: "Compacte" }]} />
       </Section>
+      <FontSection />
       <NotificationsSection />
       <Section title="Aperçus">
         <label className="flex max-w-[420px] items-center gap-3 text-[13px]">

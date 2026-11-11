@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { parseColors, parseTheme, renderAppearance, type ColorsPref, type ThemePref } from "./theme";
+import { applyFont, savedFont, type FontPref } from "./font";
 import { pref } from "./pref";
 import { demoBackend } from "./mock";
 import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
@@ -69,6 +70,7 @@ interface State {
   theme: ThemePref;
   colors: ColorsPref;
   density: Density;
+  font: FontPref;
   previews: boolean;
 
   init(): Promise<void>;
@@ -105,6 +107,7 @@ interface State {
   setTheme(t: ThemePref): void;
   setColors(c: ColorsPref): void;
   setDensity(d: Density): void;
+  setFont(f: FontPref): void;
   setPreviews(p: boolean): void;
 }
 
@@ -279,6 +282,7 @@ export const useMail = create<State>((set, get) => {
     theme: parseTheme(pref.get("theme", "system")),
     colors: parseColors(pref.get("colors", "system")),
     density: pref.get<Density>("density", "comfortable"),
+    font: savedFont(),
     previews: pref.get("previews", "on") === "on",
 
     async init() {
@@ -531,6 +535,11 @@ export const useMail = create<State>((set, get) => {
     setDensity(density) {
       pref.set("density", density);
       set({ density });
+    },
+    setFont(font) {
+      pref.set("font", font);
+      set({ font });
+      void applyFont(font);
     },
     setPreviews(previews) {
       pref.set("previews", previews ? "on" : "off");
