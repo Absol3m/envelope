@@ -168,11 +168,14 @@ pub async fn authorize(
         .map_err(|e| AppError::Auth(e.to_string()))?;
     open_browser(url.as_str())?;
 
-    let code = tokio::time::timeout(Duration::from_secs(300), wait_for_code(&listener, &state))
-        .await
-        .map_err(|_| {
-            AppError::Auth("délai dépassé : autorisation non terminée dans le navigateur".into())
-        })??;
+    let code = tokio::time::timeout(
+        Duration::from_secs(300),
+        wait_for_code(&listener, &state, CALLBACK_CONN_TIMEOUT),
+    )
+    .await
+    .map_err(|_| {
+        AppError::Auth("délai dépassé : autorisation non terminée dans le navigateur".into())
+    })??;
 
     let mut form = vec![
         ("grant_type", "authorization_code".to_string()),
@@ -189,49 +192,60 @@ pub async fn authorize(
     })
 }
 
+/// Temps accordé à chaque connexion sur le port de rappel (lecture comme écriture).
+const CALLBACK_CONN_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Attend la redirection du navigateur et renvoie le `code` (après vérification du `state`).
-async fn wait_for_code(listener: &TcpListener, expected_state: &str) -> Result<String> {
+///
+/// Le port de rappel est local mais accessible à tout processus de la machine : une connexion qui
+/// n'envoie rien, une requête illisible ou un `state` faux ne doivent jamais bloquer ni faire
+/// échouer la connexion. Chacune est écartée et on continue d'attendre la vraie redirection.
+async fn wait_for_code(
+    listener: &TcpListener,
+    expected_state: &str,
+    conn_timeout: Duration,
+) -> Result<String> {
     loop {
         let (mut sock, _) = listener.accept().await?;
         let mut buf = vec![0u8; 8192];
-        let n = sock.read(&mut buf).await?;
+        let Ok(Ok(n)) = tokio::time::timeout(conn_timeout, sock.read(&mut buf)).await else {
+            continue; // silencieuse ou en erreur
+        };
         let req = String::from_utf8_lossy(&buf[..n]);
         let path = req
             .lines()
             .next()
             .and_then(|l| l.split_whitespace().nth(1))
             .unwrap_or("/");
-        let url = reqwest::Url::parse(&format!("http://127.0.0.1{path}"))
-            .map_err(|e| AppError::Auth(e.to_string()))?;
+        let Ok(url) = reqwest::Url::parse(&format!("http://127.0.0.1{path}")) else {
+            continue; // requête illisible
+        };
         let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
 
-        let (status, body, outcome) = if let Some(err) = q.get("error") {
-            (
-                "400 Bad Request",
-                "Autorisation refusée. Vous pouvez fermer cet onglet.",
-                Some(Err(AppError::Auth(err.clone()))),
-            )
-        } else if let Some(code) = q.get("code") {
-            if q.get("state").map(String::as_str) != Some(expected_state) {
+        // Le `state` conditionne tout (code comme erreur) : sans lui, la requête n'émane pas du navigateur
+        // que nous avons ouvert, elle est écartée et n'interrompt rien.
+        let state_ok = q.get("state").map(String::as_str) == Some(expected_state);
+        let (status, body, outcome) =
+            if !state_ok && (q.contains_key("code") || q.contains_key("error")) {
+                ("400 Bad Request", "État invalide.", None)
+            } else if let Some(err) = q.get("error") {
                 (
                     "400 Bad Request",
-                    "État invalide.",
-                    Some(Err(AppError::Auth("state OAuth2 invalide (CSRF ?)".into()))),
+                    "Autorisation refusée. Vous pouvez fermer cet onglet.",
+                    Some(Err(AppError::Auth(err.clone()))),
                 )
-            } else {
+            } else if let Some(code) = q.get("code") {
                 (
                     "200 OK",
                     "Envelope est autorisé. Vous pouvez fermer cet onglet.",
                     Some(Ok(code.clone())),
                 )
-            }
-        } else {
-            ("404 Not Found", "", None) // favicon, etc.
-        };
+            } else {
+                ("404 Not Found", "", None) // favicon, etc.
+            };
         let html = format!("<!doctype html><meta charset=utf-8><body style=\"font-family:sans-serif;padding:3rem\">{body}");
-        let _ = sock
-            .write_all(format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len()).as_bytes())
-            .await;
+        let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len());
+        let _ = tokio::time::timeout(conn_timeout, sock.write_all(response.as_bytes())).await;
         if let Some(o) = outcome {
             return o;
         }
@@ -304,4 +318,64 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
     };
     account::store_oauth(account_id, &new)?;
     Ok(new.access_token)
+}
+
+#[cfg(test)]
+mod callback_tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpStream;
+
+    async fn send(port: u16, request: &str) {
+        let mut c = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        c.write_all(request.as_bytes()).await.unwrap();
+        let mut sink = Vec::new();
+        let _ = tokio::time::timeout(Duration::from_secs(2), c.read_to_end(&mut sink)).await;
+    }
+
+    /// Un processus local malveillant ou défaillant ne doit ni bloquer ni faire échouer l'autorisation.
+    #[tokio::test]
+    async fn la_vraie_redirection_aboutit_malgre_les_connexions_parasites() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let waiter = tokio::spawn(async move {
+            wait_for_code(&listener, "bon-etat", Duration::from_millis(300)).await
+        });
+        let _silent = TcpStream::connect(("127.0.0.1", port)).await.unwrap(); // n'envoie rien
+        send(port, "\x00\x01 pas du http").await;
+        send(port, "GET /?code=pirate&state=mauvais HTTP/1.1\r\n\r\n").await; // faux state
+        send(port, "GET /?error=access_denied HTTP/1.1\r\n\r\n").await; // erreur sans state : ne casse rien
+        send(port, "GET /favicon.ico HTTP/1.1\r\n\r\n").await;
+        send(
+            port,
+            "GET /?code=le-vrai-code&state=bon-etat HTTP/1.1\r\n\r\n",
+        )
+        .await;
+        let code = tokio::time::timeout(Duration::from_secs(5), waiter)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(code, "le-vrai-code");
+    }
+
+    /// Un refus de l'utilisateur chez le fournisseur (avec le bon state) termine bien l'autorisation en erreur.
+    #[tokio::test]
+    async fn un_refus_legitime_termine_en_erreur() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let waiter = tokio::spawn(async move {
+            wait_for_code(&listener, "bon-etat", Duration::from_millis(300)).await
+        });
+        send(
+            port,
+            "GET /?error=access_denied&state=bon-etat HTTP/1.1\r\n\r\n",
+        )
+        .await;
+        let result = tokio::time::timeout(Duration::from_secs(5), waiter)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(result.is_err());
+    }
 }

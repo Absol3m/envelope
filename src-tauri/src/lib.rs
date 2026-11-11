@@ -81,7 +81,21 @@ pub fn run() {
         )
         .init();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Une seule instance : deux Envelope sur la même base (synchro, actions IMAP) se gêneraient.
+    // Un second lancement ramène au premier plan la fenêtre déjà ouverte. Ce plugin passe en premier.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
+        // Taille, position et état (agrandie…) de la fenêtre retrouvés d'une session à l'autre.
+        .plugin(tauri_plugin_window_state::Builder::default().build());
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())

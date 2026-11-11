@@ -229,19 +229,11 @@ async fn mx_registrable_domain(domain: &str) -> Option<String> {
     Some(registrable_domain(&host)).filter(|d| valid_hostname(d))
 }
 
-/// Approximation du domaine enregistrable (deux derniers libellés, trois pour `co.uk` et assimilés).
+/// Domaine enregistrable (« mx1.mail.ovh.net » → « ovh.net », « mail.example.co.uk » → « example.co.uk »),
+/// d'après la liste des suffixes publics ; l'hôte lui-même si aucun suffixe connu ne correspond.
 pub fn registrable_domain(host: &str) -> String {
-    let labels: Vec<&str> = host.split('.').collect();
-    let n = labels.len();
-    let take = if n >= 3
-        && labels[n - 1].len() == 2
-        && matches!(labels[n - 2], "co" | "com" | "org" | "net" | "gov" | "ac")
-    {
-        3
-    } else {
-        2
-    };
-    labels[n.saturating_sub(take)..].join(".")
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    psl::domain_str(&host).unwrap_or(&host).to_string()
 }
 
 /// Nom d'hôte DNS plausible (évite l'injection dans les URL et les cibles de connexion).
@@ -309,6 +301,15 @@ mod tests {
         assert_eq!(registrable_domain("aspmx.l.google.com"), "google.com");
         assert_eq!(registrable_domain("mx1.mail.ovh.net"), "ovh.net");
         assert_eq!(registrable_domain("mail.example.co.uk"), "example.co.uk");
+        assert_eq!(registrable_domain("MX.Mail.Example.COM."), "example.com");
+        // Ce que l'ancienne approximation (deux ou trois derniers libellés) se trompait à reconnaître :
+        assert_eq!(registrable_domain("smtp.example.com.au"), "example.com.au");
+        assert_eq!(
+            registrable_domain("imap.exemple.gouv.fr"),
+            "exemple.gouv.fr"
+        );
+        assert_eq!(registrable_domain("a.b.exemple.asso.fr"), "exemple.asso.fr");
+        assert_eq!(registrable_domain("localhost"), "localhost");
     }
 
     #[test]

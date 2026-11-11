@@ -15,10 +15,6 @@ use std::time::{Duration, Instant};
 
 use async_imap::extensions::idle::IdleResponse;
 use async_imap::types::{Fetch, Flag, NameAttribute};
-use base64::{
-    alphabet, engine::general_purpose::GeneralPurpose,
-    engine::general_purpose::GeneralPurposeConfig, engine::DecodePaddingMode, Engine,
-};
 use futures::{FutureExt, TryStreamExt};
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
@@ -297,41 +293,9 @@ struct FolderRec {
 }
 
 /// Décode l'UTF-7 modifié des noms de dossiers IMAP (RFC 3501 §5.1.3) : `Envoy&AOk-s` → `Envoyés`.
+/// (Données du serveur, donc non fiables : on s'appuie sur une bibliothèque dédiée.)
 pub fn decode_mutf7(s: &str) -> String {
-    let engine = GeneralPurpose::new(
-        &alphabet::STANDARD,
-        GeneralPurposeConfig::new()
-            .with_decode_padding_mode(DecodePaddingMode::Indifferent)
-            .with_decode_allow_trailing_bits(true),
-    );
-    let mut out = String::new();
-    let mut it = s.chars();
-    while let Some(c) = it.next() {
-        if c != '&' {
-            out.push(c);
-            continue;
-        }
-        let b64: String = it.by_ref().take_while(|&c| c != '-').collect();
-        if b64.is_empty() {
-            out.push('&');
-            continue;
-        }
-        match engine.decode(b64.replace(',', "/")) {
-            Ok(bytes) => {
-                let units: Vec<u16> = bytes
-                    .chunks_exact(2)
-                    .map(|p| u16::from_be_bytes([p[0], p[1]]))
-                    .collect();
-                out.push_str(&String::from_utf16_lossy(&units));
-            }
-            Err(_) => {
-                out.push('&');
-                out.push_str(&b64);
-                out.push('-');
-            }
-        }
-    }
-    out
+    utf7_imap::decode_utf7_imap(s.to_string())
 }
 
 async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<FolderRec>> {

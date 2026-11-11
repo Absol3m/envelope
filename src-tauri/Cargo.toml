@@ -56,6 +56,8 @@ roxmltree = "0.21"  # lecture des fichiers autoconfig (config-v1.1.xml)
 hickory-resolver = { version = "0.26", default-features = false, features = ["tokio", "system-config"] }  # MX pour la détection
 url = "2"                # analyse des liens List-Unsubscribe
 percent-encoding = "2"
+psl = "2"                 # liste des suffixes publics (domaine enregistrable), maintenue
+utf7-imap = "0.3"         # noms de dossiers IMAP (UTF-7 modifié, RFC 3501)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-manual-roots"] }  # jetons OAuth2, autoconfig, désabonnement ; certificats vérifiés par le système (tls.rs)
 sha2 = "0.10"           # PKCE (S256)
 base64 = "0.22"
@@ -72,6 +74,11 @@ panic = "abort"
 # (macOS récent refuse de charger une bibliothèque de macros dont la table de symboles est supprimée).
 [profile.release.build-override]
 strip = "none"
+
+# Plugins officiels Tauri réservés au bureau : instance unique, mémoire de la taille et de la position de la fenêtre
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-window-state = "2"
 
 # Secrets (mots de passe / tokens OAuth2) dans le trousseau de l'OS
 [target.'cfg(target_os = "macos")'.dependencies]
