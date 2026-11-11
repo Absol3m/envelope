@@ -1,0 +1,124 @@
+# Publication : une étiquette `v*` (ex. v0.1.0-alpha.1) construit l'application pour Windows,
+# macOS (Apple Silicon) et Linux (AppImage), puis attache les fichiers à une Release GitHub.
+# Même méthode que AtlasIP : actions épinglées par empreinte, jeton en lecture seule pour les
+# builds (ils exécutent du code tiers : npm, cargo), écriture réservée au job de publication.
+name: Build & Release Envelope
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Pas de build publié si les vérifications échouent.
+  ci:
+    name: Vérifications
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: ci
+    name: Build – ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            artifact: envelope-windows
+            tauri_args: ''
+            paths: |
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/msi/*.msi
+          - name: macOS (Apple Silicon)
+            os: macos-latest
+            artifact: envelope-macos-arm64
+            tauri_args: ''
+            paths: src-tauri/target/release/bundle/dmg/*.dmg
+          - name: Linux (AppImage)
+            os: ubuntu-24.04
+            artifact: envelope-linux
+            tauri_args: '--bundles appimage'
+            paths: src-tauri/target/release/bundle/appimage/*.AppImage
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Dépendances système (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev pkg-config patchelf
+
+      - name: pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 12
+
+      - name: Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Dépendances du front
+        run: pnpm install --frozen-lockfile
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Tauri
+        run: pnpm exec tauri build ${{ matrix.tauri_args }} -- --locked
+        env:
+          # Les outils d'empaquetage AppImage tournent sans FUSE (absent des runners récents).
+          APPIMAGE_EXTRACT_AND_RUN: 1
+
+      - name: Fichiers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
+
+  # Attache les fichiers à la Release (étiquettes seulement, pas pour un lancement manuel).
+  publish:
+    name: Publier la Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (notes de version)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Récupérer les fichiers
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: ./dist
+
+      - name: Lister les fichiers
+        run: find ./dist -type f | sort
+
+      - name: Publier
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Envelope ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          generate_release_notes: true
+          body_path: .github/release-notes.md
+          files: ./dist/**

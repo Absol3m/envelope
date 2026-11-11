@@ -1,13 +1,19 @@
 # Vérifications sur les trois systèmes : front (build + tests) et Rust (fmt, clippy, tests).
 name: CI
 
+# Réutilisé par le workflow de publication : une étiquette ne publie jamais un build dont les tests échouent.
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -19,6 +25,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+
+      # Les manifestes (npm, Cargo, Tauri) déclarent tous la même version (et celle de l'étiquette, le cas échéant).
+      - name: Versions concordantes
+        if: runner.os == 'Linux'
+        run: scripts/check-version.sh "${{ github.ref_type == 'tag' && github.ref_name || '' }}"
 
       - name: Dépendances système (Linux)
         if: runner.os == 'Linux'

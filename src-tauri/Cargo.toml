@@ -67,6 +67,11 @@ opt-level = "s"
 strip = true
 panic = "abort"
 
+# Les macros procédurales et scripts de build tournent sur la machine de compilation : ne pas les « stripper »
+# (macOS récent refuse de charger une bibliothèque de macros dont la table de symboles est supprimée).
+[profile.release.build-override]
+strip = "none"
+
 # Secrets (mots de passe / tokens OAuth2) dans le trousseau de l'OS
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
