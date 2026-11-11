@@ -4,12 +4,12 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use lettre::message::{header, Attachment, Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, Credential, Security};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutgoingMessage {
     pub to: Vec<String>,
@@ -35,7 +35,7 @@ pub struct OutgoingMessage {
 }
 
 /// Pièce jointe fournie par l'interface (contenu en base64).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OutgoingAttachment {
     pub filename: String,

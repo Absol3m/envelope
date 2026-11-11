@@ -12,6 +12,7 @@ mod error;
 mod mail;
 mod mcp;
 mod picks;
+mod scheduled;
 mod templates;
 mod tls;
 
@@ -127,6 +128,7 @@ pub fn run() {
                 actions: tokio::sync::Mutex::new(()),
                 picks: picks::Picks::default(),
             });
+            tauri::async_runtime::spawn(scheduled::run(app.handle().clone()));
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = sync.start_all().await {
                     tracing::error!("démarrage de la synchro : {e}");
@@ -146,6 +148,10 @@ pub fn run() {
             commands::clear_oauth_client,
             commands::remove_account,
             commands::set_account_signature,
+            commands::schedule_send,
+            commands::list_scheduled,
+            commands::cancel_scheduled,
+            commands::send_scheduled_now,
             commands::add_identity,
             commands::remove_identity,
             commands::list_templates,

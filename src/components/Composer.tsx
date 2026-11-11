@@ -1,10 +1,10 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
-import { FileText, Paperclip, Send, Trash2, X } from "lucide-react";
+import { ChevronDown, FileText, Paperclip, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { serverDraftsEnabled, useComposer } from "@/lib/composer";
 import type { Template } from "@/lib/api";
-import { applyTemplate, htmlToPlain, knownAlias, senderOptions, swapSignature, templateBody } from "@/lib/compose";
+import { applyTemplate, htmlToPlain, knownAlias, scheduleOptions, senderOptions, swapSignature, templateBody } from "@/lib/compose";
 import { fileSize } from "@/lib/format";
 import { useMail } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ const TITLES = { new: "Nouveau message", reply: "Réponse", replyAll: "Réponse 
 export function Composer() {
   const draft = useComposer((s) => s.draft);
   const syncState = useComposer((s) => s.syncState);
-  const { update, close, discard, send, attach, detach } = useComposer(useShallow((s) => ({ update: s.update, close: s.close, discard: s.discard, send: s.send, attach: s.attach, detach: s.detach })));
+  const { update, close, discard, send, schedule, attach, detach } = useComposer(useShallow((s) => ({ update: s.update, close: s.close, discard: s.discard, send: s.send, schedule: s.schedule, attach: s.attach, detach: s.detach })));
   const { backend, accounts, toast } = useMail(useShallow((s) => ({ backend: s.backend, accounts: s.accounts, toast: s.toast })));
   const [showCc, setShowCc] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -27,6 +27,8 @@ export function Composer() {
   const [templates, setTemplates] = useState<Template[]>([]);
   /** Change quand un modèle remplace le corps : l'éditeur relit alors le contenu. */
   const [rev, setRev] = useState(0);
+  /** Sélecteur de date libre (« Choisir une date… ») ouvert au-dessus du pied de page. */
+  const [picking, setPicking] = useState<string | null>(null);
 
   useEffect(() => setShowCc(false), [draft?.id]);
 
@@ -133,10 +135,40 @@ export function Composer() {
         </ul>
       )}
 
+      {picking !== null && (
+        <form
+          className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2 text-[13px]"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const at = new Date(picking).getTime(); // « datetime-local » : heure locale, sans fuseau
+            if (!Number.isFinite(at) || at <= Date.now()) return toast({ message: "Choisissez une date dans le futur.", tone: "error" });
+            setPicking(null);
+            void schedule(at);
+          }}
+        >
+          <input type="datetime-local" aria-label="Date et heure d'envoi" value={picking} onChange={(e) => setPicking(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-2 py-1 outline-none focus:border-accent" />
+          <button type="submit" className={`${btnPrimary} h-8 px-3`}>Programmer</button>
+          <IconButton label="Annuler" onClick={() => setPicking(null)}><X size={14} /></IconButton>
+        </form>
+      )}
       <footer className="flex h-14 shrink-0 items-center gap-2 border-t border-border px-3">
         <button type="button" className={`${btnPrimary} h-9 gap-2 px-4`} onClick={() => send()}>
           <Send size={14} /> Envoyer <Kbd className="border-white/30 bg-transparent text-white/80">{shortcut("mod+enter")}</Kbd>
         </button>
+        <Dropdown.Root>
+          <Dropdown.Trigger asChild>
+            <IconButton label="Envoyer plus tard" tooltipSide="top"><ChevronDown size={16} /></IconButton>
+          </Dropdown.Trigger>
+          <Dropdown.Portal>
+            <Dropdown.Content side="top" align="start" sideOffset={8} className="anim-fade-in z-[70] min-w-[260px] rounded-xl border border-border bg-elevated p-1 text-[13px] shadow-pop">
+              <div className="px-2.5 py-1 text-[11px] text-faint">Envoyer plus tard — l'application doit être ouverte à l'heure prévue</div>
+              {scheduleOptions(new Date()).map((o) => (
+                <Dropdown.Item key={o.label} onSelect={() => void schedule(o.at.getTime())} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">{o.label}</Dropdown.Item>
+              ))}
+              <Dropdown.Item onSelect={() => setPicking(new Date(Date.now() + 3600_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16))} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">Choisir une date…</Dropdown.Item>
+            </Dropdown.Content>
+          </Dropdown.Portal>
+        </Dropdown.Root>
         <input
           ref={fileInput}
           type="file"

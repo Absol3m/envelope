@@ -18,6 +18,7 @@ use crate::mail::mbox;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
+use crate::scheduled;
 use crate::templates::{self, Template};
 use crate::AppState;
 use envelope_core::addr::Addr;
@@ -337,9 +338,18 @@ pub async fn send_email(
     account_id: String,
     message: OutgoingMessage,
 ) -> Result<SendReport> {
-    let acct = account::get(&state.db, &account_id).await?;
+    deliver(&state, &account_id, &message).await
+}
+
+/// Envoi proprement dit (aussi utilisé par les envois programmés) : SMTP, retrait du brouillon, copie dans « Envoyés ».
+pub(crate) async fn deliver(
+    state: &AppState,
+    account_id: &str,
+    message: &OutgoingMessage,
+) -> Result<SendReport> {
+    let acct = account::get(&state.db, account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
-    let raw = smtp::send(&acct, &cred, &message).await?;
+    let raw = smtp::send(&acct, &cred, message).await?;
     // Le brouillon a atteint son but : on le retire du serveur (sans jamais faire échouer l'envoi).
     if let Some(draft_id) = message.draft_id.as_deref() {
         let _guard = state.actions.lock().await;
@@ -351,7 +361,7 @@ pub async fn send_email(
     let sent_copy = if acct.provider == "gmail" {
         SentCopy::Server
     } else {
-        match file_in_sent(&state, &acct, &cred, &raw).await {
+        match file_in_sent(state, &acct, &cred, &raw).await {
             Ok(()) => SentCopy::Saved,
             Err(e) => {
                 tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
@@ -359,8 +369,38 @@ pub async fn send_email(
             }
         }
     };
-    state.sync.trigger(&account_id); // la copie (ou le nouveau dossier) apparaît à la synchro
+    state.sync.trigger(account_id); // la copie (ou le nouveau dossier) apparaît à la synchro
     Ok(SendReport { sent_copy })
+}
+
+/// Met un message en file pour l'envoyer à `send_at` (secondes Unix). L'application doit être ouverte à cette heure.
+#[tauri::command]
+pub async fn schedule_send(
+    state: State<'_, AppState>,
+    account_id: String,
+    message: OutgoingMessage,
+    send_at: i64,
+) -> Result<i64> {
+    // Mêmes contrôles qu'un envoi immédiat : expéditeur autorisé, au moins un destinataire.
+    let acct = account::get(&state.db, &account_id).await?;
+    smtp::build_message(&acct, &message)?;
+    scheduled::add(&state.db, &account_id, send_at, &message).await
+}
+
+#[tauri::command]
+pub async fn list_scheduled(state: State<'_, AppState>) -> Result<Vec<scheduled::Scheduled>> {
+    scheduled::list(&state.db).await
+}
+
+/// Retire un envoi de la file et rend le message, pour le rouvrir dans le composer.
+#[tauri::command]
+pub async fn cancel_scheduled(state: State<'_, AppState>, id: i64) -> Result<OutgoingMessage> {
+    scheduled::cancel(&state.db, id).await
+}
+
+#[tauri::command]
+pub async fn send_scheduled_now(app: AppHandle, state: State<'_, AppState>, id: i64) -> Result<()> {
+    scheduled::deliver_now(&app, &state, id).await
 }
 
 /// Enregistre le brouillon sur le serveur (nouvelle version, puis suppression des précédentes).

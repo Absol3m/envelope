@@ -116,6 +116,11 @@ export function emptyDraft(accountId: string, signature = ""): Draft {
 }
 
 /** Brouillon relu depuis le serveur → brouillon du composer (le HTML venu du serveur est assaini). */
+/** Brouillon relu depuis le serveur → brouillon du composer (le HTML venu du serveur est assaini). */
+/** Message d'un envoi programmé annulé → brouillon à rouvrir (même forme qu'un brouillon relu du serveur). */
+export const draftFromQueued = (accountId: string, m: OutgoingMessage): Draft =>
+  draftFromServer({ id: m.draftId ?? crypto.randomUUID(), accountId, to: m.to, cc: m.cc, bcc: m.bcc, subject: m.subject, bodyHtml: m.bodyHtml ?? null, bodyText: m.bodyText, inReplyTo: m.inReplyTo ?? null, references: m.references, attachments: m.attachments, fromEmail: m.fromEmail ?? "" });
+
 export function draftFromServer(d: DraftData): Draft {
   const recipients = (list: string[]) => parseRecipients(list.join(", ")).ok;
   return {
@@ -132,6 +137,8 @@ export function draftFromServer(d: DraftData): Draft {
     references: d.references,
   };
 }
+
+
 
 const PREFIX = /^\s*((re|tr|fwd?|fw)\s*:\s*)+/i;
 export const withPrefix = (prefix: "Re" | "Fwd", subject: string) => `${prefix}: ${subject.replace(PREFIX, "").trim()}`.trim();
@@ -245,6 +252,16 @@ const who = (name: string | null | undefined, address: string) => (name ? `${nam
 const when = (iso: string) => new Date(iso).toLocaleString("fr-FR", { dateStyle: "full", timeStyle: "short" });
 const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const toRecipient = (a: Addr): Recipient => ({ address: a.address, name: a.name });
+
+/** Heures proposées par « Envoyer plus tard » (le lundi n'est pas répété quand demain en est un). */
+export function scheduleOptions(now: Date): { label: string; at: Date }[] {
+  const at = (days: number, hour: number) => { const d = new Date(now); d.setDate(d.getDate() + days); d.setHours(hour, 0, 0, 0); return d; };
+  const fmt = (d: Date) => d.toLocaleString("fr-FR", { weekday: "long", hour: "numeric", minute: "2-digit" });
+  const out = [{ label: "Dans 1 heure", at: new Date(now.getTime() + 3600_000) }, { label: `Demain matin — ${fmt(at(1, 8))}`, at: at(1, 8) }];
+  const toMonday = (8 - now.getDay()) % 7 || 7;
+  if (toMonday > 1) out.push({ label: `Lundi matin — ${fmt(at(toMonday, 8))}`, at: at(toMonday, 8) });
+  return out;
+}
 
 /** « Nom <adresse> », ou l'adresse seule. */
 export const senderLabel = (name: string | null | undefined, email: string) => (name ? `${name} <${email}>` : email);

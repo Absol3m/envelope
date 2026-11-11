@@ -18,12 +18,13 @@ const Onboarding = lazy(() => import("@/components/Onboarding").then((m) => ({ d
 const Composer = lazy(() => import("@/components/Composer").then((m) => ({ default: m.Composer })));
 const Palette = lazy(() => import("@/components/Palette").then((m) => ({ default: m.Palette })));
 const Settings = lazy(() => import("@/components/Settings").then((m) => ({ default: m.Settings })));
+const ScheduledDialog = lazy(() => import("@/components/ScheduledDialog").then((m) => ({ default: m.ScheduledDialog })));
 const ImportDialog = lazy(() => import("@/components/ImportDialog").then((m) => ({ default: m.ImportDialog })));
 const ShortcutsHelp = lazy(() => import("@/components/Shortcuts").then((m) => ({ default: m.ShortcutsHelp })));
 
 export default function App() {
-  const { ready, needsOnboarding, density, paletteOpen, settingsOpen, helpOpen, importOpen } = useMail(
-    useShallow((s) => ({ importOpen: s.importOpen, ready: s.ready, needsOnboarding: s.needsOnboarding, density: s.density, paletteOpen: s.paletteOpen, settingsOpen: s.settingsTab !== null, helpOpen: s.helpOpen })),
+  const { ready, needsOnboarding, density, paletteOpen, settingsOpen, helpOpen, importOpen, scheduledOpen } = useMail(
+    useShallow((s) => ({ scheduledOpen: s.scheduledOpen && s.scheduled.length > 0, importOpen: s.importOpen, ready: s.ready, needsOnboarding: s.needsOnboarding, density: s.density, paletteOpen: s.paletteOpen, settingsOpen: s.settingsTab !== null, helpOpen: s.helpOpen })),
   );
   const composing = useComposer((s) => s.draft !== null);
   useShortcuts();
@@ -40,6 +41,11 @@ export default function App() {
       }));
       unlisten.push(listen<{ accountId: string; remaining: number }>("mail:backfill", (e) => useMail.getState().setBackfill(e.payload.accountId, e.payload.remaining)));
       unlisten.push(listen("mail:status", () => void useMail.getState().refreshAccounts()));
+      unlisten.push(listen<{ subject: string; error: string | null } | null>("scheduled:changed", (e) => {
+        const { toast, refreshScheduled } = useMail.getState();
+        void refreshScheduled();
+        if (e.payload) toast(e.payload.error ? { message: `Envoi programmé impossible — ${e.payload.subject || "sans objet"} : ${e.payload.error}`, tone: "error", duration: 8000 } : { message: `Message programmé envoyé — ${e.payload.subject || "sans objet"}` });
+      }));
     });
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));
   }, []);
@@ -67,6 +73,7 @@ export default function App() {
         {settingsOpen && <Settings />}
         {helpOpen && <ShortcutsHelp />}
         {importOpen && <ImportDialog />}
+        {scheduledOpen && <ScheduledDialog />}
       </Suspense>
       <Toasts />
     </TooltipProvider>

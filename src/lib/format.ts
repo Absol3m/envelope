@@ -7,7 +7,11 @@ const weekdayShort = new Intl.DateTimeFormat("fr-FR", { weekday: "short" });
 const dayMonth = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
 const dayMonthYear = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "2-digit" });
 const full = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const scheduled = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
 const monthYear = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
+
+/** Date et heure d'un envoi programmé (millisecondes) : « lundi 16 novembre à 08:00 ». */
+export const scheduledAt = (ms: number) => scheduled.format(ms);
 
 /** Heure du jour, « Hier », jour de semaine, puis date : le plus court lisible. */
 export function listDate(iso: string, now = new Date()): string {

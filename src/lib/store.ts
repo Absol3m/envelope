@@ -3,7 +3,7 @@ import { parseColors, parseTheme, renderAppearance, type ColorsPref, type ThemeP
 import { applyFont, savedFont, type FontPref } from "./font";
 import { pref } from "./pref";
 import { demoBackend } from "./mock";
-import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
+import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ScheduledSend, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
 import { DESTINATIONS, isEmptiableView, isInboxView, isPurgeView, LOCAL_ACCOUNT, placeOf, type Destination, type View } from "./views";
 
@@ -44,6 +44,9 @@ interface State {
   ready: boolean;
   needsOnboarding: boolean;
   importOpen: boolean;
+  /** Envois programmés en file (liste « Programmés »). */
+  scheduled: ScheduledSend[];
+  scheduledOpen: boolean;
   /** Historique encore à rapatrier du serveur, par compte (absent ou 0 : complet). */
   backfill: Readonly<Record<string, number>>;
   accounts: Account[];
@@ -79,6 +82,8 @@ interface State {
   refreshAccounts(): Promise<void>;
   setBackfill(accountId: string, remaining: number): void;
   setImportOpen(open: boolean): void;
+  setScheduledOpen(open: boolean): void;
+  refreshScheduled(): Promise<void>;
   loadMore(): Promise<void>;
   setView(v: View): void;
   setAccount(id: string | null): void;
@@ -267,6 +272,8 @@ export const useMail = create<State>((set, get) => {
     ready: false,
     needsOnboarding: false,
     importOpen: false,
+    scheduled: [],
+    scheduledOpen: false,
     backfill: {},
     accounts: [],
     folders: [],
@@ -294,6 +301,7 @@ export const useMail = create<State>((set, get) => {
         if (accounts.length) {
           await loadFolders();
           await refetchAndSelect();
+          void get().refreshScheduled();
         } else {
           set({ threadsLoading: false });
         }
@@ -322,6 +330,10 @@ export const useMail = create<State>((set, get) => {
     },
 
     setImportOpen: (importOpen) => set({ importOpen }),
+    setScheduledOpen: (scheduledOpen) => set({ scheduledOpen }),
+    async refreshScheduled() {
+      try { set({ scheduled: await get().backend.listScheduled() }); } catch { /* conservé */ }
+    },
 
     setBackfill(accountId, remaining) {
       set((s) => (s.backfill[accountId] === remaining ? s : { backfill: { ...s.backfill, [accountId]: remaining } }));

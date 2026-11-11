@@ -1,6 +1,6 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useState, type DragEvent } from "react";
-import { Bot, Check, ChevronsUpDown, Download, FolderPlus, HardDrive, Inbox, Layers, MoreHorizontal, PenSquare, RefreshCw, Settings } from "lucide-react";
+import { Bot, Check, ChevronsUpDown, Clock, Download, FolderPlus, HardDrive, Inbox, Layers, MoreHorizontal, PenSquare, RefreshCw, Settings } from "lucide-react";
 import type { FolderRow } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
@@ -140,7 +140,7 @@ function NameInput({ value, onChange, onDone, onCancel }: { value: string; onCha
 }
 
 export function Sidebar() {
-  const { accounts, folders, accountFilter, view, setView, setAccount, openSettings, backend, moveTo } = useMail(useShallow((s) => ({ moveTo: s.moveTo, accounts: s.accounts, folders: s.folders, accountFilter: s.accountFilter, view: s.view, setView: s.setView, setAccount: s.setAccount, openSettings: s.openSettings, backend: s.backend })));
+  const { accounts, folders, accountFilter, view, setView, setAccount, openSettings, backend, moveTo, scheduledCount, setScheduledOpen } = useMail(useShallow((s) => ({ scheduledCount: s.scheduled.length, setScheduledOpen: s.setScheduledOpen, moveTo: s.moveTo, accounts: s.accounts, folders: s.folders, accountFilter: s.accountFilter, view: s.view, setView: s.setView, setAccount: s.setAccount, openSettings: s.openSettings, backend: s.backend })));
   const scoped = folders.filter((f) => f.accountId !== LOCAL_ACCOUNT && (!accountFilter || f.accountId === accountFilter));
   const localFolders = folders.filter((f) => f.accountId === LOCAL_ACCOUNT);
   const unread = (role: string) => scoped.filter((f) => f.role === role).reduce((n, f) => n + f.unreadCount, 0);
@@ -219,6 +219,8 @@ export function Sidebar() {
         {NAV_SMART.map((i) => (
           <NavItem key={i.label} icon={i.icon} label={i.label} count={countFor(i)} active={sameView(view, i.view)} onClick={() => setView(i.view)} />
         ))}
+
+        {scheduledCount > 0 && <NavItem icon={Clock} label="Programmés" count={scheduledCount} active={false} onClick={() => setScheduledOpen(true)} />}
 
         {custom.length > 0 && (
           <>

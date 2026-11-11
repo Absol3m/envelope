@@ -203,6 +203,18 @@ export interface McpInfo {
   dbPath: string;
 }
 
+/** Envoi en file : parti à `sendAt` si l'application est ouverte. */
+export interface ScheduledSend {
+  id: number;
+  accountId: string;
+  /** Secondes Unix. */
+  sendAt: number;
+  subject: string;
+  to: string[];
+  status: "pending" | "sending" | "failed";
+  error: string | null;
+}
+
 export interface Template {
   id: number;
   name: string;
@@ -254,6 +266,12 @@ export interface Backend {
   suggestContacts(accountId: string | null, query: string): Promise<Addr[]>;
   removeAccount(accountId: string): Promise<void>;
   setAccountSignature(accountId: string, signature: string): Promise<void>;
+  /** Met le message en file pour `sendAt` (secondes Unix) ; renvoie l'identifiant de l'envoi programmé. */
+  scheduleSend(accountId: string, message: OutgoingMessage, sendAt: number): Promise<number>;
+  listScheduled(): Promise<ScheduledSend[]>;
+  /** Retire l'envoi de la file et rend le message, pour le rouvrir. */
+  cancelScheduled(id: number): Promise<OutgoingMessage>;
+  sendScheduledNow(id: number): Promise<void>;
   addIdentity(accountId: string, name: string, email: string): Promise<void>;
   removeIdentity(id: number): Promise<void>;
   listTemplates(): Promise<Template[]>;
@@ -322,6 +340,10 @@ export const tauriBackend: Backend = {
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
   unsubscribe: (messageId) => invoke("unsubscribe", { messageId }),
   setAccountSignature: (accountId, signature) => invoke("set_account_signature", { accountId, signature }),
+  scheduleSend: (accountId, message, sendAt) => invoke("schedule_send", { accountId, message, sendAt }),
+  listScheduled: () => invoke("list_scheduled"),
+  cancelScheduled: (id) => invoke("cancel_scheduled", { id }),
+  sendScheduledNow: (id) => invoke("send_scheduled_now", { id }),
   addIdentity: (accountId, name, email) => invoke("add_identity", { accountId, name, email }),
   removeIdentity: (id) => invoke("remove_identity", { id }),
   listTemplates: () => invoke("list_templates"),

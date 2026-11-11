@@ -1,10 +1,12 @@
-import type { Account, Backend, Detected, SendReport, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, Detected, SendReport, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
 
 const NOW = Date.now();
 const ago = (minutes: number) => new Date(NOW - minutes * 60_000).toISOString();
+
+const QUEUE: { id: number; accountId: string; message: OutgoingMessage; sendAt: number }[] = [];
 
 const TEMPLATES: Template[] = [
   { id: 1, name: "Accusé de réception", subject: "Re : votre demande", bodyHtml: "<p>Bonjour,</p><p>Nous avons bien reçu votre message et revenons vers vous sous 48 h.</p><p>Cordialement,</p>" },
@@ -277,6 +279,22 @@ export const demoBackend: Backend = {
     const a = ACCOUNTS.find((x) => x.id === id);
     if (a) a.signature = signature;
     return delay(undefined, 60);
+  },
+  scheduleSend: (accountId, message, sendAt) => {
+    const id = Math.max(0, ...QUEUE.map((q) => q.id)) + 1;
+    QUEUE.push({ id, accountId, message, sendAt });
+    return delay(id, 60);
+  },
+  listScheduled: () => delay(QUEUE.map((q) => ({ id: q.id, accountId: q.accountId, sendAt: q.sendAt, subject: q.message.subject, to: q.message.to, status: "pending" as const, error: null })), 40),
+  cancelScheduled: (id) => {
+    const i = QUEUE.findIndex((q) => q.id === id);
+    if (i < 0) return Promise.reject(new Error("Envoi introuvable."));
+    return delay(QUEUE.splice(i, 1)[0].message, 40);
+  },
+  sendScheduledNow: (id) => {
+    const i = QUEUE.findIndex((q) => q.id === id);
+    if (i >= 0) QUEUE.splice(i, 1);
+    return delay(undefined, 200);
   },
   addIdentity: (accountId, name, email) => {
     const a = ACCOUNTS.find((x) => x.id === accountId);

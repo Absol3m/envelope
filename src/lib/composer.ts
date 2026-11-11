@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { attachmentError, draftFrom, forgotAttachment, draftFromServer, emptyDraft, knownAlias, isBlank, readAsBase64, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
+import { attachmentError, draftFrom, forgotAttachment, draftFromQueued, draftFromServer, emptyDraft, knownAlias, isBlank, readAsBase64, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
+import { scheduledAt } from "./format";
 import { pref } from "./pref";
 import { useMail } from "./store";
 
@@ -52,6 +53,10 @@ interface ComposerState {
   discard(): void;
   /** `force` : envoyer malgré le rappel de pièce jointe oubliée. */
   send(force?: boolean): void;
+  /** Programme l'envoi à `at` (ms) : le message part tout seul, application ouverte. */
+  schedule(at: number, force?: boolean): Promise<void>;
+  /** Retire un envoi programmé de la file et le rouvre dans le panneau. */
+  editScheduled(id: number, accountId: string): Promise<void>;
   /** Annule l'envoi en cours ; faux s'il n'y en a pas. */
   undoSend(): boolean;
 }
@@ -69,6 +74,19 @@ const discarded = new Set<string>();
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let saving = false;
 let waiting: Draft | null = null;
+
+/** Contrôles avant tout envoi : destinataire présent, pièce jointe annoncée mais absente (`proceed` relance l'envoi sans ce rappel). */
+function checkBeforeSend(draft: Draft, force: boolean, proceed: () => void): boolean {
+  if (!draft.to.length) {
+    useMail.getState().toast({ message: "Ajoutez au moins un destinataire.", tone: "error" });
+    return false;
+  }
+  if (!force && forgotAttachment(draft)) {
+    useMail.getState().toast({ message: "Vous mentionnez une pièce jointe, mais aucune n'est jointe.", tone: "error", actionLabel: "Envoyer quand même", onAction: proceed, duration: 8000 });
+    return false;
+  }
+  return true;
+}
 
 /** Message à envoyer ou enregistrer : un alias supprimé depuis n'est plus utilisé comme expéditeur. */
 const outgoing = (d: Draft) => {
@@ -218,10 +236,7 @@ export const useComposer = create<ComposerState>((set, get) => {
     send(force = false) {
       const draft = get().draft;
       if (!draft) return;
-      if (!draft.to.length) return toast("Ajoutez au moins un destinataire.", "error");
-      if (!force && forgotAttachment(draft)) {
-        return useMail.getState().toast({ message: "Vous mentionnez une pièce jointe, mais aucune n'est jointe.", tone: "error", actionLabel: "Envoyer quand même", onAction: () => get().send(true), duration: 8000 });
-      }
+      if (!checkBeforeSend(draft, force, () => get().send(true))) return;
       set({ draft: null });
       pendingSend = {
         draft,
@@ -241,6 +256,35 @@ export const useComposer = create<ComposerState>((set, get) => {
         }, UNDO_MS),
       };
       useMail.getState().toast({ message: "Envoi du message…", actionLabel: "Annuler", onAction: () => get().undoSend(), duration: UNDO_MS, countdown: true });
+    },
+
+    async schedule(at, force = false) {
+      const draft = get().draft;
+      if (!draft) return;
+      if (!checkBeforeSend(draft, force, () => void get().schedule(at, true))) return;
+      let id: number;
+      try {
+        id = await useMail.getState().backend.scheduleSend(draft.accountId, outgoing(draft), Math.floor(at / 1000));
+      } catch (e) {
+        return toast(`Programmation impossible — ${String(e)}`, "error", 7000);
+      }
+      clearTimeout(saveTimer);
+      set({ draft: null });
+      onServer.delete(draft.id); // le brouillon du serveur est retiré à l'envoi, comme pour un envoi immédiat
+      lastSig.delete(draft.id);
+      void useMail.getState().refreshScheduled();
+      useMail.getState().toast({ message: `Envoi programmé — ${scheduledAt(at)}`, actionLabel: "Annuler", onAction: () => void get().editScheduled(id, draft.accountId), duration: 6000 });
+    },
+
+    async editScheduled(id, accountId) {
+      try {
+        const m = await useMail.getState().backend.cancelScheduled(id);
+        const account = useMail.getState().accounts.find((a) => a.id === accountId);
+        open({ ...draftFromQueued(accountId, m), fromEmail: knownAlias(account, m.fromEmail) });
+        void useMail.getState().refreshScheduled();
+      } catch (e) {
+        toast(`Modification impossible — ${String(e)}`, "error", 6000);
+      }
     },
 
     undoSend() {
