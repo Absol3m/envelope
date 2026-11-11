@@ -302,6 +302,16 @@ pub fn delete_secrets(account_id: &str) {
     }
 }
 
+/// Accès au trousseau du système depuis du code asynchrone : l'appel est bloquant (jusqu'à plusieurs secondes si le
+/// trousseau est verrouillé ou demande une autorisation) et ne doit pas occuper un thread de l'exécuteur.
+pub async fn blocking_keychain<T: Send + 'static>(
+    job: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    tokio::task::spawn_blocking(job)
+        .await
+        .map_err(|e| AppError::Auth(format!("accès au trousseau interrompu : {e}")))?
+}
+
 /// Résout les identifiants d'un compte (rafraîchit le jeton OAuth2 si besoin).
 pub async fn resolve_credential(account: &Account) -> Result<Credential> {
     if account.auth_kind == "oauth2" {
@@ -314,7 +324,11 @@ pub async fn resolve_credential(account: &Account) -> Result<Credential> {
             access_token,
         })
     } else {
-        let password = load_password(&account.id)?;
+        let password = blocking_keychain({
+            let id = account.id.clone();
+            move || load_password(&id)
+        })
+        .await?;
         Ok(Credential::Password {
             user: account.username.clone(),
             password,
@@ -486,8 +500,12 @@ pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
         .bind(id)
         .execute(pool)
         .await?;
-    delete_secrets(id);
-    Ok(())
+    let id = id.to_string();
+    blocking_keychain(move || {
+        delete_secrets(&id);
+        Ok(())
+    })
+    .await
 }
 
 #[cfg(test)]
@@ -562,5 +580,37 @@ mod tests {
             Some("Moi".to_string())
         );
         assert!(sender(&acct, Some("usurpe@autre.fr")).is_err());
+    }
+
+    /// Un accès bloquant au trousseau ne doit pas figer l'exécuteur : sur un exécuteur à UN seul fil, une tâche
+    /// concurrente continue d'avancer pendant que « le trousseau » dort.
+    #[tokio::test(flavor = "current_thread")]
+    async fn acces_trousseau_ne_bloque_pas_l_executeur() {
+        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = ticks.clone();
+        let ticker = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+        let value = blocking_keychain(|| {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            Ok(42)
+        })
+        .await
+        .unwrap();
+        ticker.abort();
+        assert_eq!(value, 42);
+        assert!(
+            ticks.load(std::sync::atomic::Ordering::SeqCst) >= 10,
+            "l'exécuteur a continué à tourner : {} battements",
+            ticks.load(std::sync::atomic::Ordering::SeqCst)
+        );
+        // Une erreur du trousseau remonte telle quelle.
+        let err = blocking_keychain::<()>(|| Err(AppError::Auth("refusé".into())))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("refusé"));
     }
 }

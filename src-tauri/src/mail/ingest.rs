@@ -339,7 +339,21 @@ pub async fn store_with(
         uid,
         size,
     } = loc;
-    let thread_id = match find_thread(pool, account_id, &m).await? {
+    if !opts.lazy_attachments
+        && opts.raw_hash.is_none()
+        && m.attachments
+            .iter()
+            .any(|a| a.data.is_empty() && a.size > 0)
+    {
+        // Sans brut, une pièce jointe non copiée serait irrécupérable : on refuse plutôt que de la perdre en silence.
+        return Err(AppError::Invalid(
+            "pièce jointe volumineuse sans message brut : `raw_hash` est obligatoire".into(),
+        ));
+    }
+    let existing_thread = find_thread(pool, account_id, &m).await?;
+    // Un message est écrit en entier ou pas du tout : conversation, message, références et pièces jointes.
+    let mut tx = pool.begin().await?;
+    let thread_id = match existing_thread {
         Some(t) => t,
         None => sqlx::query(
             "INSERT INTO threads (account_id, subject, snippet, last_message_at) VALUES (?,?,?,?)",
@@ -348,7 +362,7 @@ pub async fn store_with(
         .bind(normalize_subject(&m.subject))
         .bind(&m.snippet)
         .bind(&m.date)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?
         .last_insert_rowid(),
     };
@@ -391,10 +405,19 @@ pub async fn store_with(
     .bind(opts.raw_hash)
     .bind(&m.draft_id)
     .bind(m.auth_fail)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
     if res.rows_affected() == 0 {
-        return Ok(thread_id); // déjà présent
+        // Déjà présent : rien à écrire (la conversation créée pour rien est annulée avec la transaction).
+        tx.rollback().await?;
+        let existing: Option<i64> =
+            sqlx::query_scalar("SELECT thread_id FROM messages WHERE folder_id = ? AND uid = ?")
+                .bind(folder_id)
+                .bind(uid)
+                .fetch_optional(pool)
+                .await?
+                .flatten();
+        return Ok(existing.unwrap_or(thread_id));
     }
     let message_row = res.last_insert_rowid();
     for r in m.references.iter().collect::<HashSet<_>>() {
@@ -402,21 +425,10 @@ pub async fn store_with(
             .bind(account_id)
             .bind(r)
             .bind(message_row)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
 
-    if !opts.lazy_attachments
-        && opts.raw_hash.is_none()
-        && m.attachments
-            .iter()
-            .any(|a| a.data.is_empty() && a.size > 0)
-    {
-        // Sans brut, une pièce jointe non copiée serait irrécupérable : on refuse plutôt que de la perdre en silence.
-        return Err(AppError::Invalid(
-            "pièce jointe volumineuse sans message brut : `raw_hash` est obligatoire".into(),
-        ));
-    }
     if !m.attachments.is_empty() {
         let dir = attachments_dir
             .join(account_id)
@@ -445,10 +457,11 @@ pub async fn store_with(
             .bind(&a.content_id)
             .bind(a.is_inline)
             .bind(path)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         }
     }
+    tx.commit().await?;
     Ok(thread_id)
 }
 
@@ -1380,6 +1393,111 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
             .await
             .unwrap();
         assert_eq!(contacts_of(&pool).await, by_trigger);
+    }
+
+    /// Un message est écrit en entier ou pas du tout : si l'écriture d'une pièce jointe échoue, ni le message, ni sa
+    /// conversation, ni ses références ne restent en base (sinon `ON CONFLICT DO NOTHING` interdirait de réessayer).
+    #[tokio::test]
+    async fn message_ecrit_en_entier_ou_pas_du_tout() {
+        let (pool, folder) = setup().await;
+        let base = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&base).unwrap();
+        let fichier = base.join("pas-un-dossier");
+        std::fs::write(&fichier, b"x").unwrap();
+        let loc = MessageLoc {
+            account_id: "a",
+            folder_id: folder,
+            uid: 1,
+            size: None,
+        };
+        // Le dossier des pièces jointes est impossible à créer (son parent est un fichier) : l'écriture échoue.
+        let mut parsed = parse(MSG_ATT.as_bytes(), None).unwrap();
+        parsed.references = vec!["<parent@x>".into()];
+        let echec = store_with(
+            &pool,
+            &fichier,
+            loc,
+            Flags::default(),
+            parsed,
+            StoreOpts::default(),
+        )
+        .await;
+        assert!(echec.is_err());
+        let compte = |table: &'static str| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!(
+                    "SELECT COUNT(*) FROM {table} WHERE account_id = 'a'"
+                )))
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+            }
+        };
+        assert_eq!(
+            (
+                compte("messages").await,
+                compte("threads").await,
+                compte("message_refs").await
+            ),
+            (0, 0, 0),
+            "rien ne reste"
+        );
+        // Réessayer avec un dossier valide réussit (le message n'a pas été « consommé » par l'échec).
+        let loc = MessageLoc {
+            account_id: "a",
+            folder_id: folder,
+            uid: 1,
+            size: None,
+        };
+        store_with(
+            &pool,
+            &base.join("ok"),
+            loc,
+            Flags::default(),
+            parse(MSG_ATT.as_bytes(), None).unwrap(),
+            StoreOpts::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(compte("messages").await, 1);
+    }
+
+    /// Un message déjà présent n'est pas réécrit, et l'identifiant de conversation rendu est celui du message existant.
+    #[tokio::test]
+    async fn message_deja_present_rend_sa_conversation() {
+        let (pool, folder) = setup().await;
+        let dir = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let loc = || MessageLoc {
+            account_id: "a",
+            folder_id: folder,
+            uid: 7,
+            size: None,
+        };
+        let first = store(
+            &pool,
+            &dir,
+            loc(),
+            Flags::default(),
+            parse(MSG1.as_bytes(), None).unwrap(),
+        )
+        .await
+        .unwrap();
+        let again = store(
+            &pool,
+            &dir,
+            loc(),
+            Flags::default(),
+            parse(MSG1.as_bytes(), None).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first, again);
+        let threads: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM threads")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(threads, 1, "pas de conversation fantôme");
     }
 
     /// Petites pièces jointes et images « inline » : écrites tout de suite. Grosses pièces à ouvrir : métadonnées

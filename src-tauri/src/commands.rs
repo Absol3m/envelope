@@ -77,7 +77,12 @@ pub async fn reset_app(
     }
     for a in account::list(&state.db).await? {
         state.sync.stop(&a.id);
-        account::delete_secrets(&a.id);
+        let id = a.id.clone();
+        account::blocking_keychain(move || {
+            account::delete_secrets(&id);
+            Ok(())
+        })
+        .await?;
     }
     lock.reset(&state.db).await?;
     for dir in [&state.raw_dir, &state.attachments_dir] {
@@ -164,7 +169,8 @@ pub async fn add_account(state: State<'_, AppState>, input: NewAccount) -> Resul
     )
     .await?;
     let finish = async {
-        account::store_password(&id, &input.password)?;
+        let (secret_id, password) = (id.clone(), input.password.clone());
+        account::blocking_keychain(move || account::store_password(&secret_id, &password)).await?;
         let acct = account::get(&state.db, &id).await?;
         let cred = account::resolve_credential(&acct).await?;
         let mut session = imap::connect(&acct, &cred).await?; // valide hôte, TLS et identifiants
@@ -220,7 +226,10 @@ pub async fn add_oauth_account(
         },
     )
     .await?;
-    if let Err(e) = account::store_oauth(&id, &tokens) {
+    let (secret_id, secret) = (id.clone(), tokens.clone());
+    if let Err(e) =
+        account::blocking_keychain(move || account::store_oauth(&secret_id, &secret)).await
+    {
         account::delete(&state.db, &id).await?;
         return Err(e);
     }
@@ -241,16 +250,21 @@ pub struct OAuthStatus {
     microsoft: bool,
 }
 
+// Les commandes qui touchent au trousseau sont asynchrones : une commande synchrone s'exécute sur le fil principal de
+// l'interface, et le trousseau peut y bloquer longtemps (verrouillé, autorisation demandée).
 #[tauri::command]
-pub fn oauth_status() -> OAuthStatus {
-    OAuthStatus {
-        google: OAuthProvider::Google.is_configured(),
-        microsoft: OAuthProvider::Microsoft.is_configured(),
-    }
+pub async fn oauth_status() -> Result<OAuthStatus> {
+    account::blocking_keychain(|| {
+        Ok(OAuthStatus {
+            google: OAuthProvider::Google.is_configured(),
+            microsoft: OAuthProvider::Microsoft.is_configured(),
+        })
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn set_oauth_client(
+pub async fn set_oauth_client(
     provider: OAuthProvider,
     client_id: String,
     client_secret: Option<String>,
@@ -262,18 +276,25 @@ pub fn set_oauth_client(
     let client_secret = client_secret
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    account::store_client(
-        provider,
-        &oauth::ClientCreds {
-            client_id,
-            client_secret,
-        },
-    )
+    account::blocking_keychain(move || {
+        account::store_client(
+            provider,
+            &oauth::ClientCreds {
+                client_id,
+                client_secret,
+            },
+        )
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn clear_oauth_client(provider: OAuthProvider) {
-    account::delete_client(provider);
+pub async fn clear_oauth_client(provider: OAuthProvider) -> Result<()> {
+    account::blocking_keychain(move || {
+        account::delete_client(provider);
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]

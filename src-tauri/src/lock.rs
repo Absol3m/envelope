@@ -245,7 +245,11 @@ impl Lock {
                             .into(),
                     ));
                 }
-                account::delete_app_secret(SECRET_KIND);
+                account::blocking_keychain(|| {
+                    account::delete_app_secret(SECRET_KIND);
+                    Ok(())
+                })
+                .await?;
             }
             Method::Password => {
                 let password = new_password
@@ -256,10 +260,11 @@ impl Lock {
                         "le mot de passe doit faire de {MIN_PASSWORD_CHARS} à {MAX_PASSWORD_CHARS} caractères"
                     )));
                 }
-                let hash = tokio::task::spawn_blocking(move || hash_password(&password))
-                    .await
-                    .map_err(|e| AppError::Auth(e.to_string()))??;
-                account::store_app_secret(SECRET_KIND, &hash)?;
+                // Argon2 (lent, volontairement) puis trousseau : un seul saut hors de l'exécuteur.
+                account::blocking_keychain(move || {
+                    account::store_app_secret(SECRET_KIND, &hash_password(&password)?)
+                })
+                .await?;
             }
         }
         save_config(pool, next).await?;
@@ -279,7 +284,11 @@ impl Lock {
             ));
         }
         wipe(pool).await?;
-        account::delete_app_secret(SECRET_KIND);
+        account::blocking_keychain(|| {
+            account::delete_app_secret(SECRET_KIND);
+            Ok(())
+        })
+        .await?;
         let mut s = self.state();
         *s = State {
             locked: false,

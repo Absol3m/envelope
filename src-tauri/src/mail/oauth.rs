@@ -146,7 +146,7 @@ pub async fn authorize(
     open_browser: impl FnOnce(&str) -> Result<()>,
 ) -> Result<OAuthTokens> {
     let cfg = provider.config();
-    let client = provider.client()?;
+    let client = account::blocking_keychain(move || provider.client()).await?;
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let redirect_uri = format!("http://127.0.0.1:{}", listener.local_addr()?.port());
 
@@ -294,7 +294,8 @@ fn explain_refresh_error(e: AppError) -> AppError {
 /// Jeton d'accès valide pour un compte : rafraîchit et persiste s'il expire dans < 60 s.
 pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Result<String> {
     let _guard = refresh_lock().lock().await; // évite deux rafraîchissements concurrents
-    let tokens = account::load_oauth(account_id)?;
+    let id = account_id.to_string();
+    let tokens = account::blocking_keychain(move || account::load_oauth(&id)).await?;
     if tokens.expires_at - 60 > now() {
         return Ok(tokens.access_token);
     }
@@ -307,7 +308,11 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
         ("refresh_token", refresh.clone()),
         ("scope", cfg.scope.to_string()),
     ];
-    form.extend(provider.client()?.form_fields());
+    form.extend(
+        account::blocking_keychain(move || provider.client())
+            .await?
+            .form_fields(),
+    );
     let resp = token_request(cfg.token_url, &form)
         .await
         .map_err(explain_refresh_error)?;
@@ -316,7 +321,8 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
         refresh_token: resp.refresh_token.or(Some(refresh)), // Google ne renvoie pas toujours le refresh_token
         expires_at: now() + resp.expires_in.unwrap_or(3600),
     };
-    account::store_oauth(account_id, &new)?;
+    let (id, saved) = (account_id.to_string(), new.clone());
+    account::blocking_keychain(move || account::store_oauth(&id, &saved)).await?;
     Ok(new.access_token)
 }
 
