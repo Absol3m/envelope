@@ -913,13 +913,12 @@ pub async fn inline_images(
     message_id: i64,
 ) -> Result<std::collections::HashMap<String, String>> {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    const MAX_INLINE_BYTES: i64 = 2 * 1024 * 1024;
     let rows: Vec<(i64, String, String)> = sqlx::query_as(
         "SELECT id, content_id, mime_type FROM attachments \
          WHERE message_id = ? AND content_id IS NOT NULL AND mime_type LIKE 'image/%' AND size <= ?",
     )
     .bind(message_id)
-    .bind(MAX_INLINE_BYTES)
+    .bind(ingest::INLINE_IMAGE_MAX as i64)
     .fetch_all(&state.db)
     .await?;
     let mut out = std::collections::HashMap::new();

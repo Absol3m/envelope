@@ -28,7 +28,8 @@ pub struct ParsedAttachment {
     pub content_id: Option<String>,
     pub is_inline: bool,
     pub size: usize,
-    /// Contenu décodé ; vide si l'analyse n'a pas demandé de le garder (`parse_with(.., false)`).
+    /// Contenu décodé. **Vide avec `size > 0`** = à extraire du message brut à la première ouverture (grosse pièce
+    /// jointe, ou analyse sans copie) : `store_with` exige alors `raw_hash`, sans quoi le contenu serait perdu.
     pub data: Vec<u8>,
 }
 
@@ -114,9 +115,15 @@ pub fn parse(raw: &[u8], fallback_ts: Option<i64>) -> Option<ParsedMessage> {
     parse_with(raw, fallback_ts, true)
 }
 
-/// Comme [`parse`] ; `keep_attachments` : copier le contenu des pièces jointes (nécessaire seulement si on les écrit
-/// sur disque tout de suite). Sinon seules leurs métadonnées et leur taille sont gardées : les pièces jointes
-/// forment l'essentiel du volume d'une boîte, inutile de les dupliquer en mémoire pour les jeter.
+/// Pièce jointe copiée et écrite sur disque dès l'arrivée du message : petits documents (≤ 1 Mio) et images « inline »
+/// (≤ `INLINE_IMAGE_MAX`, affichées dans le message : lecture immédiate). Les autres gardent leurs métadonnées et leur
+/// taille ; leur contenu est extrait du message brut, déjà sur disque, à la première ouverture (`materialize_attachment`) :
+/// ni copie en mémoire, ni doublon sur disque.
+const EAGER_ATTACHMENT_MAX: usize = 1024 * 1024;
+/// Taille maximale d'une image « inline » (`cid:`) affichée dans le message (voir `inline_images`).
+pub const INLINE_IMAGE_MAX: usize = 2 * 1024 * 1024;
+
+/// Comme [`parse`] ; `keep_attachments` : copier les pièces jointes qui doivent l'être (voir `EAGER_ATTACHMENT_MAX`).
 pub fn parse_with(
     raw: &[u8],
     fallback_ts: Option<i64>,
@@ -145,17 +152,21 @@ pub fn parse_with(
                 .content_type()
                 .map(|c| format!("{}/{}", c.ctype(), c.subtype().unwrap_or("octet-stream")))
                 .unwrap_or_else(|| "application/octet-stream".into());
+            let size = p.contents().len();
+            let content_id = p
+                .content_id()
+                .map(|c| c.trim_matches(|ch| ch == '<' || ch == '>').to_string());
+            let inline_image = content_id.is_some() && mime.starts_with("image/");
+            let eager = size <= EAGER_ATTACHMENT_MAX || (inline_image && size <= INLINE_IMAGE_MAX);
             ParsedAttachment {
                 filename: p.attachment_name().map(str::to_string),
                 mime_type: mime,
-                content_id: p
-                    .content_id()
-                    .map(|c| c.trim_matches(|ch| ch == '<' || ch == '>').to_string()),
+                content_id,
                 is_inline: p
                     .content_disposition()
                     .is_some_and(|d| d.ctype().eq_ignore_ascii_case("inline")),
-                size: p.contents().len(),
-                data: if keep_attachments {
+                size,
+                data: if keep_attachments && eager {
                     p.contents().to_vec()
                 } else {
                     Vec::new()
@@ -395,6 +406,17 @@ pub async fn store_with(
             .await?;
     }
 
+    if !opts.lazy_attachments
+        && opts.raw_hash.is_none()
+        && m.attachments
+            .iter()
+            .any(|a| a.data.is_empty() && a.size > 0)
+    {
+        // Sans brut, une pièce jointe non copiée serait irrécupérable : on refuse plutôt que de la perdre en silence.
+        return Err(AppError::Invalid(
+            "pièce jointe volumineuse sans message brut : `raw_hash` est obligatoire".into(),
+        ));
+    }
     if !m.attachments.is_empty() {
         let dir = attachments_dir
             .join(account_id)
@@ -1358,6 +1380,135 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
             .await
             .unwrap();
         assert_eq!(contacts_of(&pool).await, by_trigger);
+    }
+
+    /// Petites pièces jointes et images « inline » : écrites tout de suite. Grosses pièces à ouvrir : métadonnées
+    /// seulement à l'arrivée, contenu extrait du brut à la première ouverture ; même contenu dans les deux cas.
+    #[tokio::test]
+    async fn grosses_pieces_jointes_extraites_du_brut_seulement_a_l_ouverture() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let (pool, folder) = setup().await;
+        let base = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let (att_dir, raw_dir) = (base.join("att"), base.join("raw"));
+        let bytes = |n: usize| (0..n).map(|i| (i % 251) as u8).collect::<Vec<u8>>();
+        let big = bytes(EAGER_ATTACHMENT_MAX + 1);
+        // (nom, type, Content-ID, contenu)
+        let parts: [(&str, &str, Option<&str>, Vec<u8>); 4] = [
+            (
+                "petit.bin",
+                "application/octet-stream",
+                None,
+                b"petit".to_vec(),
+            ),
+            ("gros.bin", "application/octet-stream", None, big.clone()),
+            (
+                "logo.png",
+                "image/png",
+                Some("<logo@x>"),
+                bytes(INLINE_IMAGE_MAX),
+            ),
+            (
+                "photo.png",
+                "image/png",
+                Some("<photo@x>"),
+                bytes(INLINE_IMAGE_MAX + 1),
+            ),
+        ];
+        let mut raw = String::from("From: a@x.fr\r\nTo: me@x.fr\r\nSubject: Gros\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\nbonjour\r\n");
+        for (name, mime, cid, data) in &parts {
+            let b64 = STANDARD
+                .encode(data)
+                .as_bytes()
+                .chunks(76)
+                .map(|c| std::str::from_utf8(c).unwrap())
+                .collect::<Vec<_>>()
+                .join("\r\n");
+            let cid = cid
+                .map(|c| format!("Content-ID: {c}\r\n"))
+                .unwrap_or_default();
+            raw += &format!("--B\r\nContent-Type: {mime}\r\n{cid}Content-Disposition: attachment; filename=\"{name}\"\r\nContent-Transfer-Encoding: base64\r\n\r\n{b64}\r\n");
+        }
+        raw += "--B--\r\n";
+        let parsed = parse(raw.as_bytes(), None).unwrap();
+        let copied: Vec<bool> = parsed
+            .attachments
+            .iter()
+            .map(|a| !a.data.is_empty())
+            .collect();
+        assert_eq!(
+            copied,
+            [true, false, true, false],
+            "petit et image inline ≤ 2 Mio copiés ; gros document et image géante non"
+        );
+        assert!(
+            parsed
+                .attachments
+                .iter()
+                .zip(&parts)
+                .all(|(a, p)| a.size == p.3.len()),
+            "la taille est toujours connue"
+        );
+
+        let hash = crate::mail::rawstore::put(&raw_dir, raw.as_bytes())
+            .await
+            .unwrap();
+        let loc = MessageLoc {
+            account_id: "a",
+            folder_id: folder,
+            uid: 1,
+            size: None,
+        };
+        store_with(
+            &pool,
+            &att_dir,
+            loc,
+            Flags::default(),
+            parsed,
+            StoreOpts {
+                raw_hash: Some(&hash),
+                lazy_attachments: false,
+            },
+        )
+        .await
+        .unwrap();
+        let rows: Vec<(i64, Option<String>)> =
+            sqlx::query_as("SELECT id, storage_path FROM attachments ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.1.is_some()).collect::<Vec<_>>(),
+            copied
+        );
+        // Sans message brut, une grosse pièce jointe serait perdue : `store_with` refuse.
+        let sans_brut = parse(raw.as_bytes(), None).unwrap();
+        let loc = MessageLoc {
+            account_id: "a",
+            folder_id: folder,
+            uid: 2,
+            size: None,
+        };
+        let refus = store_with(
+            &pool,
+            &att_dir,
+            loc,
+            Flags::default(),
+            sans_brut,
+            StoreOpts::default(),
+        )
+        .await;
+        assert!(refus.is_err(), "grosse pièce jointe sans raw_hash : refusé");
+        for (row, part) in rows.iter().zip(&parts) {
+            let path = materialize_attachment(&pool, &att_dir, &raw_dir, row.0)
+                .await
+                .unwrap();
+            assert_eq!(
+                std::fs::read(path).unwrap(),
+                part.3,
+                "{} : extraite du brut, octet pour octet",
+                part.0
+            );
+        }
     }
 
     /// L'index plein texte suit les colonnes qu'il couvre (objet, expéditeur, texte) et seulement elles : un changement

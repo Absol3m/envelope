@@ -5,6 +5,9 @@
 //! On peut ainsi ré-analyser, exporter ou remettre un message sur un serveur sans perte.
 //! Écriture atomique (fichier temporaire puis renommage) : un arrêt en cours d'écriture ne laisse
 //! jamais un `.eml` tronqué sous son vrai nom.
+//!
+//! Aucun message brut n'est jamais supprimé tant que son message existe : les grosses pièces jointes n'ont pas d'autre
+//! copie (voir `ingest::EAGER_ATTACHMENT_MAX`). Toute purge ou ramasse-miettes devra le respecter.
 
 use std::path::{Path, PathBuf};
 
