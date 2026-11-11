@@ -64,14 +64,14 @@ fn base_dir(root: &Path) -> PathBuf {
     .unwrap_or_else(|| root.to_path_buf())
 }
 
+/// Fichiers d'index ou de données d'un client mail : jamais des boîtes. Les autres sont reconnus à leur
+/// contenu (une archive `.txt` ou `.mbox` qui commence par « From » est un mbox).
 fn ignorable(name: &str) -> bool {
     let lower = name.to_lowercase();
     name.starts_with('.')
-        || [
-            ".msf", ".dat", ".json", ".sqlite", ".html", ".txt", ".db", ".log", ".bak", ".lock",
-        ]
-        .iter()
-        .any(|e| lower.ends_with(e))
+        || [".msf", ".dat", ".sqlite", ".db", ".lock"]
+            .iter()
+            .any(|e| lower.ends_with(e))
 }
 
 async fn is_mbox(path: &Path) -> bool {
@@ -666,6 +666,11 @@ mod tests {
         .unwrap();
         std::fs::write(lf.join("Trash"), mbox(&[msg("t1", "0001", "poubelle")])).unwrap();
         std::fs::write(lf.join("notes.txt"), "pas un dossier").unwrap();
+        std::fs::write(
+            lf.join("liste.txt"),
+            mbox(&[msg("l1", "0000", "archive de liste")]),
+        )
+        .unwrap();
         let md = lf.join("Projets");
         std::fs::create_dir_all(md.join("cur")).unwrap();
         std::fs::create_dir_all(md.join("new")).unwrap();
@@ -697,11 +702,12 @@ mod tests {
                 ("Archives", "Archives", true),
                 ("Archives/2023", "Archives › 2023", true),
                 ("Projets", "Projets", true),
-                ("Trash", "Trash", false)
+                ("Trash", "Trash", false),
+                ("liste.txt", "liste.txt", true)
             ]
         );
         // Le dossier « Mail » ou « Local Folders » directement donne le même résultat.
-        assert_eq!(discover(&root.join("Mail")).await.unwrap().len(), 4);
+        assert_eq!(discover(&root.join("Mail")).await.unwrap().len(), 5);
         assert!(discover(&root.join("absent")).await.is_err());
         let _ = std::fs::remove_dir_all(root);
     }
