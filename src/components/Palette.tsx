@@ -1,5 +1,5 @@
 import { Command } from "cmdk";
-import { Bot, Forward, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, PenSquare, RefreshCw, Reply, ReplyAll, Search, Settings, Star, Sun, Trash2, Undo2 } from "lucide-react";
+import { Bot, Download, Forward, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, PenSquare, RefreshCw, Reply, ReplyAll, Search, Settings, Star, Sun, Trash2, Undo2 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { useState } from "react";
 import { useComposer } from "@/lib/composer";
@@ -81,6 +81,7 @@ export function Palette() {
         <Command.Group heading="Application">
           <Item icon={Undo2} hint={["Z"]} onSelect={run(() => void useComposer.getState().undoSend())}>Annuler l'envoi</Item>
           <Item icon={RefreshCw} onSelect={run(() => s.accounts.forEach((a) => void s.backend.syncNow(a.id)))}>Synchroniser maintenant</Item>
+          <Item icon={Download} onSelect={run(() => s.setImportOpen(true))}>Importer des dossiers locaux (Thunderbird…)</Item>
           <Item icon={Bot} onSelect={run(() => s.openSettings("agent"))}>Agent IA (serveur MCP)</Item>
           <Item icon={Settings} hint={keys("mod+,")} onSelect={run(() => s.openSettings("accounts"))}>{SETTINGS_LABEL}</Item>
           <Item icon={Keyboard} hint={["?"]} onSelect={run(() => s.setHelp(true))}>Raccourcis clavier</Item>

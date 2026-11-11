@@ -18,11 +18,12 @@ const Onboarding = lazy(() => import("@/components/Onboarding").then((m) => ({ d
 const Composer = lazy(() => import("@/components/Composer").then((m) => ({ default: m.Composer })));
 const Palette = lazy(() => import("@/components/Palette").then((m) => ({ default: m.Palette })));
 const Settings = lazy(() => import("@/components/Settings").then((m) => ({ default: m.Settings })));
+const ImportDialog = lazy(() => import("@/components/ImportDialog").then((m) => ({ default: m.ImportDialog })));
 const ShortcutsHelp = lazy(() => import("@/components/Shortcuts").then((m) => ({ default: m.ShortcutsHelp })));
 
 export default function App() {
-  const { ready, needsOnboarding, density, paletteOpen, settingsOpen, helpOpen } = useMail(
-    useShallow((s) => ({ ready: s.ready, needsOnboarding: s.needsOnboarding, density: s.density, paletteOpen: s.paletteOpen, settingsOpen: s.settingsTab !== null, helpOpen: s.helpOpen })),
+  const { ready, needsOnboarding, density, paletteOpen, settingsOpen, helpOpen, importOpen } = useMail(
+    useShallow((s) => ({ importOpen: s.importOpen, ready: s.ready, needsOnboarding: s.needsOnboarding, density: s.density, paletteOpen: s.paletteOpen, settingsOpen: s.settingsTab !== null, helpOpen: s.helpOpen })),
   );
   const composing = useComposer((s) => s.draft !== null);
   useShortcuts();
@@ -65,6 +66,7 @@ export default function App() {
         {paletteOpen && <Palette />}
         {settingsOpen && <Settings />}
         {helpOpen && <ShortcutsHelp />}
+        {importOpen && <ImportDialog />}
       </Suspense>
       <Toasts />
     </TooltipProvider>

@@ -15,6 +15,29 @@ export interface Account {
   /** Texte brut, inséré dans les nouveaux messages et les réponses. */
   signature: string;
 }
+/** Dossier trouvé dans une source d'import (profil Thunderbird, dossier de boîtes mbox ou Maildir). */
+export interface ImportFolder {
+  key: string;
+  /** Nom du dossier local créé (hiérarchie jointe par « › »). */
+  name: string;
+  kind: "mbox" | "maildir";
+  /** Octets (mbox) ou nombre de fichiers (Maildir). */
+  size: number;
+  selected: boolean;
+}
+export interface ImportReport {
+  imported: number;
+  duplicates: number;
+  /** Messages supprimés dans la source, non repris. */
+  deleted: number;
+  failed: number;
+}
+export interface ImportProgress {
+  folder: string;
+  imported: number;
+  foldersDone: number;
+  foldersTotal: number;
+}
 export interface FolderRow {
   id: number;
   accountId: string;
@@ -156,6 +179,12 @@ export interface Backend {
   deleteThread(threadId: number, folderId: number): Promise<void>;
   /** Archive en local (copie vérifiée sur cet ordinateur, puis suppression sur le serveur) ; entre dossiers locaux : simple déplacement. */
   archiveLocal(threadId: number, folderId: number, localFolderId: number): Promise<void>;
+  /** Dossier des profils Thunderbird s'il existe (point de départ du sélecteur). */
+  importDefaultDir(): Promise<string | null>;
+  /** Sélecteur de dossier natif ; `null` si l'utilisateur annule. */
+  pickFolder(defaultPath?: string): Promise<string | null>;
+  importScan(path: string): Promise<ImportFolder[]>;
+  importRun(path: string, keys: string[]): Promise<ImportReport>;
   createLocalFolder(name: string): Promise<number>;
   renameLocalFolder(folderId: number, name: string): Promise<void>;
   /** Seulement si le dossier est vide. */
@@ -208,6 +237,14 @@ export const tauriBackend: Backend = {
   moveThread: (threadId, folderId, to) => invoke("move_thread", { threadId, folderId, to }),
   deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
   archiveLocal: (threadId, folderId, localFolderId) => invoke("archive_local", { threadId, folderId, localFolderId }),
+  importDefaultDir: () => invoke("import_default_dir"),
+  pickFolder: async (defaultPath) => {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ directory: true, multiple: false, defaultPath: defaultPath ?? undefined, title: "Choisir le dossier à importer" });
+    return typeof picked === "string" ? picked : null;
+  },
+  importScan: (path) => invoke("import_scan", { path }),
+  importRun: (path, keys) => invoke("import_run", { path, keys }),
   createLocalFolder: (name) => invoke("create_local_folder", { name }),
   renameLocalFolder: (folderId, name) => invoke("rename_local_folder", { folderId, name }),
   deleteLocalFolder: (folderId) => invoke("delete_local_folder", { folderId }),

@@ -1,6 +1,6 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useState, type DragEvent } from "react";
-import { Bot, Check, ChevronsUpDown, FolderPlus, HardDrive, Inbox, Layers, MoreHorizontal, PenSquare, RefreshCw, Settings } from "lucide-react";
+import { Bot, Check, ChevronsUpDown, Download, FolderPlus, HardDrive, Inbox, Layers, MoreHorizontal, PenSquare, RefreshCw, Settings } from "lucide-react";
 import type { FolderRow } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
@@ -68,6 +68,7 @@ function LocalFolders({ folders, view, setView, moveTo }: { folders: FolderRow[]
     <>
       <div className="flex items-center px-2.5 pb-1 pt-4 max-[1100px]:hidden">
         <p className="flex-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint" title="Ces dossiers n'existent que sur cet ordinateur">Sur cet ordinateur</p>
+        <IconButton label="Importer des dossiers locaux (Thunderbird…)" tooltipSide="right" onClick={() => useMail.getState().setImportOpen(true)}><Download size={14} /></IconButton>
         <IconButton label="Nouveau dossier local" tooltipSide="right" onClick={() => { setName(""); setEditing("new"); }}><FolderPlus size={14} /></IconButton>
       </div>
       <div className="hidden pt-3 max-[1100px]:block" />

@@ -42,6 +42,7 @@ interface State {
   backend: Backend;
   ready: boolean;
   needsOnboarding: boolean;
+  importOpen: boolean;
   /** Historique encore à rapatrier du serveur, par compte (absent ou 0 : complet). */
   backfill: Readonly<Record<string, number>>;
   accounts: Account[];
@@ -75,6 +76,7 @@ interface State {
   reload(opts?: { silent?: boolean }): Promise<void>;
   refreshAccounts(): Promise<void>;
   setBackfill(accountId: string, remaining: number): void;
+  setImportOpen(open: boolean): void;
   loadMore(): Promise<void>;
   setView(v: View): void;
   setAccount(id: string | null): void;
@@ -261,6 +263,7 @@ export const useMail = create<State>((set, get) => {
     backend: demoBackend,
     ready: false,
     needsOnboarding: false,
+    importOpen: false,
     backfill: {},
     accounts: [],
     folders: [],
@@ -313,6 +316,8 @@ export const useMail = create<State>((set, get) => {
       await loadFolders();
       await fetchThreads(true, opts?.silent);
     },
+
+    setImportOpen: (importOpen) => set({ importOpen }),
 
     setBackfill(accountId, remaining) {
       set((s) => (s.backfill[accountId] === remaining ? s : { backfill: { ...s.backfill, [accountId]: remaining } }));

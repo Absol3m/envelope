@@ -18,6 +18,7 @@ pub mod autoconfig;
 pub mod imap;
 pub mod ingest;
 pub mod local;
+pub mod mbox;
 pub mod oauth;
 pub mod rawstore;
 pub mod smtp;

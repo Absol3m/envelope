@@ -12,6 +12,7 @@ use crate::mail::autoconfig;
 use crate::mail::imap;
 use crate::mail::ingest;
 use crate::mail::local;
+use crate::mail::mbox;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
@@ -460,6 +461,71 @@ pub async fn archive_local(
         state.sync.trigger(account);
     }
     Ok(())
+}
+
+// ---------- Import des dossiers locaux d'un autre client (Thunderbird) ----------
+
+/// Dossier des profils Thunderbird de cette machine, s'il existe : point de départ du sélecteur de
+/// dossier natif (l'utilisateur choisit lui-même le profil, rien n'est exploré sans son geste).
+#[tauri::command]
+pub fn import_default_dir(app: AppHandle) -> Option<String> {
+    use tauri::Manager;
+    let path = app.path();
+    let home = path.home_dir().ok();
+    let candidates: Vec<std::path::PathBuf> = if cfg!(target_os = "macos") {
+        home.map(|h| h.join("Library/Thunderbird/Profiles"))
+            .into_iter()
+            .collect()
+    } else if cfg!(windows) {
+        path.data_dir()
+            .map(|d| d.join("Thunderbird").join("Profiles"))
+            .into_iter()
+            .collect()
+    } else {
+        home.map(|h| {
+            vec![
+                h.join(".thunderbird"),
+                h.join(".var/app/org.mozilla.Thunderbird/.thunderbird"),
+                h.join("snap/thunderbird/common/.thunderbird"),
+            ]
+        })
+        .unwrap_or_default()
+    };
+    candidates
+        .into_iter()
+        .find(|p| p.is_dir())
+        .map(|p| p.display().to_string())
+}
+
+/// Liste les dossiers importables de la source choisie (profil Thunderbird, dossier de boîtes…).
+#[tauri::command]
+pub async fn import_scan(path: String) -> Result<Vec<mbox::Found>> {
+    mbox::discover(std::path::Path::new(&path)).await
+}
+
+/// Importe les dossiers choisis dans « Sur cet ordinateur » ; l'avancement part en événements `import:progress`.
+#[tauri::command]
+pub async fn import_run(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    keys: Vec<String>,
+) -> Result<mbox::Report> {
+    use tauri::Emitter;
+    // Pas de verrou global : un import long ne doit pas bloquer les autres actions.
+    let keys: std::collections::HashSet<String> = keys.into_iter().collect();
+    let emit = move |p: mbox::Progress| {
+        let _ = app.emit("import:progress", p);
+    };
+    mbox::import(
+        &state.db,
+        &state.attachments_dir,
+        &state.raw_dir,
+        std::path::Path::new(&path),
+        &keys,
+        &emit,
+    )
+    .await
 }
 
 #[tauri::command]

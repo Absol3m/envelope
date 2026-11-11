@@ -393,3 +393,49 @@ pub async fn server_inbox_count(data_dir: &Path, subject: &str) -> Result<usize>
     let _ = session.logout().await;
     Ok(found.len())
 }
+
+/// Importe la source dans une **base temporaire** (jamais la vraie) et décrit le résultat :
+/// contrôle d'un profil Thunderbird avant de l'essayer dans l'application.
+pub async fn import_check(root: &Path) -> Result<String> {
+    use crate::mail::mbox;
+    let base = std::env::temp_dir().join(format!("envelope-import-check-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let pool = crate::db::init(&base.join("check.db")).await?;
+    let found = mbox::discover(root).await?;
+    let mut out = String::from("Dossiers trouvés :\n");
+    for f in &found {
+        out += &format!(
+            "  {} {} ({:?}, {})\n",
+            if f.selected { "[x]" } else { "[ ]" },
+            f.name,
+            f.kind,
+            f.size
+        );
+    }
+    let keys = found
+        .iter()
+        .filter(|f| f.selected)
+        .map(|f| f.key.clone())
+        .collect();
+    let report = mbox::import(
+        &pool,
+        &base.join("att"),
+        &base.join("raw"),
+        root,
+        &keys,
+        &|_| {},
+    )
+    .await?;
+    out += &format!("Rapport : {report:?}\n");
+    let rows: Vec<(String, String, bool, bool, i64)> = sqlx::query_as(
+        "SELECT f.name, m.subject, m.is_read, m.is_starred, (SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id) \
+         FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.account_id = 'local' ORDER BY f.name, m.date",
+    )
+    .fetch_all(&pool)
+    .await?;
+    for (folder, subject, read, star, atts) in rows {
+        out += &format!("  [{folder}] {subject}  lu={read} suivi={star} pj={atts}\n");
+    }
+    let _ = std::fs::remove_dir_all(&base);
+    Ok(out)
+}
