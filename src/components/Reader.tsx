@@ -9,6 +9,7 @@ import { useMail, visibleThreads } from "@/lib/store";
 import { cn, openExternal } from "@/lib/utils";
 import { useComposer } from "@/lib/composer";
 import { Avatar, IconButton, Kbd } from "./ui/primitives";
+import { BellOff } from "lucide-react";
 import { dragRegion, shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 
 // ───────────── Corps du message ─────────────
@@ -235,6 +236,34 @@ function Skeleton({ summary }: { summary?: ThreadSummary }) {
   );
 }
 
+/** « Se désabonner » d'une liste (en-têtes List-Unsubscribe du dernier message qui en propose un). */
+function UnsubscribeButton({ m }: { m: DetailMessage }) {
+  const { backend, toast } = useMail(useShallow((s) => ({ backend: s.backend, toast: s.toast })));
+  const [busy, setBusy] = useState(false);
+  const u = m.unsubscribe;
+  if (!u) return null;
+  const sender = displayName(m.fromName, m.fromAddr);
+  const run = async () => {
+    // Un simple lien (sans POST ni adresse) s'ouvre dans le navigateur : l'utilisateur termine sur la page.
+    if (!u.oneClick && !u.mailto && u.url) return void openExternal(u.url);
+    if (!(await backend.confirm(`Se désabonner de ${sender} ?`, "Se désabonner"))) return;
+    setBusy(true);
+    try {
+      await backend.unsubscribe(m.id);
+      toast({ message: u.oneClick ? `Désabonné de ${sender}` : `Demande de désabonnement envoyée à ${sender}` });
+    } catch (e) {
+      toast({ message: `Désabonnement impossible — ${String(e)}`, tone: "error", duration: 6000 });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button onClick={() => void run()} disabled={busy} className="press inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-medium hover:bg-hover hover:text-fg disabled:opacity-50">
+      <BellOff size={12} />Se désabonner
+    </button>
+  );
+}
+
 function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
   const accounts = useMail((s) => s.accounts);
   const initial = useMemo(() => {
@@ -247,6 +276,7 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
   const allOpen = expanded.size >= d.messages.length;
   const toggle = (id: number) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const files = d.attachments.filter((a) => !a.isInline || a.filename).length;
+  const unsubscribable = [...d.messages].reverse().find((m) => m.unsubscribe);
 
   return (
     <div className="mx-auto max-w-[780px] px-8 pb-24 pt-7">
@@ -255,6 +285,7 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-muted">
           <span className="tnum">{d.messages.length} message{d.messages.length > 1 ? "s" : ""}</span>
           {files > 0 && <span className="inline-flex items-center gap-1"><Paperclip size={12} />{files}</span>}
+          {unsubscribable && <UnsubscribeButton m={unsubscribable} />}
           {accounts.length > 1 && account && <span className="rounded-full bg-hover px-2 py-0.5 text-[11px] font-medium">{account.email}</span>}
           {d.messages.length > 1 && (
             <button onClick={() => setExpanded(allOpen ? new Set([d.messages[d.messages.length - 1].id]) : new Set(d.messages.map((m) => m.id)))} className="press ml-auto rounded-md px-2 py-0.5 font-medium hover:bg-hover hover:text-fg">

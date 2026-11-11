@@ -12,6 +12,7 @@ use crate::mail::autoconfig;
 use crate::mail::imap;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
+use crate::mail::unsubscribe;
 use crate::AppState;
 use envelope_core::addr::Addr;
 use envelope_core::contacts;
@@ -193,6 +194,27 @@ pub async fn remove_account(state: State<'_, AppState>, account_id: String) -> R
     account::delete(&state.db, &account_id).await?;
     let _ = tokio::fs::remove_dir_all(state.attachments_dir.join(&account_id)).await;
     Ok(())
+}
+
+/// Désabonne l'utilisateur de la liste d'un message (POST RFC 8058 ou message mailto).
+#[tauri::command]
+pub async fn unsubscribe(state: State<'_, AppState>, message_id: i64) -> Result<()> {
+    let row: Option<(String, Option<String>, Option<String>, bool)> = sqlx::query_as(
+        "SELECT account_id, unsub_url, unsub_mailto, unsub_one_click FROM messages WHERE id = ?",
+    )
+    .bind(message_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let (account_id, url, mailto, one_click) =
+        row.ok_or_else(|| AppError::NotFound(format!("message {message_id}")))?;
+    let acct = account::get(&state.db, &account_id).await?;
+    let cred = account::resolve_credential(&acct).await?;
+    let u = envelope_core::thread::Unsubscribe {
+        url,
+        mailto,
+        one_click,
+    };
+    unsubscribe::run(&acct, &cred, &u).await
 }
 
 #[tauri::command]

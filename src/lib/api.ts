@@ -57,6 +57,14 @@ export interface DetailMessage {
   bodyHtml: string | null;
   isRead: boolean;
   isStarred: boolean;
+  /** Désabonnement proposé par l'expéditeur (en-têtes List-Unsubscribe). */
+  unsubscribe: Unsubscribe | null;
+}
+export interface Unsubscribe {
+  url: string | null;
+  mailto: string | null;
+  /** Un simple POST suffit (RFC 8058) : désabonnement sans page intermédiaire. */
+  oneClick: boolean;
 }
 export interface DetailAttachment {
   id: number;
@@ -156,6 +164,8 @@ export interface Backend {
   suggestContacts(accountId: string | null, query: string): Promise<Addr[]>;
   removeAccount(accountId: string): Promise<void>;
   setAccountSignature(accountId: string, signature: string): Promise<void>;
+  /** Désabonne de la liste d'un message (POST en un clic ou message mailto). */
+  unsubscribe(messageId: number): Promise<void>;
   openAttachment(id: number): Promise<void>;
   inlineImages(messageId: number): Promise<Record<string, string>>;
   mcpInfo(): Promise<McpInfo>;
@@ -197,6 +207,7 @@ export const tauriBackend: Backend = {
   sendEmail: (accountId, message) => invoke("send_email", { accountId, message }),
   suggestContacts: (accountId, query) => invoke("suggest_contacts", { accountId, query }),
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
+  unsubscribe: (messageId) => invoke("unsubscribe", { messageId }),
   setAccountSignature: (accountId, signature) => invoke("set_account_signature", { accountId, signature }),
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   inlineImages: (messageId) => invoke("inline_images", { messageId }),

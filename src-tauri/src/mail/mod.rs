@@ -20,3 +20,4 @@ pub mod ingest;
 pub mod oauth;
 pub mod smtp;
 pub mod sync;
+pub mod unsubscribe;

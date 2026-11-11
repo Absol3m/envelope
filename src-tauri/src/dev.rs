@@ -29,19 +29,21 @@ struct Seed {
     reply_to: Option<&'static str>,
     attachment: Option<&'static str>,
     unread: bool,
+    /// En-têtes List-Unsubscribe à ajouter (liste de diffusion).
+    unsub: Option<&'static str>,
 }
 
 const SEEDS: &[Seed] = &[
-    Seed { id: "seed-01", name: "Camille Laurent", addr: "camille.laurent@example.com", subject: "Compte rendu : atelier design du 3 novembre", body: "Bonjour,\n\nVoici le compte rendu de l'atelier :\n- Palette validée\n- Typographie à revoir\n- Prochaine session le 17\n\nCamille", hours_ago: 30, reply_to: None, attachment: None, unread: true },
-    Seed { id: "seed-02", name: "Hugo Martin", addr: "hugo.martin@example.com", subject: "Devis hébergement envelope.app", body: "Bonjour,\n\nPouvez-vous me confirmer le devis pour l'hébergement de la version 3 comptes ?\n\nMerci,\nHugo", hours_ago: 28, reply_to: None, attachment: None, unread: false },
-    Seed { id: "seed-03", name: "Hugo Martin", addr: "hugo.martin@example.com", subject: "Re: Devis hébergement envelope.app", body: "Merci pour le retour, je valide la version à 3 comptes mail. On part là-dessus.\n\nHugo", hours_ago: 26, reply_to: Some("seed-02"), attachment: None, unread: true },
-    Seed { id: "seed-04", name: "Service facturation", addr: "facturation@example.com", subject: "Votre facture de novembre est disponible", body: "Bonjour,\n\nVotre facture de novembre (12,00 EUR) est disponible dans votre espace client.\n\nLe service facturation", hours_ago: 24, reply_to: None, attachment: None, unread: true },
-    Seed { id: "seed-05", name: "Léa Fontaine", addr: "lea.fontaine@example.com", subject: "Photos du week-end", body: "Coucou ! Je te joins une première photo, les autres suivent dès que j'ai du réseau.\n\nLéa", hours_ago: 20, reply_to: None, attachment: Some("photo-weekend.png"), unread: true },
-    Seed { id: "seed-06", name: "Boutique Soldes", addr: "promo@example.com", subject: "Dernières heures : -60 % sur tout le site", body: "Profitez-en avant minuit ! Livraison offerte dès 49 EUR.\n\nPour vous désabonner, répondez STOP.", hours_ago: 14, reply_to: None, attachment: None, unread: true },
-    Seed { id: "seed-07", name: "Équipe Projet", addr: "projet@example.com", subject: "[envelope] Pull request fusionnée : multiplateforme", body: "La pull request « Rendu natif sur Windows, macOS et Linux » a été fusionnée dans main.", hours_ago: 10, reply_to: None, attachment: None, unread: false },
-    Seed { id: "seed-08", name: "Marc Dupuis", addr: "marc.dupuis@example.com", subject: "Invitation : point d'équipe jeudi 10h", body: "Bonjour à tous,\n\nPoint d'équipe jeudi à 10h en salle Bleue. Merci de confirmer votre présence.\n\nMarc", hours_ago: 6, reply_to: None, attachment: None, unread: true },
-    Seed { id: "seed-09", name: "Newsletter Tech", addr: "newsletter@example.com", subject: "Cette semaine : Rust, Tauri 2 et le futur du mail", body: "Au sommaire :\n1. Les nouveautés de Rust\n2. Tauri 2 en production\n3. Le courrier électronique en 2026\n\nBonne lecture !", hours_ago: 4, reply_to: None, attachment: None, unread: true },
-    Seed { id: "seed-10", name: "Sophie Bernard", addr: "sophie.bernard@example.com", subject: "Question sur le contrat de maintenance", body: "Bonjour,\n\nPourriez-vous m'indiquer la durée d'engagement du contrat de maintenance ?\n\nCordialement,\nSophie Bernard", hours_ago: 2, reply_to: None, attachment: None, unread: true },
+    Seed { id: "seed-01", name: "Camille Laurent", addr: "camille.laurent@example.com", subject: "Compte rendu : atelier design du 3 novembre", body: "Bonjour,\n\nVoici le compte rendu de l'atelier :\n- Palette validée\n- Typographie à revoir\n- Prochaine session le 17\n\nCamille", hours_ago: 30, reply_to: None, attachment: None, unread: true, unsub: None },
+    Seed { id: "seed-02", name: "Hugo Martin", addr: "hugo.martin@example.com", subject: "Devis hébergement envelope.app", body: "Bonjour,\n\nPouvez-vous me confirmer le devis pour l'hébergement de la version 3 comptes ?\n\nMerci,\nHugo", hours_ago: 28, reply_to: None, attachment: None, unread: false, unsub: None },
+    Seed { id: "seed-03", name: "Hugo Martin", addr: "hugo.martin@example.com", subject: "Re: Devis hébergement envelope.app", body: "Merci pour le retour, je valide la version à 3 comptes mail. On part là-dessus.\n\nHugo", hours_ago: 26, reply_to: Some("seed-02"), attachment: None, unread: true, unsub: None },
+    Seed { id: "seed-04", name: "Service facturation", addr: "facturation@example.com", subject: "Votre facture de novembre est disponible", body: "Bonjour,\n\nVotre facture de novembre (12,00 EUR) est disponible dans votre espace client.\n\nLe service facturation", hours_ago: 24, reply_to: None, attachment: None, unread: true, unsub: None },
+    Seed { id: "seed-05", name: "Léa Fontaine", addr: "lea.fontaine@example.com", subject: "Photos du week-end", body: "Coucou ! Je te joins une première photo, les autres suivent dès que j'ai du réseau.\n\nLéa", hours_ago: 20, reply_to: None, attachment: Some("photo-weekend.png"), unread: true, unsub: None },
+    Seed { id: "seed-06", name: "Boutique Soldes", addr: "promo@example.com", subject: "Dernières heures : -60 % sur tout le site", body: "Profitez-en avant minuit ! Livraison offerte dès 49 EUR.\n\nPour vous désabonner, répondez STOP.", hours_ago: 14, reply_to: None, attachment: None, unread: true, unsub: Some("List-Unsubscribe: <mailto:desabo@example.com?subject=stop>, <https://example.com/desabo/promo>\r\n") },
+    Seed { id: "seed-07", name: "Équipe Projet", addr: "projet@example.com", subject: "[envelope] Pull request fusionnée : multiplateforme", body: "La pull request « Rendu natif sur Windows, macOS et Linux » a été fusionnée dans main.", hours_ago: 10, reply_to: None, attachment: None, unread: false, unsub: None },
+    Seed { id: "seed-08", name: "Marc Dupuis", addr: "marc.dupuis@example.com", subject: "Invitation : point d'équipe jeudi 10h", body: "Bonjour à tous,\n\nPoint d'équipe jeudi à 10h en salle Bleue. Merci de confirmer votre présence.\n\nMarc", hours_ago: 6, reply_to: None, attachment: None, unread: true, unsub: None },
+    Seed { id: "seed-09", name: "Newsletter Tech", addr: "newsletter@example.com", subject: "Cette semaine : Rust, Tauri 2 et le futur du mail", body: "Au sommaire :\n1. Les nouveautés de Rust\n2. Tauri 2 en production\n3. Le courrier électronique en 2026\n\nBonne lecture !", hours_ago: 4, reply_to: None, attachment: None, unread: true, unsub: Some("List-Unsubscribe: <https://example.com/desabo/news>\r\nList-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n") },
+    Seed { id: "seed-10", name: "Sophie Bernard", addr: "sophie.bernard@example.com", subject: "Question sur le contrat de maintenance", body: "Bonjour,\n\nPourriez-vous m'indiquer la durée d'engagement du contrat de maintenance ?\n\nCordialement,\nSophie Bernard", hours_ago: 2, reply_to: None, attachment: None, unread: true, unsub: None },
 ];
 
 fn invalid(e: impl std::fmt::Display) -> AppError {
@@ -76,7 +78,9 @@ fn build(seed: &Seed, to: &Mailbox) -> Result<Vec<u8>> {
             ),
         ),
     };
-    Ok(msg.map_err(invalid)?.formatted())
+    let raw = msg.map_err(invalid)?.formatted();
+    // Les en-têtes de liste vont en tête : l'ordre des en-têtes n'a pas d'importance (RFC 5322).
+    Ok([seed.unsub.unwrap_or_default().as_bytes(), &raw].concat())
 }
 
 /// Dépose les messages d'essai dans la boîte de réception du compte `email` (déjà configuré).

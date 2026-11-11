@@ -12,6 +12,8 @@ use mail_parser::{Address, HeaderValue, MessageParser, MimeHeaders};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::error::Result;
+use crate::mail::unsubscribe;
+use envelope_core::thread::Unsubscribe;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Flags {
@@ -44,6 +46,7 @@ pub struct ParsedMessage {
     pub body_text: Option<String>,
     pub body_html: Option<String>,
     pub attachments: Vec<ParsedAttachment>,
+    pub unsubscribe: Option<Unsubscribe>,
 }
 
 fn addrs(a: Option<&Address<'_>>) -> String {
@@ -148,6 +151,9 @@ pub fn parse(raw: &[u8], fallback_ts: Option<i64>) -> Option<ParsedMessage> {
         body_text,
         body_html,
         attachments,
+        unsubscribe: msg
+            .header_raw("List-Unsubscribe")
+            .and_then(|l| unsubscribe::parse(l, msg.header_raw("List-Unsubscribe-Post"))),
     })
 }
 
@@ -253,8 +259,8 @@ pub async fn store(
     let res = sqlx::query(
         "INSERT INTO messages (account_id, folder_id, thread_id, uid, message_id, in_reply_to, references_ids, \
          subject, from_name, from_addr, to_addrs, cc_addrs, bcc_addrs, date, snippet, body_text, body_html, \
-         is_read, is_starred, has_attachments, size) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
          ON CONFLICT(folder_id, uid) DO NOTHING",
     )
     .bind(account_id)
@@ -278,6 +284,9 @@ pub async fn store(
     .bind(flags.flagged)
     .bind(has_att)
     .bind(size)
+    .bind(m.unsubscribe.as_ref().and_then(|u| u.url.as_deref()))
+    .bind(m.unsubscribe.as_ref().and_then(|u| u.mailto.as_deref()))
+    .bind(m.unsubscribe.as_ref().is_some_and(|u| u.one_click))
     .execute(pool)
     .await?;
     if res.rows_affected() == 0 {
@@ -580,6 +589,21 @@ mod tests {
         assert_eq!(detail.messages.len(), 2);
         assert_eq!(detail.messages[0].to[0].address, "bob@example.com");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn list_unsubscribe_headers_are_parsed() {
+        let raw = b"From: News <n@lists.example.com>\r\nTo: me@example.com\r\nSubject: Hi\r\n\
+list-unsubscribe: <mailto:u@lists.example.com>,\r\n <https://lists.example.com/u/1>\r\n\
+List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
+        let u = parse(raw, None).unwrap().unsubscribe.unwrap();
+        assert_eq!(u.url.as_deref(), Some("https://lists.example.com/u/1"));
+        assert_eq!(u.mailto.as_deref(), Some("mailto:u@lists.example.com"));
+        assert!(u.one_click);
+        assert!(parse(b"From: a@b.fr\r\nSubject: x\r\n\r\nhi", None)
+            .unwrap()
+            .unsubscribe
+            .is_none());
     }
 
     #[test]

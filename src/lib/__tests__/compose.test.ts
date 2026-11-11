@@ -6,7 +6,7 @@ import { attachmentError, draftFrom, emailHtml, emptyDraft, signatureHtml, swapS
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
   id: 1, messageId: "m1@x", references: [] as string[], folderId: 1, subject: "Budget", fromName: "Alice", fromAddr: "alice@x.fr",
   to: [{ name: null, address: "me@x.fr" }, { name: "Bob", address: "bob@x.fr" }], cc: [{ name: null, address: "carol@x.fr" }],
-  date: "2026-03-02T10:00:00Z", bodyText: "Bonjour\n\nÀ demain", bodyHtml: null, isRead: true, isStarred: false, ...over,
+  date: "2026-03-02T10:00:00Z", bodyText: "Bonjour\n\nÀ demain", bodyHtml: null, isRead: true, isStarred: false, unsubscribe: null, ...over,
 });
 const thread = (messages = [msg({})]): ThreadDetail => ({ id: 1, accountId: "a", subject: "Re: Budget", isStarred: false, messages, attachments: [] });
 
