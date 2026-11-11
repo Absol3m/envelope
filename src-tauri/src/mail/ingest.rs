@@ -190,6 +190,14 @@ pub fn parse_with(
     })
 }
 
+/// Début de la recherche de la conversation d'un message par les `Message-ID` qu'il cite (suivi de `account_id`).
+/// `INDEXED BY` : sans `ANALYZE` (jamais lancé pendant un premier import), SQLite préfère `idx_messages_in_reply_to`,
+/// ne s'en sert que pour `account_id` et balaie tout le compte à chaque message : coût quadratique (20 000 messages :
+/// 141 s au lieu de 7,6 s). Le test `recherche_de_conversation_utilise_l_index_message_id` garde ce choix.
+const FIND_THREAD_BY_IDS: &str =
+    "SELECT thread_id FROM messages INDEXED BY idx_messages_message_id \
+     WHERE thread_id IS NOT NULL AND account_id = ";
+
 /// Cherche une conversation existante via Message-ID / In-Reply-To / References (dans les deux sens).
 async fn find_thread(
     pool: &SqlitePool,
@@ -204,9 +212,7 @@ async fn find_thread(
         ids.insert(id);
     }
     if !ids.is_empty() {
-        let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
-            "SELECT thread_id FROM messages WHERE thread_id IS NOT NULL AND account_id = ",
-        );
+        let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(FIND_THREAD_BY_IDS);
         qb.push_bind(account_id).push(" AND message_id IN (");
         let mut sep = qb.separated(", ");
         for id in &ids {
@@ -1089,6 +1095,80 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
                 .auth_fail,
             None
         );
+    }
+
+    /// L'index plein texte suit les colonnes qu'il couvre (objet, expéditeur, texte) et seulement elles : un changement
+    /// de drapeau, de dossier ou d'empreinte ne le touche pas, mais ne doit jamais le laisser incohérent.
+    #[tokio::test]
+    async fn index_plein_texte_suit_les_colonnes_indexees_seulement() {
+        let (pool, folder) = setup().await;
+        let dir = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let loc = |uid| MessageLoc {
+            account_id: "a",
+            folder_id: folder,
+            uid,
+            size: None,
+        };
+        store(
+            &pool,
+            &dir,
+            loc(1),
+            Flags::default(),
+            parse(
+                b"From: Zoe <z@x.fr>\r\nSubject: Alpha\r\nMessage-ID: <1@x>\r\n\r\nlicorne",
+                None,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        let found = |q: &'static str| {
+            let pool = pool.clone();
+            async move {
+                envelope_core::search::search(&pool, q, None, 10)
+                    .await
+                    .unwrap()
+                    .len()
+            }
+        };
+        assert_eq!((found("licorne").await, found("alpha").await), (1, 1));
+
+        // Drapeaux, dossier, empreinte : l'index reste exact.
+        sqlx::query("UPDATE messages SET is_read = 1, is_starred = 1, raw_hash = 'abc', thread_id = thread_id").execute(&pool).await.unwrap();
+        assert_eq!((found("licorne").await, found("alpha").await), (1, 1));
+
+        // Corps et objet : l'ancien texte disparaît, le nouveau est trouvé.
+        sqlx::query("UPDATE messages SET body_text = 'dragon', subject = 'Beta'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!((found("licorne").await, found("alpha").await), (0, 0));
+        assert_eq!((found("dragon").await, found("beta").await), (1, 1));
+
+        // Suppression : plus rien dans l'index.
+        sqlx::query("DELETE FROM messages")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(found("dragon").await, 0);
+    }
+
+    /// La recherche par `Message-ID` passe par l'index sur `message_id`, jamais par un balayage des messages du compte
+    /// (régression constatée : coût par message proportionnel à la taille de la base).
+    #[tokio::test]
+    async fn recherche_de_conversation_utilise_l_index_message_id() {
+        let (pool, _) = setup().await;
+        let sql = format!("EXPLAIN QUERY PLAN {FIND_THREAD_BY_IDS}'a' AND message_id IN ('x','y') ORDER BY date DESC LIMIT 1");
+        let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        let plan = plan
+            .into_iter()
+            .map(|(.., detail)| detail)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(plan.contains("idx_messages_message_id"), "{plan}");
     }
 
     #[test]
