@@ -591,6 +591,178 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    #[tokio::test]
+    async fn search_operators_filter_threads() {
+        use envelope_core::thread::{list_threads, ThreadQuery};
+        let (pool, folder) = setup().await;
+        let dir = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let mails = [
+            (
+                "Alice Martin <alice@x.fr>",
+                "Budget 2026",
+                "Mon, 2 Mar 2026 10:00:00 +0000",
+                "chiffres du budget",
+                false,
+            ),
+            (
+                "Bob Durand <bob@y.fr>",
+                "Photos",
+                "Mon, 5 Jan 2026 10:00:00 +0000",
+                "voir la pièce jointe",
+                true,
+            ),
+            (
+                "Alice Martin <alice@x.fr>",
+                "Rappel 100% sûr",
+                "Fri, 6 Feb 2026 10:00:00 +0000",
+                "à bientôt",
+                false,
+            ),
+        ];
+        for (i, (from, subject, date, body, attach)) in mails.iter().enumerate() {
+            let mut raw = format!("From: {from}\r\nTo: me@x.fr\r\nSubject: {subject}\r\nDate: {date}\r\nMessage-ID: <s{i}@x>\r\n");
+            if *attach {
+                raw += "MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nContent-Type: text/plain\r\n\r\n";
+                raw += body;
+                raw += "\r\n--B\r\nContent-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"a.pdf\"\r\n\r\nJVBERg==\r\n--B--\r\n";
+            } else {
+                raw += &format!("\r\n{body}\r\n");
+            }
+            let loc = MessageLoc {
+                account_id: "a",
+                folder_id: folder,
+                uid: i as i64 + 1,
+                size: None,
+            };
+            store(
+                &pool,
+                &dir,
+                loc,
+                Flags::default(),
+                parse(raw.as_bytes(), None).unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+        let find = |q: &str| {
+            let pool = pool.clone();
+            let q = q.to_string();
+            async move {
+                let mut subjects: Vec<String> = list_threads(
+                    &pool,
+                    &ThreadQuery {
+                        query: Some(q),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|t| t.subject)
+                .collect();
+                subjects.sort();
+                subjects
+            }
+        };
+        assert_eq!(find("de:alice").await, ["Budget 2026", "Rappel 100% sûr"]);
+        assert_eq!(find("de:\"alice martin\" budget").await, ["Budget 2026"]);
+        assert_eq!(find("de:durand").await, ["Photos"]);
+        assert_eq!(find("pj").await, ["Photos"]);
+        assert_eq!(find("avant:2026-02").await, ["Photos"]);
+        assert_eq!(
+            find("apres:2026-02").await,
+            ["Budget 2026", "Rappel 100% sûr"]
+        );
+        assert_eq!(
+            find("apres:2026-02 avant:2026-03").await,
+            ["Rappel 100% sûr"]
+        );
+        assert_eq!(find("objet:100%").await, ["Rappel 100% sûr"]); // % littéral, pas un joker
+        assert_eq!(find("objet:%").await, ["Rappel 100% sûr"]);
+        assert_eq!(find("à:me@x.fr de:bob").await, ["Photos"]);
+        assert_eq!(find("non-lu").await.len(), 3);
+        assert_eq!(find("suivi").await.len(), 0);
+        assert!(find("de:zzz").await.is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn search_covers_every_folder_except_trash_and_spam() {
+        use envelope_core::thread::{list_threads, ThreadQuery};
+        let (pool, inbox) = setup().await;
+        let dir = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let mut folders = vec![("INBOX", inbox)];
+        for (path, role) in [
+            ("Archive", Some("archive")),
+            ("Trash", Some("trash")),
+            ("Junk", Some("junk")),
+            ("Clients", None),
+        ] {
+            let id = sqlx::query(
+                "INSERT INTO folders (account_id,path,name,role) VALUES ('a',?1,?1,?2)",
+            )
+            .bind(path)
+            .bind(role)
+            .execute(&pool)
+            .await
+            .unwrap()
+            .last_insert_rowid();
+            folders.push((path, id));
+        }
+        for (i, (path, id)) in folders.iter().enumerate() {
+            let raw = format!("From: Zoé <z@x.fr>\r\nTo: a@x.fr\r\nSubject: Rapport {path}\r\nDate: Mon, 2 Mar 2026 10:00:00 +0000\r\nMessage-ID: <f{i}@x>\r\n\r\nbudget annuel\r\n");
+            let loc = MessageLoc {
+                account_id: "a",
+                folder_id: *id,
+                uid: 1,
+                size: None,
+            };
+            store(
+                &pool,
+                &dir,
+                loc,
+                Flags::default(),
+                parse(raw.as_bytes(), None).unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+        let find = |q: &str| {
+            let (pool, q) = (pool.clone(), q.to_string());
+            async move {
+                let mut r: Vec<(String, Option<String>)> = list_threads(
+                    &pool,
+                    &ThreadQuery {
+                        query: Some(q),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|t| (t.subject, t.folder_name))
+                .collect();
+                r.sort();
+                r
+            }
+        };
+        let names = |r: Vec<(String, Option<String>)>| {
+            r.into_iter().filter_map(|(_, f)| f).collect::<Vec<_>>()
+        };
+        // Par défaut : tout sauf corbeille et spam, quel que soit le dossier d'où l'on cherche.
+        assert_eq!(names(find("budget").await), ["Archive", "Clients", "INBOX"]);
+        assert_eq!(names(find("dans:corbeille budget").await), ["Trash"]);
+        assert_eq!(names(find("dans:spam").await), ["Junk"]);
+        assert_eq!(names(find("dans:archives").await), ["Archive"]);
+        assert_eq!(names(find("dans:clients").await), ["Clients"]);
+        assert_eq!(names(find("dans:tout budget").await).len(), 5);
+        assert_eq!(
+            names(find("dans:archives dans:clients").await),
+            ["Archive", "Clients"]
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn list_unsubscribe_headers_are_parsed() {
         let raw = b"From: News <n@lists.example.com>\r\nTo: me@example.com\r\nSubject: Hi\r\n\

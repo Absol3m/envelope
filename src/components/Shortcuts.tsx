@@ -7,7 +7,7 @@ import { keys, SETTINGS_LABEL } from "@/lib/platform";
 import { IconButton, Kbd } from "./ui/primitives";
 
 const SHORTCUTS: { group: string; items: [string[], string][] }[] = [
-  { group: "Navigation", items: [[["J"], "Conversation suivante"], [["⇧", "clic"], "Sélectionner une plage"], [[...keys("mod"), "clic"], "Ajouter à la sélection"], [keys("mod+a"), "Tout sélectionner"], [["K"], "Conversation précédente"], [["/"], "Rechercher"], [keys("mod+k"), "Palette de commandes"], [["1", "–", "4"], "Onglets Smart Inbox"], [["Échap"], "Fermer / désélectionner"]] },
+  { group: "Navigation", items: [[["J"], "Conversation suivante"], [["⇧", "clic"], "Sélectionner une plage"], [[...keys("mod"), "clic"], "Ajouter à la sélection"], [keys("mod+a"), "Tout sélectionner"], [["K"], "Conversation précédente"], [["/"], "Rechercher (opérateurs : de: à: objet: avant: pj)"], [keys("mod+k"), "Palette de commandes"], [["1", "–", "4"], "Onglets Smart Inbox"], [["Échap"], "Fermer / désélectionner"]] },
   { group: "Actions", items: [...DESTINATION_IDS.map((d): [string[], string] => [[DESTINATIONS[d].key], DESTINATIONS[d].label]), [["⌫"], "Supprimer définitivement (corbeille et spam)"], [["S"], "Suivre / ne plus suivre"], [["U"], "Marquer lu / non lu"], [["Z"], "Annuler l'envoi"]] },
   { group: "Aller à…", items: [...NAV_MAILBOXES, ...NAV_SMART].filter((i) => i.go).map((i): [string[], string] => [["G", (i.go as string).toUpperCase()], i.label]) },
   { group: "Application", items: [[keys("mod+,"), SETTINGS_LABEL], [["?"], "Cette aide"]] },

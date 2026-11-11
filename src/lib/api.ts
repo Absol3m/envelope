@@ -37,6 +37,10 @@ export interface ThreadSummary {
   fromName: string | null;
   fromAddr: string | null;
   participants: string | null;
+  /** Dossier du dernier message : les résultats de recherche couvrent tous les dossiers. */
+  folderId: number | null;
+  folderName: string | null;
+  folderRole: string | null;
 }
 export interface Addr {
   name: string | null;

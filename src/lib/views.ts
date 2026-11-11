@@ -67,9 +67,22 @@ export const DESTINATION_IDS = Object.keys(DESTINATIONS) as Destination[];
 /** Destinations proposées depuis cette vue : jamais la vue courante ; « remettre dans la boîte de réception » seulement depuis archives, spam et corbeille. */
 export function destinationsFor(view: View): Destination[] {
   const here = view.kind === "role" ? view.role : null;
-  const restorable = here === "archive" || here === "junk" || here === "trash";
-  return DESTINATION_IDS.filter((d) => d !== here && (d !== "inbox" || restorable));
+  let list = DESTINATIONS_BY_PLACE.get(here);
+  if (!list) {
+    const restorable = here === "archive" || here === "junk" || here === "trash";
+    list = DESTINATION_IDS.filter((d) => d !== here && (d !== "inbox" || restorable));
+    DESTINATIONS_BY_PLACE.set(here, list);
+  }
+  return list; // même tableau d'un appel à l'autre : les lignes de la liste restent mémoïsées
 }
+const DESTINATIONS_BY_PLACE = new Map<Role | null, Destination[]>();
+
+/** Où se trouve une conversation, d'après son dernier message (résultats de recherche : tous dossiers confondus). */
+export function placeOf(t: { folderId: number | null; folderName: string | null; folderRole: string | null }): View | null {
+  if (t.folderRole && Object.hasOwn(ROLE_SET, t.folderRole)) return { kind: "role", role: t.folderRole as Role };
+  return t.folderId !== null ? { kind: "folder", folderId: t.folderId, name: t.folderName ?? "" } : null;
+}
+const ROLE_SET: Record<Role, true> = { inbox: true, sent: true, drafts: true, archive: true, junk: true, trash: true };
 
 /** Type MIME du glisser-déposer d'une conversation vers un dossier de la barre latérale. */
 export const DRAG_TYPE = "application/x-envelope-thread";

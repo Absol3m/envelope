@@ -23,13 +23,7 @@ pub async fn suggest(
     if q.is_empty() {
         return Ok(vec![]);
     }
-    // `\` échappe % et _ saisis par l'utilisateur.
-    let like = format!(
-        "%{}%",
-        q.replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_")
-    );
+    let like = crate::search::like_contains(q);
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT LOWER(address) AS address, MAX(name) AS name FROM ( \
            SELECT from_addr AS address, from_name AS name FROM messages \

@@ -112,3 +112,233 @@ pub async fn seed_inbox(db_path: &Path, email: &str) -> Result<usize> {
     let _ = session.logout().await;
     Ok(SEEDS.len())
 }
+
+// ───────────── Base de test volumineuse ─────────────
+
+/// Générateur pseudo-aléatoire déterministe (xorshift) : mêmes données à chaque exécution.
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+}
+
+const WORDS: &[&str] = &[
+    "budget",
+    "projet",
+    "réunion",
+    "client",
+    "facture",
+    "contrat",
+    "livraison",
+    "équipe",
+    "planning",
+    "version",
+    "serveur",
+    "mise",
+    "production",
+    "rapport",
+    "demande",
+    "validation",
+    "retour",
+    "devis",
+    "atelier",
+    "migration",
+    "sécurité",
+    "formation",
+    "support",
+    "incident",
+    "maintenance",
+    "commande",
+    "paiement",
+    "agenda",
+    "objectif",
+    "résultat",
+    "analyse",
+    "proposition",
+    "document",
+    "partage",
+    "accès",
+    "compte",
+    "mot",
+    "passe",
+    "installation",
+    "mise à jour",
+    "tarif",
+    "abonnement",
+];
+const FIRST: &[&str] = &[
+    "Alice", "Bruno", "Camille", "David", "Emma", "Farid", "Gaëlle", "Hugo", "Inès", "Julien",
+    "Karim", "Léa", "Marc", "Nina", "Omar", "Paul",
+];
+const LAST: &[&str] = &[
+    "Martin", "Bernard", "Dubois", "Thomas", "Robert", "Petit", "Durand", "Leroy", "Moreau",
+    "Simon", "Laurent", "Lefebvre",
+];
+
+/// Phrase de `min` à `min + spread - 1` mots.
+fn sentence(rng: &mut Rng, min: usize, spread: usize) -> String {
+    let words = min + rng.below(spread.max(1));
+    let s: Vec<&str> = (0..words).map(|_| WORDS[rng.below(WORDS.len())]).collect();
+    let out = s.join(" ") + ".";
+    let mut chars = out.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
+}
+
+/// Ouvre (et migre) la base de test `path`.
+pub async fn open_pool(path: &Path) -> Result<SqlitePool> {
+    crate::db::init(path).await
+}
+
+/// Remplit la base `db_path` de `count` messages réalistes (corps de 1 à 6 Ko, 40 % en HTML de
+/// 5 à 30 Ko, 30 % en réponses dans des conversations, dates sur 3 ans) pour mesurer la mémoire et
+/// les temps de requête. Crée un compte fictif `bench@example.com` ; rien n'est envoyé ni lu en IMAP.
+pub async fn seed_local(db_path: &Path, count: usize) -> Result<()> {
+    use crate::mail::ingest::{self, Flags, MessageLoc, ParsedMessage};
+    use chrono::{Duration as Dur, SecondsFormat, Utc};
+    use envelope_core::addr::{self, Addr};
+    use std::collections::HashSet;
+
+    let pool = crate::db::init(db_path).await?;
+    sqlx::query("INSERT OR IGNORE INTO accounts (id, email, username, imap_host, smtp_host) VALUES ('bench','bench@example.com','bench','invalid.invalid','invalid.invalid')")
+        .execute(&pool).await?;
+    let mut folders = Vec::new();
+    for (path, role) in [
+        ("INBOX", "inbox"),
+        ("Sent", "sent"),
+        ("Archive", "archive"),
+        ("Trash", "trash"),
+    ] {
+        sqlx::query("INSERT OR IGNORE INTO folders (account_id, path, name, role) VALUES ('bench', ?1, ?1, ?2)")
+            .bind(path).bind(role).execute(&pool).await?;
+        folders.push(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM folders WHERE account_id = 'bench' AND path = ?",
+            )
+            .bind(path)
+            .fetch_one(&pool)
+            .await?,
+        );
+    }
+    let dir = std::env::temp_dir().join("envelope-bench-attachments");
+    let me = Addr {
+        name: Some("Bench".into()),
+        address: "bench@example.com".into(),
+    };
+    let now = Utc::now();
+    let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+    let mut touched = HashSet::new();
+    let mut last_ids: Vec<(String, String)> = Vec::new(); // (message-id, sujet) récents pour les réponses
+    let mut uids = [0i64; 4];
+
+    for i in 0..count {
+        let sender = format!(
+            "{} {}",
+            FIRST[rng.below(FIRST.len())],
+            LAST[rng.below(LAST.len())]
+        );
+        let addr = format!(
+            "{}.{}@example.com",
+            sender.split(' ').next().unwrap().to_lowercase(),
+            sender.split(' ').nth(1).unwrap().to_lowercase()
+        );
+        let reply = !last_ids.is_empty() && rng.below(100) < 30;
+        let (subject, parent) = if reply {
+            let (id, subj) = last_ids[rng.below(last_ids.len())].clone();
+            (format!("Re: {}", subj.trim_start_matches("Re: ")), Some(id))
+        } else {
+            (sentence(&mut rng, 3, 4), None)
+        };
+        let message_id = format!("bench-{i}@example.com");
+        let paragraphs = 1 + rng.below(5);
+        let text: String = (0..paragraphs)
+            .map(|_| sentence(&mut rng, 20, 60))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let html = (rng.below(100) < 40).then(|| {
+            let blocks = 8 + rng.below(40);
+            let body: String = (0..blocks)
+                .map(|_| format!("<tr><td style=\"padding:8px 16px;font:14px Arial,sans-serif;color:#333\"><p>{}</p><a href=\"https://example.com/l/{}\">Lire la suite</a></td></tr>", sentence(&mut rng, 25, 40), rng.below(10_000)))
+                .collect();
+            format!("<html><body><table width=\"600\" style=\"margin:0 auto\">{body}</table></body></html>")
+        });
+        let ts = now - Dur::minutes(rng.below(3 * 365 * 24 * 60) as i64);
+        let slot = match rng.below(100) {
+            0..=69 => 0,
+            70..=79 => 1,
+            80..=94 => 2,
+            _ => 3,
+        };
+        uids[slot] += 1;
+        let from_me = slot == 1;
+        let parsed = ParsedMessage {
+            message_id: Some(message_id.clone()),
+            in_reply_to: parent.clone(),
+            references: parent.into_iter().collect(),
+            subject: subject.clone(),
+            from_name: Some(if from_me {
+                "Bench".into()
+            } else {
+                sender.clone()
+            }),
+            from_addr: if from_me {
+                me.address.clone()
+            } else {
+                addr.clone()
+            },
+            to: addr::encode(&[if from_me {
+                Addr {
+                    name: Some(sender),
+                    address: addr,
+                }
+            } else {
+                me.clone()
+            }]),
+            cc: "[]".into(),
+            bcc: "[]".into(),
+            date: ts.to_rfc3339_opts(SecondsFormat::Secs, true),
+            snippet: text.chars().take(200).collect(),
+            body_text: Some(text),
+            body_html: html,
+            attachments: vec![],
+            unsubscribe: None,
+        };
+        let tid = ingest::store(
+            &pool,
+            &dir,
+            MessageLoc {
+                account_id: "bench",
+                folder_id: folders[slot],
+                uid: uids[slot],
+                size: None,
+            },
+            Flags {
+                seen: rng.below(100) >= 20,
+                flagged: rng.below(100) < 3,
+            },
+            parsed,
+        )
+        .await?;
+        touched.insert(tid);
+        if last_ids.len() < 200 {
+            last_ids.push((message_id, subject));
+        } else {
+            let k = rng.below(200);
+            last_ids[k] = (message_id, subject);
+        }
+    }
+    ingest::refresh_threads(&pool, &touched).await?;
+    for f in &folders {
+        ingest::refresh_folder_unread(&pool, *f).await?;
+    }
+    Ok(())
+}

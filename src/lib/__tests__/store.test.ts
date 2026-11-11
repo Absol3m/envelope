@@ -181,6 +181,16 @@ describe("store (boîte de démonstration)", () => {
     expect(subjects).toHaveLength(2);
   });
 
+  it("la recherche couvre tous les dossiers, quelle que soit la vue affichée", async () => {
+    await boot(); // vue : boîte de réception
+    useMail.getState().setQuery("atelier design"); // dans les archives
+    await tick(900);
+    const s = useMail.getState();
+    const found = s.threads.find((t) => t.subject.startsWith("Compte rendu"));
+    expect(found?.folderRole).toBe("archive");
+    expect(s.view).toEqual({ kind: "role", role: "inbox" }); // la vue ne change pas, la recherche ne la respecte pas
+  });
+
   it("Smart Inbox : l'onglet filtre la liste", async () => {
     await boot();
     useMail.getState().setCategory("newsletters");

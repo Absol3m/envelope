@@ -1,16 +1,15 @@
-import { ChevronDown, ChevronUp, File, FileArchive, FileImage, FileText, Forward, ImageOff, Mail, MailOpen, Paperclip, Reply, ReplyAll, Star, Trash2 } from "lucide-react";
+import { ChevronDown, File, FileArchive, FileImage, FileText, ImageOff, Mail, MailOpen, Paperclip, Star, Trash2 } from "lucide-react";
 import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Account, DetailAttachment, DetailMessage, ThreadDetail, ThreadSummary } from "@/lib/api";
 import { displayName, fileSize, fullDate, listDate } from "@/lib/format";
 import { prepareHtml, trustedSenders, trustSender } from "@/lib/sanitize";
-import { useMail, visibleThreads } from "@/lib/store";
+import { actionView, useMail } from "@/lib/store";
 import { cn, openExternal } from "@/lib/utils";
-import { useComposer } from "@/lib/composer";
-import { Avatar, IconButton, Kbd } from "./ui/primitives";
+import { Avatar, Kbd } from "./ui/primitives";
 import { BellOff } from "lucide-react";
-import { dragRegion, shortcut, suppressWebviewContextMenu } from "@/lib/platform";
+import { shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 
 // ───────────── Corps du message ─────────────
 
@@ -313,10 +312,11 @@ function BatchButton({ icon: Icon, label, kbd, danger, onClick }: { icon: Compon
 
 /** Plusieurs conversations sélectionnées : les actions s'appliquent à tout le lot. */
 function MultiSelection({ ids }: { ids: number[] }) {
-  const { view, threads, moveTo, deleteForever, toggleStar, toggleRead, clearChecked } = useMail(
-    useShallow((s) => ({ view: s.view, threads: s.threads, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, clearChecked: s.clearChecked })),
+  const { view, query, threads, moveTo, deleteForever, toggleStar, toggleRead, clearChecked } = useMail(
+    useShallow((s) => ({ view: s.view, query: s.query, threads: s.threads, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, clearChecked: s.clearChecked })),
   );
   const picked = threads.filter((t) => ids.includes(t.id));
+  const place = actionView({ view, query, threads }, ids);
   const anyUnread = picked.some((t) => t.unreadCount > 0);
   const anyUnstarred = picked.some((t) => !t.isStarred);
   return (
@@ -324,8 +324,8 @@ function MultiSelection({ ids }: { ids: number[] }) {
       <span className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-accent-soft text-[24px] font-semibold tnum text-accent">{picked.length}</span>
       <p className="text-[15px] font-semibold">{picked.length} conversations sélectionnées</p>
       <div className="mt-6 flex max-w-[560px] flex-wrap justify-center gap-2">
-        {destinationsFor(view).map((d) => <BatchButton key={d} icon={DESTINATIONS[d].icon} label={DESTINATIONS[d].label} kbd={DESTINATIONS[d].key} onClick={() => moveTo(ids, d)} />)}
-        {isPurgeView(view) && <BatchButton icon={Trash2} label="Supprimer définitivement" kbd="⌫" danger onClick={() => void deleteForever(ids)} />}
+        {destinationsFor(place).map((d) => <BatchButton key={d} icon={DESTINATIONS[d].icon} label={DESTINATIONS[d].label} kbd={DESTINATIONS[d].key} onClick={() => moveTo(ids, d)} />)}
+        {isPurgeView(place) && <BatchButton icon={Trash2} label="Supprimer définitivement" kbd="⌫" danger onClick={() => void deleteForever(ids)} />}
         <BatchButton icon={anyUnread ? MailOpen : Mail} label={anyUnread ? "Marquer comme lues" : "Marquer comme non lues"} kbd="U" onClick={() => toggleRead(ids)} />
         <BatchButton icon={Star} label={anyUnstarred ? "Suivre" : "Ne plus suivre"} kbd="S" onClick={() => toggleStar(ids)} />
       </div>
@@ -351,42 +351,16 @@ function EmptyReader() {
 }
 
 export function Reader() {
-  const { selectedId, checked, details, threads, accounts, hiddenIds, category, view, query, moveTo, deleteForever, toggleStar, toggleRead, move } = useMail(
-    useShallow((s) => ({ selectedId: s.selectedId, checked: s.checked, details: s.details, threads: s.threads, accounts: s.accounts, hiddenIds: s.hiddenIds, category: s.category, view: s.view, query: s.query, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move })),
+  const { selectedId, checked, details, threads, accounts } = useMail(
+    useShallow((s) => ({ selectedId: s.selectedId, checked: s.checked, details: s.details, threads: s.threads, accounts: s.accounts })),
   );
   const summary = threads.find((t) => t.id === selectedId);
   const d = selectedId === null ? undefined : details[selectedId];
-  const list = useMemo(() => visibleThreads({ threads, hiddenIds, category, view, query }), [threads, hiddenIds, category, view, query]);
-  const index = list.findIndex((t) => t.id === selectedId);
-  const unread = (summary?.unreadCount ?? 0) > 0;
   const account = accounts.find((a) => a.id === (d?.accountId ?? summary?.accountId));
   if (checked.size > 1) return <MultiSelection ids={[...checked]} />;
 
   return (
     <main className="flex h-full min-h-0 min-w-0 flex-col bg-bg-subtle" aria-label="Lecture">
-      <div {...dragRegion} className="flex h-[46px] shrink-0 items-center gap-0.5 border-b border-border bg-bg/80 px-3 backdrop-blur-md">
-        {summary ? (
-          <>
-            <IconButton label="Répondre" kbd="R" onClick={() => useComposer.getState().respond("reply")}><Reply size={16} /></IconButton>
-            <IconButton label="Répondre à tous" kbd="A" onClick={() => useComposer.getState().respond("replyAll")}><ReplyAll size={16} /></IconButton>
-            <IconButton label="Transférer" kbd="F" onClick={() => useComposer.getState().respond("forward")}><Forward size={16} /></IconButton>
-            {destinationsFor(view).map((d) => {
-              const { label, icon: Icon, key } = DESTINATIONS[d];
-              return <IconButton key={d} label={label} kbd={key} onClick={() => moveTo(summary.id, d)}><Icon size={16} /></IconButton>;
-            })}
-            {isPurgeView(view) && <IconButton label="Supprimer définitivement" kbd="⌫" onClick={() => void deleteForever(summary.id)}><Trash2 size={16} className="text-danger" /></IconButton>}
-            <IconButton label={summary.isStarred ? "Ne plus suivre" : "Suivre"} kbd="S" onClick={() => toggleStar(summary.id)}><Star size={16} className={summary.isStarred ? "fill-star text-star" : ""} /></IconButton>
-            <IconButton label={unread ? "Marquer comme lu" : "Marquer comme non lu"} kbd="U" onClick={() => toggleRead(summary.id)}>{unread ? <MailOpen size={16} /> : <Mail size={16} />}</IconButton>
-            <span {...dragRegion} className="flex-1" />
-            {index >= 0 && <span className="tnum mr-1 text-[12px] text-muted">{index + 1} sur {list.length}</span>}
-            <IconButton label="Précédente" kbd="K" disabled={index <= 0} onClick={() => move(-1)}><ChevronUp size={16} /></IconButton>
-            <IconButton label="Suivante" kbd="J" disabled={index < 0 || index >= list.length - 1} onClick={() => move(1)}><ChevronDown size={16} /></IconButton>
-          </>
-        ) : (
-          <span {...dragRegion} className="flex-1" />
-        )}
-      </div>
-
       <div className="selectable min-h-0 flex-1 overflow-y-auto" key={selectedId ?? "none"}>
         {selectedId === null ? <EmptyReader /> : d ? <ThreadView d={d} account={account} /> : <Skeleton summary={summary} />}
       </div>

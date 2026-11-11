@@ -155,6 +155,9 @@ function summarize(t: MockThread): ThreadSummary {
     fromName: last.fromName,
     fromAddr: last.fromAddr,
     participants: names.slice(0, 4).join(", "),
+    folderId: folderId(t.accountId, t.role),
+    folderName: ROLE_NAMES[t.role],
+    folderRole: t.role,
   };
 }
 const htmlToText = (html: string) => html.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ");
@@ -183,6 +186,7 @@ function listThreads(q: ThreadQuery): ThreadSummary[] {
     if (q.unreadOnly && !t.messages.some((m) => !m.isRead)) return false;
     if (q.withAttachments && t.attachments.length === 0) return false;
     if (words.length) {
+      if (t.role === "trash" || t.role === "junk") return false; // la recherche ignore corbeille et spam par défaut
       const hay = norm(t.messages.map((m) => `${m.subject} ${m.fromName} ${m.fromAddr} ${m.bodyText ?? htmlToText(m.bodyHtml ?? "")}`).join(" "));
       if (!words.every((w) => hay.includes(w))) return false;
     }

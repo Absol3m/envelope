@@ -4,7 +4,7 @@ import { pref } from "./pref";
 import { demoBackend } from "./mock";
 import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
-import { DESTINATIONS, isInboxView, isPurgeView, type Destination, type View } from "./views";
+import { DESTINATIONS, isInboxView, isPurgeView, placeOf, type Destination, type View } from "./views";
 
 export type { View };
 
@@ -108,12 +108,21 @@ let markReadTimer: ReturnType<typeof setTimeout> | undefined;
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let loadSeq = 0; // une réponse tardive d'une ancienne requête ne doit pas écraser la liste actuelle
 /** Dossier d'où part une conversation : celui de la vue affichée, à défaut (vues transverses) la boîte de réception. */
-function sourceFolder(s: Pick<State, "view" | "folders">, thread: ThreadSummary) {
+function sourceFolder(s: Pick<State, "view" | "folders" | "query">, thread: ThreadSummary) {
+  // Résultats de recherche : la conversation vient du dossier où elle se trouve, pas de la vue affichée.
+  if (s.query.trim() && thread.folderId !== null) return s.folders.find((f) => f.id === thread.folderId);
   const v = s.view;
   const role = v.kind === "role" ? v.role : "inbox";
   return s.folders.find((f) => (v.kind === "folder" ? f.id === v.folderId : f.accountId === thread.accountId && f.role === role));
 }
 
+
+/** Vue qui détermine les actions possibles sur ces conversations : en recherche, le dossier de la première. */
+export function actionView(s: Pick<State, "view" | "query" | "threads">, ids: readonly number[]): View {
+  if (!s.query.trim()) return s.view;
+  const t = s.threads.find((x) => x.id === ids[0]);
+  return (t && placeOf(t)) ?? s.view;
+}
 
 /** Navigation remise à zéro : état initial et entrée en démo partagent ces valeurs. */
 const NAV_RESET = { accountFilter: null, view: { kind: "role", role: "inbox" } as View, category: "all" as Category, query: "", selectedId: null, checked: NO_IDS, anchorId: null as number | null, hiddenIds: new Set<number>() as ReadonlySet<number> };
@@ -121,7 +130,8 @@ const NAV_RESET = { accountFilter: null, view: { kind: "role", role: "inbox" } a
 function buildQuery(s: Pick<State, "view" | "accountFilter" | "query">): ThreadQuery {
   const q: ThreadQuery = { limit: PAGE };
   if (s.accountFilter) q.accountId = s.accountFilter;
-  if (s.query.trim()) q.query = s.query.trim();
+  // Une recherche couvre tous les dossiers (hors corbeille et spam, sauf `dans:`), quelle que soit la vue affichée.
+  if (s.query.trim()) return { ...q, query: s.query.trim() };
   const v = s.view;
   switch (v.kind) {
     case "role": q.role = v.role; break;
@@ -428,7 +438,7 @@ export const useMail = create<State>((set, get) => {
     },
 
     async deleteForever(ids) {
-      if (!isPurgeView(get().view)) return;
+      if (!toIds(ids).some((id) => isPurgeView(actionView(get(), [id])))) return;
       const count = (list: readonly number[]) => list.filter((id) => get().threads.some((t) => t.id === id)).length;
       const n = count(toIds(ids));
       if (n === 0) return;
@@ -439,7 +449,7 @@ export const useMail = create<State>((set, get) => {
       const deletes = toIds(ids).flatMap((id) => {
         const thread = s.threads.find((t) => t.id === id);
         const from = thread && sourceFolder(s, thread);
-        return from && isPurgeView(s.view) ? [{ id, from: from.id }] : [];
+        return from && isPurgeView(actionView(s, [id])) ? [{ id, from: from.id }] : [];
       });
       if (deletes.length === 0) return;
       hideAndAdvance(deletes.map((d) => d.id));

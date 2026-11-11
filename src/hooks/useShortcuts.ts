@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useComposer } from "@/lib/composer";
-import { selectionIds, useMail } from "@/lib/store";
+import { actionView, selectionIds, useMail } from "@/lib/store";
 import { DESTINATIONS, destinationsFor, GO_VIEWS, isInboxView, isPurgeView } from "@/lib/views";
 import { isEditable } from "@/lib/platform";
 import type { Category } from "@/lib/categories";
@@ -51,7 +51,7 @@ export function useShortcuts() {
       switch (e.key) {
         case "j": case "ArrowDown": e.preventDefault(); st.move(1); break;
         case "k": case "ArrowUp": e.preventDefault(); st.move(-1); break;
-        case "Delete": case "Backspace": if (ids.length > 0 && isPurgeView(st.view)) { e.preventDefault(); void st.deleteForever(ids); } break;
+        case "Delete": case "Backspace": if (ids.length > 0 && isPurgeView(actionView(st, ids))) { e.preventDefault(); void st.deleteForever(ids); } break;
         case "s": if (ids.length > 0) st.toggleStar(ids); break;
         case "u": if (ids.length > 0) st.toggleRead(ids); break;
         case "c": e.preventDefault(); useComposer.getState().compose(); break;
@@ -67,7 +67,7 @@ export function useShortcuts() {
           goTimer = setTimeout(() => (goPending = false), 900);
           break;
         default: {
-          const to = destinationsFor(st.view).find((d) => DESTINATIONS[d].key === e.key.toUpperCase());
+          const to = destinationsFor(actionView(st, ids)).find((d) => DESTINATIONS[d].key === e.key.toUpperCase());
           if (to) {
             if (ids.length > 0) st.moveTo(ids, to);
           } else if (isInboxView(st.view) && /^[1-4]$/.test(e.key)) st.setCategory(CATEGORIES[Number(e.key) - 1]);

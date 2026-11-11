@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::addr::{self, Addr};
-use crate::search::build_fts_query;
+use crate::search::{parse_search, push_message_filters};
 use crate::Result;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -123,6 +123,9 @@ pub struct ThreadSummary {
     pub from_name: Option<String>,
     pub from_addr: Option<String>,
     pub participants: Option<String>,
+    /// Dossier du dernier message (nom et rôle) : utile dans les résultats de recherche, qui couvrent tous les dossiers.
+    pub folder_name: Option<String>,
+    pub folder_role: Option<String>,
 }
 
 /// Filtres de la liste. `folder_id` (un dossier) et `role` (ex. `inbox`, tous comptes confondus)
@@ -148,7 +151,9 @@ const SUMMARY_SELECT: &str = "SELECT t.id, t.account_id, t.subject, t.snippet, t
     (SELECT from_name FROM messages WHERE thread_id = t.id ORDER BY date DESC, id DESC LIMIT 1) AS from_name, \
     (SELECT from_addr FROM messages WHERE thread_id = t.id ORDER BY date DESC, id DESC LIMIT 1) AS from_addr, \
     (SELECT group_concat(n, ', ') FROM (SELECT DISTINCT COALESCE(NULLIF(from_name, ''), from_addr) AS n \
-        FROM messages WHERE thread_id = t.id ORDER BY date LIMIT 4)) AS participants \
+        FROM messages WHERE thread_id = t.id ORDER BY date LIMIT 4)) AS participants, \
+    (SELECT f.name FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = t.id ORDER BY m.date DESC, m.id DESC LIMIT 1) AS folder_name, \
+    (SELECT f.role FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = t.id ORDER BY m.date DESC, m.id DESC LIMIT 1) AS folder_role \
     FROM threads t WHERE 1 = 1";
 
 pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<ThreadSummary>> {
@@ -174,13 +179,14 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<Thre
     if q.with_attachments {
         qb.push(" AND EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.has_attachments = 1)");
     }
-    if let Some(text) = q.query.as_deref().filter(|t| !t.trim().is_empty()) {
-        let Some(fts) = build_fts_query(text) else {
+    if let Some(input) = q.query.as_deref().filter(|t| !t.trim().is_empty()) {
+        let spec = parse_search(input);
+        // Une conversation correspond si l'un de ses messages satisfait tous les critères.
+        qb.push(" AND t.id IN (SELECT m.thread_id FROM messages m WHERE m.thread_id IS NOT NULL");
+        if !push_message_filters(&mut qb, &spec) {
             return Ok(vec![]);
-        };
-        qb.push(" AND t.id IN (SELECT m.thread_id FROM messages m WHERE m.id IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ")
-            .push_bind(fts)
-            .push("))");
+        }
+        qb.push(")");
     }
     qb.push(" ORDER BY t.last_message_at DESC, t.id DESC LIMIT ")
         .push_bind(q.limit.unwrap_or(100).clamp(1, 500))

@@ -60,7 +60,7 @@ export function Sidebar() {
   const lastSync = accounts.map((a) => a.lastSyncAt).filter(Boolean).sort().pop() ?? null;
 
   return (
-    <aside className="flex h-full min-h-0 flex-col border-r border-border bg-sidebar">
+    <aside className="row-span-2 flex h-full min-h-0 flex-col border-r border-border bg-sidebar">
       {/* macOS : zone de glisser sous les feux tricolores en surimpression ; ailleurs, barre de titre native */}
       <div {...dragRegion} className={cn("shrink-0", isMac ? "h-[46px]" : "h-3")} />
 

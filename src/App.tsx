@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Reader } from "@/components/Reader";
 import { Sidebar } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 import { ThreadList } from "@/components/ThreadList";
 import { Toasts } from "@/components/Toasts";
 import { TooltipProvider } from "@/components/ui/primitives";
@@ -50,9 +51,10 @@ export default function App() {
       ) : (
         <div
           data-density={density}
-          className="grid h-full grid-cols-[232px_minmax(340px,420px)_minmax(0,1fr)] max-[1100px]:grid-cols-[60px_minmax(320px,380px)_minmax(0,1fr)]"
+          className="grid h-full grid-cols-[232px_minmax(340px,420px)_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] max-[1100px]:grid-cols-[60px_minmax(320px,380px)_minmax(0,1fr)]"
         >
           <Sidebar />
+          <TopBar />
           <ThreadList />
           <Reader />
         </div>

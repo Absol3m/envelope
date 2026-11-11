@@ -1,4 +1,4 @@
-import { Check, Inbox, Mail, MailOpen, Paperclip, Search, SearchX, Star, Trash2, X } from "lucide-react";
+import { Check, Inbox, Mail, MailOpen, Paperclip, SearchX, Star, Trash2 } from "lucide-react";
 import { startThreadDrag } from "@/lib/dragImage";
 import type { MouseEvent } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
@@ -7,10 +7,10 @@ import type { ThreadSummary } from "@/lib/api";
 import { categorize, CATEGORY_LABELS, type Category } from "@/lib/categories";
 import { displayName, groupLabel, listDate } from "@/lib/format";
 import { dragIds, useMail, visibleThreads } from "@/lib/store";
-import { DESTINATIONS, destinationsFor, isInboxView, isPurgeView, viewTitle, type Destination, type View } from "@/lib/views";
+import { DESTINATIONS, destinationsFor, isInboxView, isPurgeView, placeOf, viewTitle, type Destination, type View } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { dragRegion } from "@/lib/platform";
-import { Avatar, IconButton, Kbd } from "./ui/primitives";
+import { Avatar, IconButton } from "./ui/primitives";
 
 interface RowProps {
   t: ThreadSummary;
@@ -21,13 +21,15 @@ interface RowProps {
   onSelect(id: number, e: MouseEvent): void;
   destinations: Destination[];
   purge: boolean;
+  /** Résultat de recherche : affiche le dossier d'où vient la conversation. */
+  showFolder: boolean;
   onDelete(id: number): void;
   onMove(id: number, to: Destination): void;
   onStar(id: number): void;
   onToggleRead(id: number): void;
 }
 
-const Row = memo(function Row({ t, selected, compact, previews, checked, onSelect, destinations, purge, onDelete, onMove, onStar, onToggleRead }: RowProps) {
+const Row = memo(function Row({ t, selected, compact, previews, checked, onSelect, destinations, purge, showFolder, onDelete, onMove, onStar, onToggleRead }: RowProps) {
   const unread = t.unreadCount > 0;
   const active = selected || checked;
   const sender = displayName(t.fromName, t.fromAddr);
@@ -62,6 +64,7 @@ const Row = memo(function Row({ t, selected, compact, previews, checked, onSelec
           <span className={cn("truncate text-[13px]", unread ? "font-semibold text-fg" : "font-medium text-fg/85")}>{who}</span>
           {t.messageCount > 1 && <span className="tnum shrink-0 rounded bg-hover px-1 text-[10.5px] font-medium text-muted">{t.messageCount}</span>}
           <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted">
+            {showFolder && t.folderName && <span className="max-w-[90px] truncate rounded bg-hover px-1.5 py-px text-[10.5px] font-medium text-muted" title={`Dossier : ${t.folderName}`}>{t.folderName}</span>}
             {t.hasAttachments && <Paperclip size={12} className="text-faint" />}
             {t.isStarred && <Star size={12} className="fill-star text-star" />}
             <span className={cn("tnum", unread && "font-medium text-fg/80")}>{listDate(t.lastMessageAt)}</span>
@@ -120,7 +123,7 @@ function Empty({ search, view, category }: { search: string; view: View; categor
   const Icon = search ? SearchX : inboxZero ? Check : Inbox;
   const title = search ? `Aucun résultat pour « ${search} »` : inboxZero ? "Boîte de réception à zéro" : "Rien ici pour l'instant";
   const hint = search
-    ? "Essayez d'autres mots-clés : la recherche ignore les accents et accepte les débuts de mots."
+    ? "Essayez d'autres mots-clés : la recherche ignore les accents et accepte les débuts de mots. La recherche couvre tous les dossiers sauf corbeille et spam (dans:tout les inclut). Opérateurs : de:  à:  objet:  dans:  avant:  apres:  pj  non-lu  suivi"
     : inboxZero
       ? "Tout est traité. Profitez-en."
       : "Les conversations de cette vue apparaîtront ici.";
@@ -130,17 +133,16 @@ function Empty({ search, view, category }: { search: string; view: View; categor
         <Icon size={26} strokeWidth={1.6} />
       </span>
       <p className="text-[14px] font-semibold">{title}</p>
-      <p className="mt-1 max-w-[260px] text-[12.5px] text-muted">{hint}</p>
+      <p className="mt-1 max-w-[280px] text-[12.5px] text-muted">{hint}</p>
     </div>
   );
 }
 
 export function ThreadList() {
-  const { view, category, query, selectedId, density, previews, threadsLoading, hasMore, threads, hiddenIds, checked, toggleCheck, rangeCheck, setQuery, setCategory, loadMore, select, moveTo, deleteForever, emptyView, toggleStar, toggleRead } = useMail(
-    useShallow((s) => ({ view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, checked: s.checked, toggleCheck: s.toggleCheck, rangeCheck: s.rangeCheck, setQuery: s.setQuery, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, moveTo: s.moveTo, deleteForever: s.deleteForever, emptyView: s.emptyView, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
+  const { view, category, query, selectedId, density, previews, threadsLoading, hasMore, threads, hiddenIds, checked, toggleCheck, rangeCheck, setCategory, loadMore, select, moveTo, deleteForever, emptyView, toggleStar, toggleRead } = useMail(
+    useShallow((s) => ({ view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, checked: s.checked, toggleCheck: s.toggleCheck, rangeCheck: s.rangeCheck, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, moveTo: s.moveTo, deleteForever: s.deleteForever, emptyView: s.emptyView, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
   );
   const scroller = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   /** Clic : ouvre ; Maj+clic : plage ; Cmd/Ctrl+clic : ajoute ou retire. */
   const onRowClick = useCallback((id: number, e: MouseEvent) => {
@@ -148,6 +150,7 @@ export function ThreadList() {
     else if (e.metaKey || e.ctrlKey) toggleCheck(id);
     else select(id);
   }, [select, toggleCheck, rangeCheck]);
+  const searching = query.trim() !== "";
   const purge = isPurgeView(view);
   const destinations = useMemo(() => destinationsFor(view), [view]);
   const list = useMemo(() => visibleThreads({ threads, hiddenIds, category, view, query }), [threads, hiddenIds, category, view, query]);
@@ -192,17 +195,10 @@ export function ThreadList() {
     return () => io.disconnect();
   }, [hasMore, rows.length, loadMore]);
 
-  // « / » focalise la recherche (événement émis par le gestionnaire clavier global).
-  useEffect(() => {
-    const focus = () => searchRef.current?.focus();
-    window.addEventListener("envelope:focus-search", focus);
-    return () => window.removeEventListener("envelope:focus-search", focus);
-  }, []);
-
   const compact = density === "compact";
   return (
     <section className="flex h-full min-h-0 flex-col border-r border-border bg-bg-subtle" aria-label="Conversations">
-      <header {...dragRegion} className="shrink-0 px-4 pt-[14px]">
+      <header className="shrink-0 px-4 pt-3">
         <div {...dragRegion} className="flex h-[30px] items-baseline gap-2">
           <h1 {...dragRegion} className="pointer-events-none text-[17px] font-semibold tracking-tight">{query.trim() ? "Recherche" : viewTitle(view)}</h1>
           {list.length > 0 && <span {...dragRegion} className="tnum pointer-events-none text-[12px] text-faint">{list.length}</span>}
@@ -213,30 +209,6 @@ export function ThreadList() {
           )}
         </div>
 
-        <label className="mt-2.5 flex h-8 items-center gap-2 rounded-lg border border-border bg-bg px-2.5 text-muted transition-colors focus-within:border-accent/60 focus-within:ring-[3px] focus-within:ring-accent-soft">
-          <Search size={14} className="shrink-0" />
-          <input
-            ref={searchRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                setQuery("");
-                e.currentTarget.blur();
-              }
-            }}
-            placeholder="Rechercher dans les e-mails"
-            aria-label="Rechercher"
-            className="selectable min-w-0 flex-1 bg-transparent text-[13px] text-fg outline-none placeholder:text-faint"
-          />
-          {query ? (
-            <button aria-label="Effacer la recherche" onClick={() => setQuery("")} className="press rounded p-0.5 hover:bg-hover">
-              <X size={13} />
-            </button>
-          ) : (
-            <Kbd>/</Kbd>
-          )}
-        </label>
 
         {isInbox && (
           <div role="tablist" aria-label="Smart Inbox" className="-mx-1 mt-2.5 flex gap-0.5 overflow-x-auto pb-px">
@@ -273,7 +245,7 @@ export function ThreadList() {
                   {r.label}
                 </div>
               ) : (
-                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} checked={checked.has(r.t.id)} onSelect={onRowClick} destinations={destinations} purge={purge} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
+                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} checked={checked.has(r.t.id)} onSelect={onRowClick} destinations={searching ? destinationsFor(placeOf(r.t) ?? view) : destinations} purge={searching ? isPurgeView(placeOf(r.t) ?? view) : purge} showFolder={searching} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
               ),
             )}
             <div ref={sentinel} className="h-px" />

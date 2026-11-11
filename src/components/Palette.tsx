@@ -3,7 +3,7 @@ import { Bot, Forward, Inbox, Keyboard, Mail, MailOpen, Monitor, Moon, PenSquare
 import type { ComponentType, ReactNode } from "react";
 import { useState } from "react";
 import { useComposer } from "@/lib/composer";
-import { selectionIds, useMail } from "@/lib/store";
+import { actionView, selectionIds, useMail } from "@/lib/store";
 import { DESTINATIONS, destinationsFor, isPurgeView, NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
 import { Kbd } from "./ui/primitives";
 import { keys, SETTINGS_LABEL } from "@/lib/platform";
@@ -48,10 +48,10 @@ export function Palette() {
 
         {picked.length > 0 && (
           <Command.Group heading={many ? `${picked.length} conversations` : "Conversation"}>
-            {destinationsFor(s.view).map((d) => (
+            {destinationsFor(actionView(s, ids)).map((d) => (
               <Item key={d} icon={DESTINATIONS[d].icon} hint={[DESTINATIONS[d].key]} onSelect={run(() => s.moveTo(ids, d))}>{DESTINATIONS[d].label}</Item>
             ))}
-            {isPurgeView(s.view) && <Item icon={Trash2} hint={["⌫"]} onSelect={run(() => void s.deleteForever(ids))}>Supprimer définitivement</Item>}
+            {isPurgeView(actionView(s, ids)) && <Item icon={Trash2} hint={["⌫"]} onSelect={run(() => void s.deleteForever(ids))}>Supprimer définitivement</Item>}
             <Item icon={Star} hint={["S"]} onSelect={run(() => s.toggleStar(ids))}>{anyUnstarred ? "Suivre" : "Ne plus suivre"}</Item>
             <Item icon={anyUnread ? MailOpen : Mail} hint={["U"]} onSelect={run(() => s.toggleRead(ids))}>{anyUnread ? "Marquer comme lu" : "Marquer comme non lu"}</Item>
           </Command.Group>
