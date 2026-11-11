@@ -1,4 +1,4 @@
-//! Suggestions de destinataires : adresses déjà vues dans la base locale (expéditeurs et destinataires).
+//! Suggestions de destinataires : adresses déjà vues (expéditeurs et destinataires), tenues dans la table `contacts`.
 
 use sqlx::SqlitePool;
 
@@ -24,18 +24,12 @@ pub async fn suggest(
         return Ok(vec![]);
     }
     let like = crate::search::like_contains(q);
+    // Table `contacts` (migration 0020) : quelques milliers de lignes, jamais les messages.
     let rows: Vec<Row> = sqlx::query_as(
-        "SELECT LOWER(address) AS address, MAX(name) AS name FROM ( \
-           SELECT from_addr AS address, from_name AS name FROM messages \
-             WHERE (?1 IS NULL OR account_id = ?1) \
-           UNION ALL \
-           SELECT json_extract(j.value, '$.address'), json_extract(j.value, '$.name') \
-             FROM messages m, json_each(m.to_addrs) j WHERE (?1 IS NULL OR m.account_id = ?1) \
-           UNION ALL \
-           SELECT json_extract(j.value, '$.address'), json_extract(j.value, '$.name') \
-             FROM messages m, json_each(m.cc_addrs) j WHERE (?1 IS NULL OR m.account_id = ?1) \
-         ) WHERE address != '' AND LOWER(address) NOT IN (SELECT LOWER(email) FROM accounts) AND (address LIKE ?2 ESCAPE '\\' OR name LIKE ?2 ESCAPE '\\') \
-         GROUP BY LOWER(address) ORDER BY COUNT(*) DESC, address LIMIT ?3",
+        "SELECT address, MAX(name) AS name FROM contacts \
+         WHERE (?1 IS NULL OR account_id = ?1) AND address NOT IN (SELECT LOWER(email) FROM accounts) \
+           AND (address LIKE ?2 ESCAPE '\\' OR name LIKE ?2 ESCAPE '\\') \
+         GROUP BY address ORDER BY SUM(uses) DESC, address LIMIT ?3",
     )
     .bind(account_id)
     .bind(like)

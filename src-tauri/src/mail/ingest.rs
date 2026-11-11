@@ -1097,6 +1097,269 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
         );
     }
 
+    /// Insère un message minimal (le trigger du carnet d'adresses lit ses colonnes d'adresses).
+    async fn raw_message(
+        pool: &SqlitePool,
+        (account, folder, uid): (&str, i64, i64),
+        from: (&str, &str),
+        to: &str,
+        cc: &str,
+        date: &str,
+    ) {
+        sqlx::query("INSERT INTO messages (account_id, folder_id, uid, from_name, from_addr, to_addrs, cc_addrs, date) VALUES (?,?,?,?,?,?,?,?)")
+            .bind(account).bind(folder).bind(uid).bind(from.0).bind(from.1).bind(to).bind(cc).bind(date)
+            .execute(pool).await.unwrap();
+    }
+
+    async fn contacts_of(pool: &SqlitePool) -> Vec<(String, String, Option<String>, i64, String)> {
+        sqlx::query_as("SELECT account_id, address, name, uses, last_at FROM contacts ORDER BY account_id, address").fetch_all(pool).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn carnet_d_adresses_tenu_par_trigger() {
+        let (pool, folder) = setup().await;
+        let bob = r#"[{"name":"Bob","address":"BOB@x.fr"}]"#;
+        raw_message(
+            &pool,
+            ("a", folder, 1),
+            ("Zoe", "Zoe@x.fr"),
+            bob,
+            r#"[{"name":"","address":"cc@x.fr"}]"#,
+            "2026-01-01T00:00:00Z",
+        )
+        .await;
+        // Plus récent : nouveau nom pour Bob. Plus ancien (rapatriement à rebours) : ne l'écrase pas.
+        raw_message(
+            &pool,
+            ("a", folder, 2),
+            ("Zoe", "zoe@x.fr"),
+            r#"[{"name":"Robert","address":"bob@x.fr"}]"#,
+            "[]",
+            "2026-03-01T00:00:00Z",
+        )
+        .await;
+        raw_message(
+            &pool,
+            ("a", folder, 3),
+            ("", "zoe@x.fr"),
+            r#"[{"name":"Bobby","address":"bob@x.fr"}]"#,
+            "[]",
+            "2025-06-01T00:00:00Z",
+        )
+        .await;
+        let c = contacts_of(&pool).await;
+        let get = |addr: &str| {
+            c.iter()
+                .find(|r| r.1 == addr)
+                .unwrap_or_else(|| panic!("{addr} absent de {c:?}"))
+                .clone()
+        };
+        // Adresses en minuscules, comptées une fois par apparition.
+        assert_eq!(
+            (get("bob@x.fr").3, get("zoe@x.fr").3, get("cc@x.fr").3),
+            (3, 3, 1)
+        );
+        assert_eq!(
+            get("bob@x.fr").2.as_deref(),
+            Some("Robert"),
+            "le nom du message le plus récent l'emporte"
+        );
+        assert_eq!(get("bob@x.fr").4, "2026-03-01T00:00:00Z");
+        assert_eq!(get("cc@x.fr").2, None, "un nom vide n'est pas un nom");
+        assert_eq!(
+            get("zoe@x.fr").2.as_deref(),
+            Some("Zoe"),
+            "un nom vide ne remplace pas le nom connu"
+        );
+
+        // La suggestion s'appuie sur la table.
+        let found = envelope_core::contacts::suggest(&pool, Some("a"), "bo", 8)
+            .await
+            .unwrap();
+        assert_eq!(
+            found.iter().map(|a| a.address.as_str()).collect::<Vec<_>>(),
+            ["bob@x.fr"]
+        );
+
+        // Les messages supprimés ne retirent pas l'adresse du carnet.
+        sqlx::query("DELETE FROM messages")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(contacts_of(&pool).await.len(), c.len());
+    }
+
+    #[tokio::test]
+    async fn un_json_d_adresses_invalide_ne_bloque_pas_l_insertion() {
+        let (pool, folder) = setup().await;
+        raw_message(
+            &pool,
+            ("a", folder, 1),
+            ("Zoe", "zoe@x.fr"),
+            "pas du json",
+            "{{",
+            "2026-01-01T00:00:00Z",
+        )
+        .await;
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 1, "le message est bien enregistré");
+        assert_eq!(
+            contacts_of(&pool)
+                .await
+                .iter()
+                .map(|r| r.1.as_str())
+                .collect::<Vec<_>>(),
+            ["zoe@x.fr"],
+            "seul l'expéditeur est retenu"
+        );
+    }
+
+    #[tokio::test]
+    async fn carnet_cloisonne_par_compte_et_supprime_avec_lui() {
+        let (pool, folder) = setup().await;
+        sqlx::query("INSERT INTO accounts (id,email,username,imap_host,smtp_host) VALUES ('b','b@x.fr','b','i','s')").execute(&pool).await.unwrap();
+        let f2 = sqlx::query(
+            "INSERT INTO folders (account_id,path,name,role) VALUES ('b','INBOX','INBOX','inbox')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+        raw_message(
+            &pool,
+            ("a", folder, 1),
+            ("Zoe", "zoe@x.fr"),
+            "[]",
+            "[]",
+            "2026-01-01T00:00:00Z",
+        )
+        .await;
+        raw_message(
+            &pool,
+            ("b", f2, 1),
+            ("Yan", "yan@x.fr"),
+            "[]",
+            "[]",
+            "2026-01-01T00:00:00Z",
+        )
+        .await;
+        let names = |a: Option<&'static str>| {
+            let pool = pool.clone();
+            async move {
+                envelope_core::contacts::suggest(&pool, a, "@x.fr", 8)
+                    .await
+                    .unwrap()
+                    .len()
+            }
+        };
+        assert_eq!(
+            (
+                names(Some("a")).await,
+                names(Some("b")).await,
+                names(None).await
+            ),
+            (1, 1, 2)
+        );
+        sqlx::query("DELETE FROM accounts WHERE id = 'b'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            names(None).await,
+            1,
+            "le carnet d'un compte supprimé disparaît avec lui"
+        );
+    }
+
+    /// Un brouillon est ré-enregistré à chaque frappe : ses destinataires n'entrent pas dans le carnet, ni par le trigger
+    /// ni par la reprise de l'existant.
+    #[tokio::test]
+    async fn les_brouillons_ne_comptent_pas_dans_le_carnet() {
+        let (pool, inbox) = setup().await;
+        let drafts = sqlx::query("INSERT INTO folders (account_id,path,name,role) VALUES ('a','Drafts','Drafts','drafts')").execute(&pool).await.unwrap().last_insert_rowid();
+        let to = r#"[{"name":"Tapé","address":"efface@x.fr"}]"#;
+        raw_message(
+            &pool,
+            ("a", drafts, 1),
+            ("Moi", "a@x.fr"),
+            to,
+            "[]",
+            "2026-01-01T00:00:00Z",
+        )
+        .await;
+        raw_message(
+            &pool,
+            ("a", inbox, 1),
+            ("Zoe", "zoe@x.fr"),
+            "[]",
+            "[]",
+            "2026-01-02T00:00:00Z",
+        )
+        .await;
+        let addresses = |c: Vec<(String, String, Option<String>, i64, String)>| {
+            c.into_iter().map(|r| r.1).collect::<Vec<_>>()
+        };
+        assert_eq!(addresses(contacts_of(&pool).await), ["zoe@x.fr"]);
+        let migration = include_str!("../../migrations/0020_contacts.sql");
+        let backfill = migration
+            .split("-- BACKFILL-BEGIN")
+            .nth(1)
+            .and_then(|b| b.split("-- BACKFILL-END").next())
+            .expect("marqueurs BACKFILL absents");
+        sqlx::query("DELETE FROM contacts")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(backfill.to_string()))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(addresses(contacts_of(&pool).await), ["zoe@x.fr"]);
+    }
+
+    /// La reprise de l'existant (migration 0020) donne le même carnet que le trigger.
+    #[tokio::test]
+    async fn reprise_de_l_existant_equivalente_au_trigger() {
+        let (pool, folder) = setup().await;
+        let bob = r#"[{"name":"Bob","address":"bob@x.fr"},{"name":"","address":"Al@x.fr"}]"#;
+        for (uid, date) in [
+            (1, "2026-01-01T00:00:00Z"),
+            (2, "2026-02-01T00:00:00Z"),
+            (3, "2026-03-01T00:00:00Z"),
+        ] {
+            raw_message(
+                &pool,
+                ("a", folder, uid),
+                ("Zoe", "zoe@x.fr"),
+                bob,
+                r#"[{"address":"cc@x.fr"}]"#,
+                date,
+            )
+            .await;
+        }
+        let by_trigger = contacts_of(&pool).await;
+        let migration = include_str!("../../migrations/0020_contacts.sql");
+        let backfill = migration
+            .split("-- BACKFILL-BEGIN")
+            .nth(1)
+            .unwrap()
+            .split("-- BACKFILL-END")
+            .next()
+            .unwrap();
+        sqlx::query("DELETE FROM contacts")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(backfill.to_string()))
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(contacts_of(&pool).await, by_trigger);
+    }
+
     /// L'index plein texte suit les colonnes qu'il couvre (objet, expéditeur, texte) et seulement elles : un changement
     /// de drapeau, de dossier ou d'empreinte ne le touche pas, mais ne doit jamais le laisser incohérent.
     #[tokio::test]

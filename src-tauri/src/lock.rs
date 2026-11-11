@@ -292,7 +292,7 @@ impl Lock {
 }
 
 /// Efface toutes les données locales : comptes (et, en cascade, dossiers, messages, brouillons, programmés, alias),
-/// stockage local, modèles et réglages. Les e-mails restent sur les serveurs.
+/// carnet d'adresses, stockage local, modèles et réglages. Les e-mails restent sur les serveurs.
 pub async fn wipe(pool: &SqlitePool) -> Result<()> {
     let mut tx = pool.begin().await?;
     for sql in [
@@ -301,6 +301,7 @@ pub async fn wipe(pool: &SqlitePool) -> Result<()> {
         "DELETE FROM threads WHERE account_id = ?1",
         "DELETE FROM labels WHERE account_id = ?1",
         "DELETE FROM folders WHERE account_id = ?1",
+        "DELETE FROM contacts WHERE ?1 IS NOT NULL",
         "DELETE FROM templates WHERE ?1 IS NOT NULL",
         "DELETE FROM settings WHERE ?1 IS NOT NULL",
     ] {
@@ -593,6 +594,11 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
+        let carnet: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contacts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(carnet, 0);
         let modeles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM templates")
             .fetch_one(&pool)
             .await
