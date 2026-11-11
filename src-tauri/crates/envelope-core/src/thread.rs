@@ -123,9 +123,9 @@ pub struct ThreadSummary {
     pub from_name: Option<String>,
     pub from_addr: Option<String>,
     pub participants: Option<String>,
-    /// Dossier du dernier message (nom et rôle) : utile dans les résultats de recherche, qui couvrent tous les dossiers.
-    pub folder_name: Option<String>,
-    pub folder_role: Option<String>,
+    /// Dossier du dernier message : les résultats de recherche couvrent tous les dossiers, l'interface
+    /// en déduit le nom, le rôle et le compte à partir de sa liste de dossiers.
+    pub folder_id: Option<i64>,
 }
 
 /// Filtres de la liste. `folder_id` (un dossier) et `role` (ex. `inbox`, tous comptes confondus)
@@ -152,8 +152,7 @@ const SUMMARY_SELECT: &str = "SELECT t.id, t.account_id, t.subject, t.snippet, t
     (SELECT from_addr FROM messages WHERE thread_id = t.id ORDER BY date DESC, id DESC LIMIT 1) AS from_addr, \
     (SELECT group_concat(n, ', ') FROM (SELECT DISTINCT COALESCE(NULLIF(from_name, ''), from_addr) AS n \
         FROM messages WHERE thread_id = t.id ORDER BY date LIMIT 4)) AS participants, \
-    (SELECT f.name FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = t.id ORDER BY m.date DESC, m.id DESC LIMIT 1) AS folder_name, \
-    (SELECT f.role FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = t.id ORDER BY m.date DESC, m.id DESC LIMIT 1) AS folder_role \
+    (SELECT m.folder_id FROM messages m WHERE m.thread_id = t.id ORDER BY m.date DESC, m.id DESC LIMIT 1) AS folder_id \
     FROM threads t WHERE 1 = 1";
 
 pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<ThreadSummary>> {

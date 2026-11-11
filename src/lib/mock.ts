@@ -156,8 +156,6 @@ function summarize(t: MockThread): ThreadSummary {
     fromAddr: last.fromAddr,
     participants: names.slice(0, 4).join(", "),
     folderId: folderId(t.accountId, t.role),
-    folderName: ROLE_NAMES[t.role],
-    folderRole: t.role,
   };
 }
 const htmlToText = (html: string) => html.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ");
@@ -259,12 +257,10 @@ export const demoBackend: Backend = {
   setOAuthClient: () => Promise.reject(new Error("Mode démo : configuration désactivée.")),
   clearOAuthClient: () => Promise.resolve(),
   archiveLocal: () => Promise.reject(new Error("Mode démo : l'archivage local est indisponible.")),
-  importDefaultDir: () => Promise.resolve(null),
-  pickFolder: () => Promise.resolve(null),
-  pickSavePath: () => Promise.resolve(null),
-  exportFolder: () => Promise.reject(new Error("Mode démo : l'export est indisponible.")),
-  importScan: () => Promise.reject(new Error("Mode démo : l'import est indisponible.")),
+  importPick: () => Promise.resolve(null),
   importRun: () => Promise.reject(new Error("Mode démo : l'import est indisponible.")),
+  exportPick: () => Promise.resolve(null),
+  exportFolder: () => Promise.reject(new Error("Mode démo : l'export est indisponible.")),
   createLocalFolder: () => Promise.reject(new Error("Mode démo : les dossiers locaux sont indisponibles.")),
   renameLocalFolder: () => Promise.reject(new Error("Mode démo : les dossiers locaux sont indisponibles.")),
   deleteLocalFolder: () => Promise.reject(new Error("Mode démo : les dossiers locaux sont indisponibles.")),

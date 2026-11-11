@@ -21,15 +21,15 @@ interface RowProps {
   onSelect(id: number, e: MouseEvent): void;
   destinations: Destination[];
   purge: boolean;
-  /** Résultat de recherche : affiche le dossier d'où vient la conversation. */
-  showFolder: boolean;
+  /** Résultat de recherche : nom du dossier d'où vient la conversation. */
+  folderName?: string;
   onDelete(id: number): void;
   onMove(id: number, to: Destination): void;
   onStar(id: number): void;
   onToggleRead(id: number): void;
 }
 
-const Row = memo(function Row({ t, selected, compact, previews, checked, onSelect, destinations, purge, showFolder, onDelete, onMove, onStar, onToggleRead }: RowProps) {
+const Row = memo(function Row({ t, selected, compact, previews, checked, onSelect, destinations, purge, folderName, onDelete, onMove, onStar, onToggleRead }: RowProps) {
   const unread = t.unreadCount > 0;
   const active = selected || checked;
   const sender = displayName(t.fromName, t.fromAddr);
@@ -64,7 +64,7 @@ const Row = memo(function Row({ t, selected, compact, previews, checked, onSelec
           <span className={cn("truncate text-[13px]", unread ? "font-semibold text-fg" : "font-medium text-fg/85")}>{who}</span>
           {t.messageCount > 1 && <span className="tnum shrink-0 rounded bg-hover px-1 text-[10.5px] font-medium text-muted">{t.messageCount}</span>}
           <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted">
-            {showFolder && t.folderName && <span className="max-w-[90px] truncate rounded bg-hover px-1.5 py-px text-[10.5px] font-medium text-muted" title={`Dossier : ${t.folderName}`}>{t.folderName}</span>}
+            {folderName && <span className="max-w-[90px] truncate rounded bg-hover px-1.5 py-px text-[10.5px] font-medium text-muted" title={`Dossier : ${folderName}`}>{folderName}</span>}
             {t.hasAttachments && <Paperclip size={12} className="text-faint" />}
             {t.isStarred && <Star size={12} className="fill-star text-star" />}
             <span className={cn("tnum", unread && "font-medium text-fg/80")}>{listDate(t.lastMessageAt)}</span>
@@ -139,8 +139,8 @@ function Empty({ search, view, category }: { search: string; view: View; categor
 }
 
 export function ThreadList() {
-  const { view, category, query, selectedId, density, previews, threadsLoading, hasMore, threads, hiddenIds, checked, toggleCheck, rangeCheck, setCategory, loadMore, select, moveTo, deleteForever, emptyView, toggleStar, toggleRead } = useMail(
-    useShallow((s) => ({ view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, checked: s.checked, toggleCheck: s.toggleCheck, rangeCheck: s.rangeCheck, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, moveTo: s.moveTo, deleteForever: s.deleteForever, emptyView: s.emptyView, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
+  const { folders, view, category, query, selectedId, density, previews, threadsLoading, hasMore, threads, hiddenIds, checked, toggleCheck, rangeCheck, setCategory, loadMore, select, moveTo, deleteForever, emptyView, toggleStar, toggleRead } = useMail(
+    useShallow((s) => ({ folders: s.folders, view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, checked: s.checked, toggleCheck: s.toggleCheck, rangeCheck: s.rangeCheck, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, moveTo: s.moveTo, deleteForever: s.deleteForever, emptyView: s.emptyView, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
   );
   const scroller = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -245,7 +245,7 @@ export function ThreadList() {
                   {r.label}
                 </div>
               ) : (
-                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} checked={checked.has(r.t.id)} onSelect={onRowClick} destinations={searching ? destinationsFor(placeOf(r.t) ?? view) : destinations} purge={searching ? isPurgeView(placeOf(r.t) ?? view) : purge} showFolder={searching} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
+                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} checked={checked.has(r.t.id)} onSelect={onRowClick} destinations={searching ? destinationsFor(placeOf(r.t, folders) ?? view) : destinations} purge={searching ? isPurgeView(placeOf(r.t, folders) ?? view) : purge} folderName={searching ? folders.find((f) => f.id === r.t.folderId)?.name : undefined} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
               ),
             )}
             <div ref={sentinel} className="h-px" />

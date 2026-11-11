@@ -27,6 +27,8 @@ pub struct ParsedAttachment {
     pub mime_type: String,
     pub content_id: Option<String>,
     pub is_inline: bool,
+    pub size: usize,
+    /// Contenu décodé ; vide si l'analyse n'a pas demandé de le garder (`parse_with(.., false)`).
     pub data: Vec<u8>,
 }
 
@@ -105,6 +107,17 @@ pub fn normalize_subject(s: &str) -> String {
 
 /// `fallback_ts` : INTERNALDATE du serveur, utilisée si l'en-tête Date est absent/invalide.
 pub fn parse(raw: &[u8], fallback_ts: Option<i64>) -> Option<ParsedMessage> {
+    parse_with(raw, fallback_ts, true)
+}
+
+/// Comme [`parse`] ; `keep_attachments` : copier le contenu des pièces jointes (nécessaire seulement si on les écrit
+/// sur disque tout de suite). Sinon seules leurs métadonnées et leur taille sont gardées : les pièces jointes
+/// forment l'essentiel du volume d'une boîte, inutile de les dupliquer en mémoire pour les jeter.
+pub fn parse_with(
+    raw: &[u8],
+    fallback_ts: Option<i64>,
+    keep_attachments: bool,
+) -> Option<ParsedMessage> {
     let msg = MessageParser::default().parse(raw)?;
     let from = msg.from().and_then(|a| a.first());
     let body_text = msg.body_text(0).map(|c| c.into_owned());
@@ -131,7 +144,12 @@ pub fn parse(raw: &[u8], fallback_ts: Option<i64>) -> Option<ParsedMessage> {
                 is_inline: p
                     .content_disposition()
                     .is_some_and(|d| d.ctype().eq_ignore_ascii_case("inline")),
-                data: p.contents().to_vec(),
+                size: p.contents().len(),
+                data: if keep_attachments {
+                    p.contents().to_vec()
+                } else {
+                    Vec::new()
+                },
             }
         })
         .collect();
@@ -184,20 +202,50 @@ async fn find_thread(
             return Ok(Some(t));
         }
     }
-    // Réponses arrivées avant leur parent.
+    // Réponses arrivées avant leur parent (cas courant pendant le rapatriement : du plus récent au plus ancien) :
+    // par In-Reply-To, puis par References. Deux recherches indexées, jamais un balayage de la table.
     if let Some(id) = &m.message_id {
-        let t = sqlx::query_scalar::<_, i64>(
-            "SELECT thread_id FROM messages WHERE thread_id IS NOT NULL AND account_id = ?1 \
-             AND (in_reply_to = ?2 OR instr(references_ids, ?3) > 0) LIMIT 1",
+        let direct = sqlx::query_scalar::<_, i64>(
+            "SELECT thread_id FROM messages WHERE thread_id IS NOT NULL AND account_id = ?1 AND in_reply_to = ?2 LIMIT 1",
         )
         .bind(account_id)
         .bind(id)
-        .bind(serde_json::to_string(id)?) // "<id>" entre guillemets JSON
         .fetch_optional(pool)
         .await?;
-        return Ok(t);
+        if direct.is_some() {
+            return Ok(direct);
+        }
+        return Ok(sqlx::query_scalar::<_, i64>(
+            "SELECT m.thread_id FROM message_refs r JOIN messages m ON m.id = r.message_id \
+             WHERE r.account_id = ?1 AND r.ref_id = ?2 AND m.thread_id IS NOT NULL LIMIT 1",
+        )
+        .bind(account_id)
+        .bind(id)
+        .fetch_optional(pool)
+        .await?);
     }
     Ok(None)
+}
+
+/// Identifiant (UID) du prochain message d'un dossier. Pour un dossier local, le UID n'est qu'un numéro d'ordre.
+pub(crate) async fn next_uid(pool: &SqlitePool, folder_id: i64) -> Result<i64> {
+    Ok(
+        sqlx::query_scalar("SELECT COALESCE(MAX(uid), 0) + 1 FROM messages WHERE folder_id = ?")
+            .bind(folder_id)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+/// Ce dossier contient-il déjà un message de ce message brut (même empreinte) ?
+pub(crate) async fn has_raw(pool: &SqlitePool, folder_id: i64, raw_hash: &str) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM messages WHERE folder_id = ? AND raw_hash = ?)",
+    )
+    .bind(folder_id)
+    .bind(raw_hash)
+    .fetch_one(pool)
+    .await?)
 }
 
 fn safe_filename(name: &str) -> String {
@@ -315,17 +363,25 @@ pub async fn store_with(
         return Ok(thread_id); // déjà présent
     }
     let message_row = res.last_insert_rowid();
+    for r in m.references.iter().collect::<HashSet<_>>() {
+        sqlx::query("INSERT INTO message_refs (account_id, ref_id, message_id) VALUES (?, ?, ?)")
+            .bind(account_id)
+            .bind(r)
+            .bind(message_row)
+            .execute(pool)
+            .await?;
+    }
 
     if !m.attachments.is_empty() {
         let dir = attachments_dir
             .join(account_id)
             .join(message_row.to_string());
-        if !opts.lazy_attachments {
+        if !opts.lazy_attachments && m.attachments.iter().any(|a| !a.data.is_empty()) {
             tokio::fs::create_dir_all(&dir).await?;
         }
         for (i, a) in m.attachments.iter().enumerate() {
             // Chemin NULL tant que le contenu n'est pas extrait (voir `materialize_attachment`).
-            let path = if opts.lazy_attachments {
+            let path = if opts.lazy_attachments || (a.data.is_empty() && a.size > 0) {
                 None
             } else {
                 let fname = safe_filename(a.filename.as_deref().unwrap_or("attachment"));
@@ -340,7 +396,7 @@ pub async fn store_with(
             .bind(message_row)
             .bind(&a.filename)
             .bind(&a.mime_type)
-            .bind(a.data.len() as i64)
+            .bind(a.size as i64)
             .bind(&a.content_id)
             .bind(a.is_inline)
             .bind(path)
@@ -817,7 +873,7 @@ mod tests {
         let find = |q: &str| {
             let (pool, q) = (pool.clone(), q.to_string());
             async move {
-                let mut r: Vec<(String, Option<String>)> = list_threads(
+                let rows = list_threads(
                     &pool,
                     &ThreadQuery {
                         query: Some(q),
@@ -825,12 +881,19 @@ mod tests {
                     },
                 )
                 .await
-                .unwrap()
-                .into_iter()
-                .map(|t| (t.subject, t.folder_name))
-                .collect();
-                r.sort();
-                r
+                .unwrap();
+                // Le moteur renvoie l'identifiant du dossier ; le nom se lit dans la table des dossiers.
+                let mut out = Vec::new();
+                for t in rows {
+                    let name: String = sqlx::query_scalar("SELECT name FROM folders WHERE id = ?")
+                        .bind(t.folder_id.expect("folder_id renseigné"))
+                        .fetch_one(&pool)
+                        .await
+                        .unwrap();
+                    out.push((t.subject, Some(name)));
+                }
+                out.sort();
+                out
             }
         };
         let names = |r: Vec<(String, Option<String>)>| {
@@ -847,6 +910,70 @@ mod tests {
             names(find("dans:archives dans:clients").await),
             ["Archive", "Clients"]
         );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Une réponse reçue avant son parent (cas courant pendant le rapatriement, du plus récent au plus ancien)
+    /// rejoint la conversation du parent : par In-Reply-To, ou par References quand l'intermédiaire manque.
+    #[tokio::test]
+    async fn replies_arriving_before_their_parent_join_its_thread() {
+        let (pool, folder) = setup().await;
+        let dir = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let mail = |id: &str, extra: &str| {
+            format!("From: a@x.fr\r\nTo: me@x.fr\r\nSubject: Fil\r\nDate: Mon, 2 Mar 2026 10:00:00 +0000\r\nMessage-ID: <{id}@x>\r\n{extra}\r\ncorps\r\n")
+        };
+        // Petit-enfant (cite le parent p et l'enfant c ; répond à c), puis enfant (répond à p), puis le parent.
+        let order = [
+            ("g", "In-Reply-To: <c@x>\r\nReferences: <p@x> <c@x>\r\n"),
+            ("c", "In-Reply-To: <p@x>\r\nReferences: <p@x>\r\n"),
+            ("p", ""),
+            ("autre", ""),
+        ];
+        let mut threads = Vec::new();
+        for (uid, (id, extra)) in order.iter().enumerate() {
+            let raw = mail(id, extra);
+            let loc = MessageLoc {
+                account_id: "a",
+                folder_id: folder,
+                uid: uid as i64 + 1,
+                size: None,
+            };
+            threads.push(
+                store(
+                    &pool,
+                    &dir,
+                    loc,
+                    Flags::default(),
+                    parse(raw.as_bytes(), None).unwrap(),
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        assert_eq!(
+            threads[0], threads[1],
+            "l'enfant rejoint le petit-enfant (il est cité par lui)"
+        );
+        assert_eq!(
+            threads[1], threads[2],
+            "le parent rejoint la conversation de ses descendants"
+        );
+        assert_ne!(threads[2], threads[3], "un message sans lien reste seul");
+        let refs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_refs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(refs, 3, "références indexées : g cite p et c, c cite p");
+        // Supprimer un message supprime ses références.
+        sqlx::query("DELETE FROM messages WHERE message_id = 'g@x'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let refs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_refs")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(refs, 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 

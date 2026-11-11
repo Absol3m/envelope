@@ -11,6 +11,7 @@ pub mod dev;
 mod error;
 mod mail;
 mod mcp;
+mod picks;
 mod tls;
 
 use std::path::PathBuf;
@@ -29,6 +30,8 @@ pub struct AppState {
     pub sync: Arc<mail::sync::SyncManager>,
     /// Sérialise les actions IMAP (archiver, marquer lu…).
     pub actions: tokio::sync::Mutex<()>,
+    /// Chemins choisis dans les sélecteurs natifs (import, export) : l'interface n'en voit que des jetons.
+    pub picks: picks::Picks,
 }
 
 /// Fenêtre principale, aux conventions de chaque système :
@@ -121,6 +124,7 @@ pub fn run() {
                 raw_dir,
                 sync: sync.clone(),
                 actions: tokio::sync::Mutex::new(()),
+                picks: picks::Picks::default(),
             });
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = sync.start_all().await {
@@ -156,9 +160,9 @@ pub fn run() {
             commands::delete_thread,
             commands::archive_local,
             commands::export_folder,
-            commands::import_default_dir,
-            commands::import_scan,
+            commands::import_pick,
             commands::import_run,
+            commands::export_pick,
             commands::create_local_folder,
             commands::rename_local_folder,
             commands::delete_local_folder,

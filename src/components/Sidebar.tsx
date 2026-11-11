@@ -60,15 +60,10 @@ function LocalFolders({ folders, view, setView, moveTo }: { folders: FolderRow[]
   /** Export : mbox (un fichier) ou EML (un fichier par message, dans un sous-dossier du dossier choisi). */
   const exportTo = async (f: FolderRow, format: "mbox" | "eml") => {
     try {
-      let path: string | null;
-      if (format === "mbox") path = await backend.pickSavePath(`${f.name}.mbox`);
-      else {
-        const dir = await backend.pickFolder(undefined, "Choisir le dossier où écrire les fichiers .eml");
-        path = dir ? await (await import("@tauri-apps/api/path")).join(dir, f.name.replace(/[\\/:*?"<>|]/g, "-")) : null;
-      }
-      if (!path) return;
+      const token = await backend.exportPick(format, f.name); // sélecteur natif ouvert par l'application
+      if (!token) return;
       toast({ message: `Export de « ${f.name} »…`, duration: 3000 });
-      const r = await backend.exportFolder(f.id, format, path);
+      const r = await backend.exportFolder(f.id, format, token);
       toast({ message: `${r.exported.toLocaleString("fr-FR")} message${r.exported > 1 ? "s" : ""} exporté${r.exported > 1 ? "s" : ""}${r.missing > 0 ? ` (${r.missing} introuvable${r.missing > 1 ? "s" : ""})` : ""}`, tone: r.missing > 0 ? "error" : "default", duration: 5000 });
     } catch (e) {
       toast({ message: `Export impossible — ${String(e)}`, tone: "error", duration: 7000 });

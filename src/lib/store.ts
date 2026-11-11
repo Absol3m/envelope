@@ -127,10 +127,10 @@ function sourceFolder(s: Pick<State, "view" | "folders" | "query">, thread: Thre
 
 
 /** Vue qui détermine les actions possibles sur ces conversations : en recherche, le dossier de la première. */
-export function actionView(s: Pick<State, "view" | "query" | "threads">, ids: readonly number[]): View {
+export function actionView(s: Pick<State, "view" | "query" | "threads" | "folders">, ids: readonly number[]): View {
   if (!s.query.trim()) return s.view;
   const t = s.threads.find((x) => x.id === ids[0]);
-  return (t && placeOf(t)) ?? s.view;
+  return (t && placeOf(t, s.folders)) ?? s.view;
 }
 
 /** Navigation remise à zéro : état initial et entrée en démo partagent ces valeurs. */

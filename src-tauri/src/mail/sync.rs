@@ -453,7 +453,11 @@ async fn ingest_item(
     let (Some(uid), Some(raw)) = (item.uid.map(i64::from), item.body()) else {
         return Ok(None);
     };
-    let Some(parsed) = ingest::parse(raw, item.internal_date().map(|d| d.timestamp())) else {
+    let Some(parsed) = ingest::parse_with(
+        raw,
+        item.internal_date().map(|d| d.timestamp()),
+        !lazy_attachments,
+    ) else {
         tracing::warn!(folder = %f.path, uid, "message illisible ignoré");
         return Ok(None);
     };
@@ -575,11 +579,7 @@ async fn rehydrate(session: &mut ImapSession, ctx: &Ctx, folders: &[FolderRec]) 
         return Ok(true);
     };
     session.select(&folder.path).await?;
-    let set = uids
-        .iter()
-        .map(i64::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
+    let set = imap::uid_set(&uids);
     let mut stream = session.uid_fetch(set, "(UID BODY.PEEK[])").await?;
     while let Some(item) = stream.try_next().await? {
         let (Some(uid), Some(raw)) = (item.uid, item.body()) else {

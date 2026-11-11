@@ -107,6 +107,14 @@ pub(crate) async fn connect_with(
     session.map_err(|(e, _client)| AppError::Auth(format!("connexion IMAP refusée : {e}")))
 }
 
+/// Ensemble d'UID au format IMAP (`3,7,12`).
+pub fn uid_set(uids: &[i64]) -> String {
+    uids.iter()
+        .map(i64::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 /// Dernier segment d'un chemin de dossier (« INBOX.Sent » → « Sent »).
 pub fn leaf<'a>(path: &'a str, delimiter: Option<&str>) -> &'a str {
     match delimiter {

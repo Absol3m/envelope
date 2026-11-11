@@ -468,8 +468,7 @@ pub async fn archive_local(
 
 /// Dossier des profils Thunderbird de cette machine, s'il existe : point de départ du sélecteur de
 /// dossier natif (l'utilisateur choisit lui-même le profil, rien n'est exploré sans son geste).
-#[tauri::command]
-pub fn import_default_dir(app: AppHandle) -> Option<String> {
+fn thunderbird_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
     use tauri::Manager;
     let path = app.path();
     let home = path.home_dir().ok();
@@ -492,66 +491,149 @@ pub fn import_default_dir(app: AppHandle) -> Option<String> {
         })
         .unwrap_or_default()
     };
-    candidates
-        .into_iter()
-        .find(|p| p.is_dir())
-        .map(|p| p.display().to_string())
+    candidates.into_iter().find(|p| p.is_dir())
 }
 
-/// Liste les dossiers importables de la source choisie (profil Thunderbird, dossier de boîtes…).
+/// Source d'import choisie par l'utilisateur : jeton opaque, chemin à afficher, dossiers trouvés.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSource {
+    token: String,
+    path: String,
+    folders: Vec<mbox::Found>,
+}
+
+/// Ouvre le sélecteur de dossier natif, puis liste les dossiers importables de ce qui a été choisi.
+/// `None` si l'utilisateur annule. L'interface ne fournit jamais de chemin : elle reçoit un jeton.
 #[tauri::command]
-pub async fn import_scan(path: String) -> Result<Vec<mbox::Found>> {
-    mbox::discover(std::path::Path::new(&path)).await
+pub async fn import_pick(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<ImportSource>> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title("Choisir le dossier à importer");
+    if let Some(dir) = thunderbird_dir(&app) {
+        dialog = dialog.set_directory(dir);
+    }
+    let Some(picked) = dialog.blocking_pick_folder() else {
+        return Ok(None);
+    };
+    let path = picked
+        .into_path()
+        .map_err(|e| AppError::Invalid(e.to_string()))?;
+    let folders = mbox::discover(&path).await?;
+    Ok(Some(ImportSource {
+        token: state.picks.remember(path.clone()),
+        path: path.display().to_string(),
+        folders,
+    }))
 }
 
-/// Importe les dossiers choisis dans « Sur cet ordinateur » ; l'avancement part en événements `import:progress`.
+/// Importe les dossiers choisis (`keys`, issus de `import_pick`) dans « Sur cet ordinateur » ;
+/// l'avancement part en événements `import:progress`.
 #[tauri::command]
 pub async fn import_run(
     app: AppHandle,
     state: State<'_, AppState>,
-    path: String,
+    token: String,
     keys: Vec<String>,
 ) -> Result<mbox::Report> {
     use tauri::Emitter;
+    let path = state.picks.get(&token).ok_or_else(|| {
+        AppError::Invalid("source d'import expirée : choisissez-la de nouveau".into())
+    })?;
     // Pas de verrou global : un import long ne doit pas bloquer les autres actions.
     let keys: std::collections::HashSet<String> = keys.into_iter().collect();
     let emit = move |p: mbox::Progress| {
         let _ = app.emit("import:progress", p);
     };
-    mbox::import(
+    let report = mbox::import(
         &state.db,
         &state.attachments_dir,
         &state.raw_dir,
-        std::path::Path::new(&path),
+        &path,
         &keys,
         &emit,
     )
-    .await
+    .await;
+    state.picks.forget(&token);
+    report
 }
 
-/// Exporte un dossier : un fichier mbox (`path` : fichier choisi) ou des `.eml` (`path` : dossier choisi).
-/// L'avancement part en événements `export:progress`.
+/// Ouvre le sélecteur natif de la destination d'un export : « Enregistrer sous » pour un fichier mbox,
+/// choix d'un dossier pour des fichiers .eml. Renvoie un jeton (`None` si l'utilisateur annule).
+#[tauri::command]
+pub async fn export_pick(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    format: export::Format,
+    default_name: String,
+) -> Result<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = match format {
+        export::Format::Mbox => app
+            .dialog()
+            .file()
+            .set_file_name(export::slug(&default_name) + ".mbox")
+            .add_filter("Boîte mbox", &["mbox"])
+            .blocking_save_file(),
+        export::Format::Eml => app
+            .dialog()
+            .file()
+            .set_title("Choisir le dossier où écrire les fichiers .eml")
+            .blocking_pick_folder(),
+    };
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let path = picked
+        .into_path()
+        .map_err(|e| AppError::Invalid(e.to_string()))?;
+    Ok(Some(state.picks.remember(path)))
+}
+
+/// Exporte un dossier vers la destination choisie (`token`, issu de `export_pick`) : un fichier mbox, ou
+/// des `.eml` dans un sous-dossier nommé d'après le dossier. L'avancement part en événements `export:progress`.
 #[tauri::command]
 pub async fn export_folder(
     app: AppHandle,
     state: State<'_, AppState>,
     folder_id: i64,
     format: export::Format,
-    path: String,
+    token: String,
 ) -> Result<export::Report> {
     use tauri::Emitter;
+    let chosen = state.picks.get(&token).ok_or_else(|| {
+        AppError::Invalid("destination d'export expirée : choisissez-la de nouveau".into())
+    })?;
     let emit = move |p: export::Progress| {
         let _ = app.emit("export:progress", p);
     };
-    let dest = std::path::Path::new(&path);
-    match format {
+    let report = match format {
         export::Format::Mbox => {
-            export::export_mbox(&state.db, &state.raw_dir, folder_id, dest, &emit).await
+            export::export_mbox(&state.db, &state.raw_dir, folder_id, &chosen, &emit).await
         }
         export::Format::Eml => {
-            export::export_eml(&state.db, &state.raw_dir, folder_id, dest, &emit).await
+            let name: String = sqlx::query_scalar("SELECT name FROM folders WHERE id = ?")
+                .bind(folder_id)
+                .fetch_optional(&state.db)
+                .await?
+                .ok_or_else(|| AppError::NotFound(format!("dossier {folder_id}")))?;
+            export::export_eml(
+                &state.db,
+                &state.raw_dir,
+                folder_id,
+                &chosen.join(export::slug(&name)),
+                &emit,
+            )
+            .await
         }
-    }
+    };
+    state.picks.forget(&token);
+    report
 }
 
 #[tauri::command]

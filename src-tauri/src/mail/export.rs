@@ -66,7 +66,7 @@ async fn count(pool: &SqlitePool, folder_id: i64) -> Result<usize> {
 }
 
 /// Nom de fichier : lettres (accentuées comprises), chiffres et `-`, 40 caractères au plus (jamais de chemin).
-fn slug(subject: &str) -> String {
+pub fn slug(subject: &str) -> String {
     let s: String = subject
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '-' })
@@ -211,7 +211,7 @@ pub async fn export_eml(
 }
 
 async fn read_raw(raw_dir: &Path, row: &Row) -> Option<Vec<u8>> {
-    let hash = row.raw_hash.as_deref().filter(|h| !h.is_empty())?;
+    let hash = rawstore::usable(row.raw_hash.as_deref())?;
     rawstore::get(raw_dir, hash).await.ok()
 }
 

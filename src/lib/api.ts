@@ -25,6 +25,12 @@ export interface ImportFolder {
   size: number;
   selected: boolean;
 }
+/** Source d'import choisie par l'utilisateur : jeton opaque, chemin à afficher, dossiers trouvés. */
+export interface ImportSource {
+  token: string;
+  path: string;
+  folders: ImportFolder[];
+}
 export interface ImportReport {
   imported: number;
   duplicates: number;
@@ -68,8 +74,6 @@ export interface ThreadSummary {
   participants: string | null;
   /** Dossier du dernier message : les résultats de recherche couvrent tous les dossiers. */
   folderId: number | null;
-  folderName: string | null;
-  folderRole: string | null;
 }
 export interface Addr {
   name: string | null;
@@ -185,16 +189,14 @@ export interface Backend {
   deleteThread(threadId: number, folderId: number): Promise<void>;
   /** Archive en local (copie vérifiée sur cet ordinateur, puis suppression sur le serveur) ; entre dossiers locaux : simple déplacement. */
   archiveLocal(threadId: number, folderId: number, localFolderId: number): Promise<void>;
-  /** Dossier des profils Thunderbird s'il existe (point de départ du sélecteur). */
-  importDefaultDir(): Promise<string | null>;
-  /** Sélecteur de dossier natif ; `null` si l'utilisateur annule. */
-  pickFolder(defaultPath?: string, title?: string): Promise<string | null>;
-  /** Sélecteur « Enregistrer sous » natif ; `null` si l'utilisateur annule. */
-  pickSavePath(defaultName: string): Promise<string | null>;
-  /** mbox : `path` est le fichier ; eml : `path` est le dossier où écrire un fichier par message. */
-  exportFolder(folderId: number, format: ExportFormat, path: string): Promise<ExportReport>;
-  importScan(path: string): Promise<ImportFolder[]>;
-  importRun(path: string, keys: string[]): Promise<ImportReport>;
+  /** Sélecteur de dossier natif, ouvert par l'application, puis liste des dossiers importables. `null` si annulé. */
+  importPick(): Promise<ImportSource | null>;
+  /** `token` : celui d'`importPick` (l'interface ne fournit jamais de chemin). */
+  importRun(token: string, keys: string[]): Promise<ImportReport>;
+  /** Sélecteur natif de la destination (fichier pour mbox, dossier pour eml) ; renvoie un jeton, `null` si annulé. */
+  exportPick(format: ExportFormat, defaultName: string): Promise<string | null>;
+  /** `token` : celui d'`exportPick`. */
+  exportFolder(folderId: number, format: ExportFormat, token: string): Promise<ExportReport>;
   createLocalFolder(name: string): Promise<number>;
   renameLocalFolder(folderId: number, name: string): Promise<void>;
   /** Seulement si le dossier est vide. */
@@ -247,19 +249,10 @@ export const tauriBackend: Backend = {
   moveThread: (threadId, folderId, to) => invoke("move_thread", { threadId, folderId, to }),
   deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
   archiveLocal: (threadId, folderId, localFolderId) => invoke("archive_local", { threadId, folderId, localFolderId }),
-  importDefaultDir: () => invoke("import_default_dir"),
-  pickFolder: async (defaultPath, title) => {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ directory: true, multiple: false, defaultPath: defaultPath ?? undefined, title: title ?? "Choisir un dossier" });
-    return typeof picked === "string" ? picked : null;
-  },
-  pickSavePath: async (defaultName) => {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    return (await save({ defaultPath: defaultName, filters: [{ name: "Boîte mbox", extensions: ["mbox"] }] })) ?? null;
-  },
-  exportFolder: (folderId, format, path) => invoke("export_folder", { folderId, format, path }),
-  importScan: (path) => invoke("import_scan", { path }),
-  importRun: (path, keys) => invoke("import_run", { path, keys }),
+  importPick: () => invoke("import_pick"),
+  importRun: (token, keys) => invoke("import_run", { token, keys }),
+  exportPick: (format, defaultName) => invoke("export_pick", { format, defaultName }),
+  exportFolder: (folderId, format, token) => invoke("export_folder", { folderId, format, token }),
   createLocalFolder: (name) => invoke("create_local_folder", { name }),
   renameLocalFolder: (folderId, name) => invoke("rename_local_folder", { folderId, name }),
   deleteLocalFolder: (folderId) => invoke("delete_local_folder", { folderId }),

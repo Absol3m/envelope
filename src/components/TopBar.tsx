@@ -11,14 +11,14 @@ import { IconButton } from "./ui/primitives";
 /** Barre d'outils de la fenêtre : actions sur la conversation ouverte à gauche, recherche en haut à droite.
  *  Sous macOS elle double la barre de titre (zone de glisser) ; ailleurs elle se place sous la barre de titre native. */
 export function TopBar() {
-  const { backend, accountFilter, query, setQuery, selectedId, checked, threads, hiddenIds, category, view, moveTo, deleteForever, toggleStar, toggleRead, move } = useMail(
-    useShallow((s) => ({ backend: s.backend, accountFilter: s.accountFilter, query: s.query, setQuery: s.setQuery, selectedId: s.selectedId, checked: s.checked, threads: s.threads, hiddenIds: s.hiddenIds, category: s.category, view: s.view, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move })),
+  const { backend, accountFilter, query, setQuery, selectedId, checked, threads, folders, hiddenIds, category, view, moveTo, deleteForever, toggleStar, toggleRead, move } = useMail(
+    useShallow((s) => ({ backend: s.backend, accountFilter: s.accountFilter, query: s.query, setQuery: s.setQuery, selectedId: s.selectedId, checked: s.checked, threads: s.threads, folders: s.folders, hiddenIds: s.hiddenIds, category: s.category, view: s.view, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move })),
   );
   const summary = checked.size > 1 ? undefined : threads.find((t) => t.id === selectedId);
   const list = useMemo(() => visibleThreads({ threads, hiddenIds, category, view, query }), [threads, hiddenIds, category, view, query]);
   const index = list.findIndex((t) => t.id === selectedId);
   const unread = (summary?.unreadCount ?? 0) > 0;
-  const place = summary ? actionView({ view, query, threads }, [summary.id]) : view;
+  const place = summary ? actionView({ view, query, threads, folders }, [summary.id]) : view;
 
   return (
     <div {...dragRegion} className="col-span-2 col-start-2 flex h-[46px] shrink-0 items-center gap-0.5 border-b border-border bg-bg/80 px-3 backdrop-blur-md">

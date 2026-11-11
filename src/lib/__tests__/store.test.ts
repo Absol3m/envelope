@@ -187,7 +187,7 @@ describe("store (boîte de démonstration)", () => {
     await tick(900);
     const s = useMail.getState();
     const found = s.threads.find((t) => t.subject.startsWith("Compte rendu"));
-    expect(found?.folderRole).toBe("archive");
+    expect(s.folders.find((f) => f.id === found?.folderId)?.role).toBe("archive");
     expect(s.view).toEqual({ kind: "role", role: "inbox" }); // la vue ne change pas, la recherche ne la respecte pas
   });
 

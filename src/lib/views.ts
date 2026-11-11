@@ -1,7 +1,9 @@
 import { Archive, FileText, HardDrive, Inbox, Mail, Paperclip, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
 import type { ComponentType } from "react";
+import type { FolderRow } from "./api";
 
-export type Role = "inbox" | "sent" | "drafts" | "archive" | "junk" | "trash";
+export const ROLES = ["inbox", "sent", "drafts", "archive", "junk", "trash"] as const;
+export type Role = (typeof ROLES)[number];
 
 /** Dossiers où l'on peut déplacer une conversation (miroir de `Destination` côté Rust). */
 export type Destination = Extract<Role, "inbox" | "archive" | "junk" | "trash"> | "local";
@@ -86,18 +88,17 @@ export function destinationsFor(view: View): Destination[] {
 const DESTINATIONS_BY_PLACE = new Map<Role | null, Destination[]>();
 const NO_DESTINATIONS: Destination[] = [];
 
-/** Où se trouve une conversation, d'après son dernier message (résultats de recherche : tous dossiers confondus). */
-export function placeOf(t: { accountId: string; folderId: number | null; folderName: string | null; folderRole: string | null }): View | null {
-  if (t.accountId === LOCAL_ACCOUNT && t.folderId !== null) return { kind: "folder", folderId: t.folderId, name: t.folderName ?? "", local: true };
-  if (t.folderRole && Object.hasOwn(ROLE_SET, t.folderRole)) return { kind: "role", role: t.folderRole as Role };
-  return t.folderId !== null ? { kind: "folder", folderId: t.folderId, name: t.folderName ?? "" } : null;
+/** Où se trouve une conversation : le dossier de son dernier message (résultats de recherche, tous dossiers confondus). */
+export function placeOf(t: { folderId: number | null }, folders: readonly FolderRow[]): View | null {
+  const f = t.folderId === null ? undefined : folders.find((x) => x.id === t.folderId);
+  if (!f) return null;
+  if (f.accountId === LOCAL_ACCOUNT) return { kind: "folder", folderId: f.id, name: f.name, local: true };
+  return f.role && (ROLES as readonly string[]).includes(f.role) ? { kind: "role", role: f.role as Role } : { kind: "folder", folderId: f.id, name: f.name };
 }
-const ROLE_SET: Record<Role, true> = { inbox: true, sent: true, drafts: true, archive: true, junk: true, trash: true };
 
 /** Type MIME du glisser-déposer d'une conversation vers un dossier de la barre latérale. */
 export const DRAG_TYPE = "application/x-envelope-thread";
 
-/** Corbeille et spam : les seules boîtes où l'on supprime pour de bon (et que l'on peut vider). */
 /** Vue où l'on peut supprimer pour de bon : corbeille, spam, et dossiers locaux (où rien d'autre ne retient le message). */
 export const isPurgeView = (v: View): boolean => (v.kind === "role" && (v.role === "trash" || v.role === "junk")) || (v.kind === "folder" && v.local === true);
 /** Corbeille ou spam d'un compte : les seules vues qu'on peut vider d'un geste. */

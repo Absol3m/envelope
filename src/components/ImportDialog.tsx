@@ -15,7 +15,7 @@ const sizeLabel = (f: ImportFolder) => (f.kind === "maildir" ? `${f.size.toLocal
 export function ImportDialog() {
   const { backend, setImportOpen, reload } = useMail(useShallow((s) => ({ backend: s.backend, setImportOpen: s.setImportOpen, reload: s.reload })));
   const [step, setStep] = useState<Step>("choose");
-  const [path, setPath] = useState("");
+  const [source, setSource] = useState<{ token: string; path: string } | null>(null);
   const [folders, setFolders] = useState<ImportFolder[]>([]);
   const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
   const [progress, setProgress] = useState<ImportProgress | null>(null);
@@ -34,13 +34,13 @@ export function ImportDialog() {
   const choose = async () => {
     setError(null);
     try {
-      const picked = await backend.pickFolder((await backend.importDefaultDir()) ?? undefined, "Choisir le dossier à importer");
+      // Le sélecteur est ouvert par l'application ; on ne reçoit qu'un jeton, jamais un chemin à rendre.
+      const picked = await backend.importPick();
       if (!picked) return;
-      const found = await backend.importScan(picked);
-      if (found.length === 0) return setError("Aucun dossier de mails (mbox ou Maildir) trouvé ici. Choisissez le dossier du profil Thunderbird ou celui qui contient vos boîtes.");
-      setPath(picked);
-      setFolders(found);
-      setChecked(new Set(found.filter((f) => f.selected).map((f) => f.key)));
+      if (picked.folders.length === 0) return setError("Aucun dossier de mails (mbox ou Maildir) trouvé ici. Choisissez le dossier du profil Thunderbird ou celui qui contient vos boîtes.");
+      setSource({ token: picked.token, path: picked.path });
+      setFolders(picked.folders);
+      setChecked(new Set(picked.folders.filter((f) => f.selected).map((f) => f.key)));
       setStep("pick");
     } catch (e) {
       setError(String(e));
@@ -52,7 +52,7 @@ export function ImportDialog() {
     setProgress(null);
     setStep("running");
     try {
-      setReport(await backend.importRun(path, [...checked]));
+      setReport(await backend.importRun(source!.token, [...checked]));
       setStep("done");
       void reload({ silent: true });
     } catch (e) {
@@ -89,7 +89,7 @@ export function ImportDialog() {
 
           {step === "pick" && (
             <>
-              <p className="mt-4 truncate text-[12px] text-faint" title={path}>{path}</p>
+              <p className="mt-4 truncate text-[12px] text-faint" title={source?.path}>{source?.path}</p>
               <div className="mt-2 flex items-center justify-between text-[12.5px]">
                 <button className="press rounded-md px-1.5 py-0.5 font-medium text-accent hover:bg-hover" onClick={() => setChecked(allOn ? new Set() : new Set(folders.map((f) => f.key)))}>{allOn ? "Tout désélectionner" : "Tout sélectionner"}</button>
                 <span className="text-muted">{checked.size} sur {folders.length} dossier{folders.length > 1 ? "s" : ""}</span>

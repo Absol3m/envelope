@@ -39,6 +39,19 @@ pub async fn put(dir: &Path, raw: &[u8]) -> Result<String> {
     Ok(hash)
 }
 
+/// Empreinte exploitable : présente et non vide (`NULL` = jamais récupéré, `''` = introuvable sur le serveur).
+pub fn usable(hash: Option<&str>) -> Option<&str> {
+    hash.filter(|h| !h.is_empty())
+}
+
+/// Le message brut est-il sur le disque (et non vide) ? Contrôle sans le relire en entier.
+pub async fn exists(dir: &Path, hash: &str) -> bool {
+    match path_of(dir, hash) {
+        Ok(p) => tokio::fs::metadata(p).await.is_ok_and(|m| m.len() > 0),
+        Err(_) => false,
+    }
+}
+
 /// Relit un message brut.
 pub async fn get(dir: &Path, hash: &str) -> Result<Vec<u8>> {
     Ok(tokio::fs::read(path_of(dir, hash)?).await?)

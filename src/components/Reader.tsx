@@ -312,11 +312,11 @@ function BatchButton({ icon: Icon, label, kbd, danger, onClick }: { icon: Compon
 
 /** Plusieurs conversations sélectionnées : les actions s'appliquent à tout le lot. */
 function MultiSelection({ ids }: { ids: number[] }) {
-  const { view, query, threads, moveTo, deleteForever, toggleStar, toggleRead, clearChecked } = useMail(
-    useShallow((s) => ({ view: s.view, query: s.query, threads: s.threads, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, clearChecked: s.clearChecked })),
+  const { view, query, threads, folders, moveTo, deleteForever, toggleStar, toggleRead, clearChecked } = useMail(
+    useShallow((s) => ({ view: s.view, query: s.query, threads: s.threads, folders: s.folders, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, clearChecked: s.clearChecked })),
   );
   const picked = threads.filter((t) => ids.includes(t.id));
-  const place = actionView({ view, query, threads }, ids);
+  const place = actionView({ view, query, threads, folders }, ids);
   const anyUnread = picked.some((t) => t.unreadCount > 0);
   const anyUnstarred = picked.some((t) => !t.isStarred);
   return (

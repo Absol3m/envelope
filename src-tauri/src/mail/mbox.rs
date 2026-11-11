@@ -19,7 +19,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
 use crate::error::{AppError, Result};
 use crate::mail::account::LOCAL_ID;
-use crate::mail::{ingest, rawstore};
+use crate::mail::{ingest, local, rawstore};
 
 /// Taille maximale d'un message importé (au-delà : ignoré et compté en échec).
 const MAX_MESSAGE: usize = 256 * 1024 * 1024;
@@ -165,7 +165,7 @@ fn walk<'a>(
                     parts.push(name.clone());
                     out.push(Found {
                         key: parts.join("/"),
-                        name: parts.join(SEP),
+                        name: local::sanitize_name(&parts.join(SEP)),
                         kind,
                         size,
                         // Corbeille, indésirables et boîte d'envoi temporaire : pas proposés par défaut.
@@ -242,7 +242,7 @@ impl<R: tokio::io::AsyncRead + Unpin> MboxReader<R> {
                 break trim_eol(&line);
             }
             // Octets avant le premier « From » : ignorés.
-            self.prev_blank = trim_eol(&line).is_empty();
+            self.prev_blank = is_blank(&line);
         };
         self.prev_blank = false;
         loop {
@@ -250,7 +250,7 @@ impl<R: tokio::io::AsyncRead + Unpin> MboxReader<R> {
             if self.reader.read_until(b'\n', &mut line).await? == 0 {
                 break;
             }
-            let blank = trim_eol(&line).is_empty();
+            let blank = is_blank(&line);
             if line.starts_with(b"From ") && self.prev_blank {
                 self.pending_from = Some(trim_eol(&line));
                 self.prev_blank = false;
@@ -280,6 +280,11 @@ impl<R: tokio::io::AsyncRead + Unpin> MboxReader<R> {
     }
 }
 
+/// Ligne vide (fin de ligne seule) : test sur les octets, sans allouer de chaîne pour chaque ligne du fichier.
+fn is_blank(line: &[u8]) -> bool {
+    line.iter().all(|b| matches!(b, b'\r' | b'\n'))
+}
+
 fn trim_eol(line: &[u8]) -> String {
     String::from_utf8_lossy(line)
         .trim_end_matches(['\r', '\n'])
@@ -295,17 +300,16 @@ pub struct MozFlags {
 }
 
 pub fn mozilla_flags(raw: &[u8]) -> Option<MozFlags> {
+    const KEY: &[u8] = b"x-mozilla-status:";
     for line in raw.split(|&b| b == b'\n') {
-        let line = String::from_utf8_lossy(line);
-        let line = line.trim_end_matches('\r');
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
         if line.is_empty() {
             break; // fin des en-têtes
         }
-        if let Some(v) = line
-            .strip_prefix("X-Mozilla-Status:")
-            .or_else(|| line.strip_prefix("x-mozilla-status:"))
-        {
-            let bits = u32::from_str_radix(v.trim(), 16).ok()?;
+        if line.len() > KEY.len() && line[..KEY.len()].eq_ignore_ascii_case(KEY) {
+            let bits =
+                u32::from_str_radix(std::str::from_utf8(&line[KEY.len()..]).ok()?.trim(), 16)
+                    .ok()?;
             return Some(MozFlags {
                 read: bits & 0x1 != 0,
                 starred: bits & 0x4 != 0,
@@ -347,97 +351,108 @@ pub struct Progress {
     pub folders_total: usize,
 }
 
-struct Target {
-    id: i64,
+/// Un message à ranger, tel que la source le fournit.
+struct Incoming<'a> {
+    raw: &'a [u8],
+    /// Ligne « From » du mbox (sa date sert si le message n'en a pas).
+    from_line: Option<&'a str>,
+    /// Drapeaux de la source ; à défaut, ceux de `X-Mozilla-Status`.
+    flags: Option<MozFlags>,
 }
 
-async fn local_folder(pool: &SqlitePool, name: &str) -> Result<Target> {
-    let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM folders WHERE account_id = ? AND lower(name) = lower(?)",
-    )
-    .bind(LOCAL_ID)
-    .bind(name)
-    .fetch_optional(pool)
-    .await?;
-    let id = match existing {
-        Some(id) => id,
-        None => sqlx::query("INSERT INTO folders (account_id, path, name, role, delimiter) VALUES (?1, ?2, ?2, NULL, '/')")
-            .bind(LOCAL_ID)
-            .bind(name)
-            .execute(pool)
-            .await?
-            .last_insert_rowid(),
-    };
-    Ok(Target { id })
+/// Destination d'un import : un dossier local, le rapport et les conversations à rafraîchir.
+struct Sink<'a> {
+    pool: &'a SqlitePool,
+    att_dir: &'a Path,
+    raw_dir: &'a Path,
+    folder: i64,
+    report: &'a mut Report,
+    touched: HashSet<i64>,
 }
 
-/// Range un message dans le dossier cible : brut, puis index. Met à jour le rapport.
-#[allow(clippy::too_many_arguments)]
-async fn add_message(
-    pool: &SqlitePool,
-    att_dir: &Path,
-    raw_dir: &Path,
-    target: &Target,
-    raw: &[u8],
-    from_line: Option<&str>,
-    extra: Option<MozFlags>,
-    report: &mut Report,
-    touched: &mut HashSet<i64>,
-) -> Result<()> {
-    let flags = extra.or_else(|| mozilla_flags(raw)).unwrap_or_default();
-    if flags.deleted {
-        report.deleted += 1;
-        return Ok(());
+impl Sink<'_> {
+    /// Range un message : brut, puis index. Ne duplique rien (même empreinte dans le dossier).
+    async fn add(&mut self, m: Incoming<'_>) -> Result<()> {
+        let flags = m.flags.or_else(|| mozilla_flags(m.raw)).unwrap_or_default();
+        if flags.deleted {
+            self.report.deleted += 1;
+            return Ok(());
+        }
+        let fallback = m.from_line.and_then(from_line_timestamp);
+        // Pièces jointes extraites à la demande : on ne les copie pas en mémoire pour les jeter.
+        let Some(parsed) = ingest::parse_with(m.raw, fallback, false) else {
+            self.report.failed += 1;
+            return Ok(());
+        };
+        // En-tête interne de certains fichiers (Netscape/SeaMonkey) : pas un vrai message.
+        if parsed.subject.starts_with("DON'T DELETE THIS MESSAGE") {
+            return Ok(());
+        }
+        let hash = rawstore::put(self.raw_dir, m.raw).await?;
+        if ingest::has_raw(self.pool, self.folder, &hash).await? {
+            self.report.duplicates += 1;
+            return Ok(());
+        }
+        let tid = ingest::store_with(
+            self.pool,
+            self.att_dir,
+            ingest::MessageLoc {
+                account_id: LOCAL_ID,
+                folder_id: self.folder,
+                // Calculé au dernier moment : un import long ne bloque pas les autres actions.
+                uid: ingest::next_uid(self.pool, self.folder).await?,
+                size: Some(m.raw.len() as i64),
+            },
+            ingest::Flags {
+                seen: flags.read,
+                flagged: flags.starred,
+            },
+            parsed,
+            ingest::StoreOpts {
+                raw_hash: Some(&hash),
+                lazy_attachments: true,
+            },
+        )
+        .await?;
+        self.touched.insert(tid);
+        self.report.imported += 1;
+        Ok(())
     }
-    let fallback = from_line.and_then(from_line_timestamp);
-    let Some(parsed) = ingest::parse(raw, fallback) else {
-        report.failed += 1;
-        return Ok(());
-    };
-    // En-tête interne de certains fichiers (Netscape/SeaMonkey) : pas un vrai message.
-    if parsed.subject.starts_with("DON'T DELETE THIS MESSAGE") {
-        return Ok(());
+
+    /// Rafraîchit les conversations et signale l'avancement par lots (pas à chaque message).
+    async fn flush(&mut self, tick: &(dyn Fn(usize) + Sync)) -> Result<()> {
+        if self.touched.len() >= 200 {
+            ingest::refresh_threads(self.pool, &self.touched).await?;
+            self.touched.clear();
+            tick(self.report.imported);
+        }
+        Ok(())
     }
-    let hash = rawstore::put(raw_dir, raw).await?;
-    let dup: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE folder_id = ? AND raw_hash = ?")
-            .bind(target.id)
-            .bind(&hash)
-            .fetch_one(pool)
-            .await?;
-    if dup > 0 {
-        report.duplicates += 1;
-        return Ok(());
+
+    async fn finish(self) -> Result<()> {
+        ingest::refresh_threads(self.pool, &self.touched).await?;
+        ingest::refresh_folder_unread(self.pool, self.folder).await
     }
-    // Identifiant calculé au dernier moment : un import long ne bloque pas les autres actions.
-    let uid: i64 =
-        sqlx::query_scalar("SELECT COALESCE(MAX(uid), 0) + 1 FROM messages WHERE folder_id = ?")
-            .bind(target.id)
-            .fetch_one(pool)
-            .await?;
-    let tid = ingest::store_with(
-        pool,
-        att_dir,
-        ingest::MessageLoc {
-            account_id: LOCAL_ID,
-            folder_id: target.id,
-            uid,
-            size: Some(raw.len() as i64),
-        },
-        ingest::Flags {
-            seen: flags.read,
-            flagged: flags.starred,
-        },
-        parsed,
-        ingest::StoreOpts {
-            raw_hash: Some(&hash),
-            lazy_attachments: true,
-        },
-    )
-    .await?;
-    touched.insert(tid);
-    report.imported += 1;
-    Ok(())
+}
+
+/// Drapeaux d'un fichier Maildir : ceux de Thunderbird s'il en a écrit, sinon le suffixe du nom
+/// (`…:2,SF`, ou `…;2,SF` là où `:` est interdit, comme sous Windows).
+fn maildir_flags(file: &Path, raw: &[u8]) -> MozFlags {
+    mozilla_flags(raw).unwrap_or_else(|| {
+        let name = file
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let suffix = name
+            .rsplit_once(":2,")
+            .or_else(|| name.rsplit_once(";2,"))
+            .map_or("", |(_, s)| s);
+        MozFlags {
+            read: suffix.contains('S'),
+            starred: suffix.contains('F'),
+            deleted: suffix.contains('T'),
+        }
+    })
 }
 
 /// Importe les dossiers choisis (`keys`, issus de `discover`) dans des dossiers locaux de même nom.
@@ -457,82 +472,60 @@ pub async fn import(
     let total = found.len();
     let mut report = Report::default();
     for (i, f) in found.iter().enumerate() {
-        let target = local_folder(pool, &f.name).await?;
-        let mut touched = HashSet::new();
-        let tick = |report: &Report| {
+        let folder = local::get_or_create_folder(pool, &f.name).await?;
+        let tick = |imported: usize| {
             progress(Progress {
                 folder: f.name.clone(),
-                imported: report.imported,
+                imported,
                 folders_done: i,
                 folders_total: total,
             })
         };
-        tick(&report);
+        tick(report.imported);
+        let mut sink = Sink {
+            pool,
+            att_dir,
+            raw_dir,
+            folder,
+            report: &mut report,
+            touched: HashSet::new(),
+        };
         match f.kind {
             Kind::Mbox => {
                 let mut r = MboxReader::new(tokio::fs::File::open(&f.path).await?);
                 while let Some(item) = r.next().await? {
                     if item.too_big {
-                        report.failed += 1;
+                        sink.report.failed += 1;
                         continue;
                     }
-                    add_message(
-                        pool,
-                        att_dir,
-                        raw_dir,
-                        &target,
-                        &item.raw,
-                        Some(&item.from_line),
-                        None,
-                        &mut report,
-                        &mut touched,
-                    )
+                    sink.add(Incoming {
+                        raw: &item.raw,
+                        from_line: Some(&item.from_line),
+                        flags: None,
+                    })
                     .await?;
-                    flush(pool, &mut touched, &report, &tick).await?;
+                    sink.flush(&tick).await?;
                 }
             }
             Kind::Maildir => {
                 for file in maildir_files(&f.path).await {
-                    let meta = tokio::fs::metadata(&file).await?;
-                    if meta.len() as usize > MAX_MESSAGE {
-                        report.failed += 1;
+                    if tokio::fs::metadata(&file).await?.len() as usize > MAX_MESSAGE {
+                        sink.report.failed += 1;
                         continue;
                     }
                     let raw = tokio::fs::read(&file).await?;
-                    // Drapeaux Maildir (nom de fichier `…:2,SF`, ou `…;2,SF` là où `:` est interdit, comme sous Windows) si Thunderbird n'en a pas écrit.
-                    let name = file
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let suffix = name
-                        .rsplit_once(":2,")
-                        .or_else(|| name.rsplit_once(";2,"))
-                        .map(|(_, s)| s.to_string())
-                        .unwrap_or_default();
-                    let from_name = MozFlags {
-                        read: suffix.contains('S'),
-                        starred: suffix.contains('F'),
-                        deleted: suffix.contains('T'),
-                    };
-                    let flags = mozilla_flags(&raw).or(Some(from_name));
-                    add_message(
-                        pool,
-                        att_dir,
-                        raw_dir,
-                        &target,
-                        &raw,
-                        None,
+                    let flags = Some(maildir_flags(&file, &raw));
+                    sink.add(Incoming {
+                        raw: &raw,
+                        from_line: None,
                         flags,
-                        &mut report,
-                        &mut touched,
-                    )
+                    })
                     .await?;
-                    flush(pool, &mut touched, &report, &tick).await?;
+                    sink.flush(&tick).await?;
                 }
             }
         }
-        ingest::refresh_threads(pool, &touched).await?;
-        ingest::refresh_folder_unread(pool, target.id).await?;
+        sink.finish().await?;
     }
     progress(Progress {
         folder: String::new(),
@@ -541,21 +534,6 @@ pub async fn import(
         folders_total: total,
     });
     Ok(report)
-}
-
-/// Rafraîchit les conversations et signale l'avancement par lots (pas à chaque message).
-async fn flush(
-    pool: &SqlitePool,
-    touched: &mut HashSet<i64>,
-    report: &Report,
-    tick: &(dyn Fn(&Report) + Sync),
-) -> Result<()> {
-    if touched.len() >= 200 {
-        ingest::refresh_threads(pool, touched).await?;
-        touched.clear();
-        tick(report);
-    }
-    Ok(())
 }
 
 #[cfg(test)]

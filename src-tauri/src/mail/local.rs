@@ -51,8 +51,9 @@ async fn ensure_local_folder(pool: &SqlitePool, folder_id: i64) -> Result<()> {
 
 async fn name_taken(pool: &SqlitePool, name: &str, except: Option<i64>) -> Result<bool> {
     Ok(sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM folders WHERE account_id = 'local' AND lower(name) = lower(?) AND id <> ?",
+        "SELECT COUNT(*) FROM folders WHERE account_id = ? AND lower(name) = lower(?) AND id <> ?",
     )
+    .bind(LOCAL_ID)
     .bind(name)
     .bind(except.unwrap_or(-1))
     .fetch_one(pool)
@@ -67,11 +68,43 @@ pub async fn create_folder(pool: &SqlitePool, name: &str) -> Result<i64> {
             "le dossier « {name} » existe déjà"
         )));
     }
-    Ok(sqlx::query("INSERT INTO folders (account_id, path, name, role, delimiter) VALUES ('local', ?1, ?1, NULL, '/')")
+    Ok(sqlx::query("INSERT INTO folders (account_id, path, name, role, delimiter) VALUES (?1, ?2, ?2, NULL, '/')")
+        .bind(LOCAL_ID)
         .bind(&name)
         .execute(pool)
         .await?
         .last_insert_rowid())
+}
+
+/// Nom de dossier local valide tiré d'un texte quelconque (nom d'un dossier d'un autre client) :
+/// caractères de contrôle et « / » remplacés, 80 caractères au plus ; « Sans nom » s'il ne reste rien.
+pub fn sanitize_name(raw: &str) -> String {
+    let s: String = raw
+        .chars()
+        .map(|c| if c.is_control() || c == '/' { '-' } else { c })
+        .take(MAX_NAME)
+        .collect();
+    let s = s.trim().to_string();
+    if s.is_empty() {
+        "Sans nom".into()
+    } else {
+        s
+    }
+}
+
+/// Dossier local de ce nom (sans tenir compte de la casse), créé s'il n'existe pas. Sert à l'import.
+pub async fn get_or_create_folder(pool: &SqlitePool, name: &str) -> Result<i64> {
+    let existing: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM folders WHERE account_id = ? AND lower(name) = lower(?)",
+    )
+    .bind(LOCAL_ID)
+    .bind(name)
+    .fetch_optional(pool)
+    .await?;
+    match existing {
+        Some(id) => Ok(id),
+        None => create_folder(pool, name).await,
+    }
 }
 
 pub async fn rename_folder(pool: &SqlitePool, folder_id: i64, name: &str) -> Result<()> {
@@ -124,15 +157,6 @@ struct Source {
     thread_id: Option<i64>,
 }
 
-async fn next_uid(pool: &SqlitePool, folder_id: i64) -> Result<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT COALESCE(MAX(uid), 0) + 1 FROM messages WHERE folder_id = ?")
-            .bind(folder_id)
-            .fetch_one(pool)
-            .await?,
-    )
-}
-
 /// Complète le brut des messages qui n'en ont pas encore (ancienne synchro) depuis le serveur.
 async fn fetch_missing_raw(pool: &SqlitePool, raw_dir: &Path, rows: &mut [Source]) -> Result<()> {
     let mut wanted: BTreeMap<(String, String), Vec<i64>> = BTreeMap::new();
@@ -147,11 +171,7 @@ async fn fetch_missing_raw(pool: &SqlitePool, raw_dir: &Path, rows: &mut [Source
         let cred = account::resolve_credential(&acct).await?;
         let mut session = imap::connect(&acct, &cred).await?;
         session.select(&path).await?;
-        let set = uids
-            .iter()
-            .map(i64::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
+        let set = imap::uid_set(&uids);
         let mut hashes: HashMap<i64, String> = HashMap::new();
         {
             let mut stream = session.uid_fetch(set, "(UID BODY.PEEK[])").await?;
@@ -183,7 +203,7 @@ async fn fetch_missing_raw(pool: &SqlitePool, raw_dir: &Path, rows: &mut [Source
 
 /// Pas de message brut connu (jamais récupéré, ou introuvable sur le serveur).
 fn no_raw(s: &Source) -> bool {
-    s.raw_hash.as_deref().map_or(true, str::is_empty)
+    rawstore::usable(s.raw_hash.as_deref()).is_none()
 }
 
 /// Résultat de la phase de copie : ce qu'il reste à retirer côté source.
@@ -225,20 +245,16 @@ pub async fn copy_to_local(
 
     let mut new_threads = HashSet::new();
     for s in &sources {
-        let hash = s.raw_hash.as_deref().unwrap_or_default();
-        let raw = rawstore::get(raw_dir, hash).await?;
-        let already: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM messages WHERE folder_id = ? AND raw_hash = ?",
-        )
-        .bind(to_folder)
-        .bind(hash)
-        .fetch_one(pool)
-        .await?;
-        if already == 0 {
+        let hash = rawstore::usable(s.raw_hash.as_deref())
+            .ok_or_else(|| AppError::NotFound("message brut indisponible".into()))?;
+        // Rien à lire ni à analyser si la copie existe déjà (rejeu idempotent).
+        if !ingest::has_raw(pool, to_folder, hash).await? {
+            let raw = rawstore::get(raw_dir, hash).await?;
             let fallback = DateTime::parse_from_rfc3339(&s.date)
                 .ok()
                 .map(|d| d.timestamp());
-            let parsed = ingest::parse(&raw, fallback)
+            // Pièces jointes extraites à la demande : inutile de les copier en mémoire.
+            let parsed = ingest::parse_with(&raw, fallback, false)
                 .ok_or_else(|| AppError::Invalid("message illisible : archivage annulé".into()))?;
             let tid = ingest::store_with(
                 pool,
@@ -246,7 +262,7 @@ pub async fn copy_to_local(
                 ingest::MessageLoc {
                     account_id: LOCAL_ID,
                     folder_id: to_folder,
-                    uid: next_uid(pool, to_folder).await?,
+                    uid: ingest::next_uid(pool, to_folder).await?,
                     size: s.size.or(Some(raw.len() as i64)),
                 },
                 ingest::Flags {
@@ -262,15 +278,9 @@ pub async fn copy_to_local(
             .await?;
             new_threads.insert(tid);
         }
-        // Relecture : la copie existe en base et le brut est bien sur le disque.
-        let stored: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM messages WHERE folder_id = ? AND raw_hash = ?",
-        )
-        .bind(to_folder)
-        .bind(hash)
-        .fetch_one(pool)
-        .await?;
-        if stored == 0 || rawstore::get(raw_dir, hash).await?.is_empty() {
+        // Relecture : la copie est en base et le brut est bien sur le disque (sans le relire en entier).
+        if !ingest::has_raw(pool, to_folder, hash).await? || !rawstore::exists(raw_dir, hash).await
+        {
             return Err(AppError::Invalid(
                 "copie locale non vérifiée : archivage annulé".into(),
             ));
@@ -348,11 +358,7 @@ pub async fn archive(
 
 async fn remove_on_server(session: &mut ImapSession, path: &str, uids: &[i64]) -> Result<()> {
     session.select(path).await?;
-    let set = uids
-        .iter()
-        .map(i64::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
+    let set = imap::uid_set(uids);
     store_flag(session, &set, "\\Deleted", true).await?;
     expunge(session, &set).await
 }
@@ -379,7 +385,7 @@ pub async fn move_within(
     .fetch_all(pool)
     .await?;
     for id in ids {
-        let uid = next_uid(pool, to_folder).await?;
+        let uid = ingest::next_uid(pool, to_folder).await?;
         sqlx::query("UPDATE messages SET folder_id = ?, uid = ? WHERE id = ?")
             .bind(to_folder)
             .bind(uid)
