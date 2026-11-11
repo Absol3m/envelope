@@ -207,6 +207,20 @@ struct RawDetailMessage {
     body_html: Option<String>,
     is_read: bool,
     is_starred: bool,
+    unsub_url: Option<String>,
+    unsub_mailto: Option<String>,
+    unsub_one_click: bool,
+}
+
+/// Moyens de désabonnement d'une liste de diffusion, tirés des en-têtes List-Unsubscribe.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Unsubscribe {
+    /// Lien https vers un domaine public (page de désabonnement ou point d'appel du POST).
+    pub url: Option<String>,
+    pub mailto: Option<String>,
+    /// Désabonnement par simple POST (RFC 8058), sans page intermédiaire.
+    pub one_click: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -229,6 +243,7 @@ pub struct DetailMessage {
     pub body_html: Option<String>,
     pub is_read: bool,
     pub is_starred: bool,
+    pub unsubscribe: Option<Unsubscribe>,
 }
 
 impl From<RawDetailMessage> for DetailMessage {
@@ -251,6 +266,13 @@ impl From<RawDetailMessage> for DetailMessage {
             body_html: m.body_html,
             is_read: m.is_read,
             is_starred: m.is_starred,
+            unsubscribe: (m.unsub_url.is_some() || m.unsub_mailto.is_some()).then_some(
+                Unsubscribe {
+                    url: m.unsub_url,
+                    mailto: m.unsub_mailto,
+                    one_click: m.unsub_one_click,
+                },
+            ),
         }
     }
 }
@@ -290,7 +312,7 @@ pub async fn get_thread_detail(pool: &SqlitePool, thread_id: i64) -> Result<Opti
     };
 
     let raw: Vec<RawDetailMessage> = sqlx::query_as(
-        "SELECT id, message_id, references_ids, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred \
+        "SELECT id, message_id, references_ids, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred, unsub_url, unsub_mailto, unsub_one_click \
          FROM messages WHERE id IN (SELECT MIN(id) FROM messages WHERE thread_id = ?1 GROUP BY COALESCE(message_id, 'id:' || id)) \
          ORDER BY date, id",
     )
