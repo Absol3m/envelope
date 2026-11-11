@@ -37,7 +37,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # --- Sérialisation ---
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-schemars = "0.8"        # Rust types -> JSON Schema (outils MCP, étape 3)
 
 # --- Stockage local ---
 sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono", "uuid"] }
@@ -47,7 +46,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # --- Moteur mail (utilisé à partir de l'étape 2) ---
 mail-parser = "0.11"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "ring", "rustls-platform-verifier", "tokio1", "hostname"] }
-async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
 tokio-rustls = "0.26"
 futures = "0.3"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
@@ -59,8 +58,9 @@ percent-encoding = "2"
 psl = "2"                 # liste des suffixes publics (domaine enregistrable), maintenue
 utf7-imap = "0.3"         # noms de dossiers IMAP (UTF-7 modifié, RFC 3501)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-manual-roots"] }  # jetons OAuth2, autoconfig, désabonnement ; certificats vérifiés par le système (tls.rs)
-sha2 = "0.10"           # PKCE (S256)
-base64 = "0.22"
+sha2 = "0.11"           # PKCE (S256)
+base64 = "0.23"
+hex = "0.4"           # empreinte du message brut en hexadécimal
 dunce = "1"             # chemins Windows sans préfixe \\?\ (ouverture des pièces jointes)
 
 [profile.release]

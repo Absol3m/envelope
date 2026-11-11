@@ -22,7 +22,7 @@
 
 ## Conventions Rust
 - Erreurs : `AppError` (thiserror) dans src-tauri/src/error.rs ; pas d'`unwrap()` hors tests.
-- SQL : `sqlx::query*` à l'exécution (pas de macros check) ; migrations dans src-tauri/migrations/. Valeurs toujours en `.bind()` ; `sqlx::AssertSqlSafe(format!(..))` seulement pour y insérer des **constantes** (listes de colonnes), jamais une donnée venue de l'utilisateur ou d'un mail.
+- SQL : `sqlx::query*` à l'exécution (pas de macros check) ; migrations dans src-tauri/migrations/ : **ajout seulement**, jamais de modification d'une migration déjà commitée ou appliquée (sqlx vérifie leur empreinte au démarrage et refuserait d'ouvrir la base) ; toute évolution = nouveau fichier numéroté. Valeurs toujours en `.bind()` ; `sqlx::AssertSqlSafe(format!(..))` seulement pour y insérer des **constantes** (listes de colonnes), jamais une donnée venue de l'utilisateur ou d'un mail.
 - Secrets : trousseau OS uniquement, jamais en base ni dans les logs.
 - Pas de `unsafe`. Async : tokio ; ne jamais garder un `Message` mail-parser à travers un `.await`.
 

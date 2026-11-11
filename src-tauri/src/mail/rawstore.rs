@@ -26,7 +26,7 @@ fn path_of(dir: &Path, hash: &str) -> Result<PathBuf> {
 
 /// Range le message brut ; retourne son empreinte. Sans effet s'il est déjà présent.
 pub async fn put(dir: &Path, raw: &[u8]) -> Result<String> {
-    let hash = format!("{:x}", Sha256::digest(raw));
+    let hash = hex::encode(Sha256::digest(raw));
     let path = path_of(dir, &hash)?;
     if tokio::fs::try_exists(&path).await? {
         return Ok(hash);
