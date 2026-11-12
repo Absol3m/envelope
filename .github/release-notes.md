@@ -4,7 +4,7 @@ Ces fichiers ne sont pas signés (pas de certificat Apple ni Microsoft pour l'in
 
 **macOS (Apple Silicon)** : ouvrir le `.dmg`, glisser Envelope dans Applications, puis lancer dans un terminal :
 `xattr -dr com.apple.quarantine /Applications/Envelope.app`
-(ou clic droit → Ouvrir, puis Ouvrir dans la boîte de dialogue).
+(ou, sans terminal : lancer Envelope une première fois, puis Réglages Système → Confidentialité et sécurité → « Ouvrir quand même » ; le clic droit → Ouvrir ne suffit plus depuis macOS 15).
 
 **Windows** : lancer l'installeur `.exe` ; si SmartScreen s'affiche : « Informations complémentaires » → « Exécuter quand même ».
 
