@@ -3,6 +3,7 @@ import { attachmentError, draftFrom, forgotAttachment, draftFromQueued, draftFro
 import { scheduledAt } from "./format";
 import { pref } from "./pref";
 import { useMail } from "./store";
+import { t } from "./i18n";
 
 /** Fenêtre d'annulation de l'envoi : rien ne part tant qu'elle n'est pas écoulée (comme l'archivage). */
 const UNDO_MS = 5000;
@@ -79,11 +80,11 @@ let waiting: Draft | null = null;
 /** Contrôles avant tout envoi : destinataire présent, pièce jointe annoncée mais absente (`proceed` relance l'envoi sans ce rappel). */
 function checkBeforeSend(draft: Draft, force: boolean, proceed: () => void): boolean {
   if (!draft.to.length) {
-    useMail.getState().toast({ message: "Ajoutez au moins un destinataire.", tone: "error" });
+    useMail.getState().toast({ message: t("composer:needRecipient"), tone: "error" });
     return false;
   }
   if (!force && forgotAttachment(draft)) {
-    useMail.getState().toast({ message: "Vous mentionnez une pièce jointe, mais aucune n'est jointe.", tone: "error", actionLabel: "Envoyer quand même", onAction: proceed, duration: 8000 });
+    useMail.getState().toast({ message: t("composer:forgotAttachment"), tone: "error", actionLabel: t("composer:sendAnyway"), onAction: proceed, duration: 8000 });
     return false;
   }
   return true;
@@ -149,7 +150,7 @@ export const useComposer = create<ComposerState>((set, get) => {
     compose() {
       const { accounts, accountFilter } = useMail.getState();
       const accountId = accountFilter ?? accounts[0]?.id;
-      if (!accountId) return toast("Ajoutez d'abord un compte.", "error");
+      if (!accountId) return toast(t("composer:addAccountFirst"), "error");
       open(emptyDraft(accountId, accounts.find((a) => a.id === accountId)?.signature));
     },
 
@@ -157,7 +158,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       const { selectedId, details, accounts } = useMail.getState();
       const thread = selectedId === null ? undefined : details[selectedId];
       const account = accounts.find((a) => a.id === thread?.accountId);
-      if (!thread || !account || !thread.messages.length) return toast("Ouvrez une conversation pour répondre.");
+      if (!thread || !account || !thread.messages.length) return toast(t("composer:openToReply"));
       open(draftFrom(mode, thread, account.email, account.signature, account.identities.map((i) => i.email)));
     },
 
@@ -179,7 +180,7 @@ export const useComposer = create<ComposerState>((set, get) => {
         open(draft);
         set({ syncState: "idle" });
       } catch (e) {
-        toast(`Brouillon impossible à ouvrir — ${String(e)}`, "error", 6000);
+        toast(t("composer:openDraftFailed", { error: String(e) }), "error", 6000);
       }
     },
 
@@ -197,7 +198,7 @@ export const useComposer = create<ComposerState>((set, get) => {
           set((cur) => (cur.draft ? { draft: { ...cur.draft, attachments: [...cur.draft.attachments, added] } } : cur));
         }
       } catch (e) {
-        toast(`Pièce jointe impossible — ${String(e)}`, "error");
+        toast(t("composer:attachFailed", { error: String(e) }), "error");
       }
     },
 
@@ -209,7 +210,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       set({ saved: null });
       writeSaved(null);
       open({ ...saved, lostAttachments: undefined });
-      if (saved.lostAttachments?.length) toast(`Pièces jointes à rejoindre : ${saved.lostAttachments.join(", ")}`, "default", 6000);
+      if (saved.lostAttachments?.length) toast(t("composer:reattach", { names: saved.lostAttachments.join(", ") }), "default", 6000);
     },
 
     close() {
@@ -223,7 +224,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       void saveToServer(d); // version finale sur le serveur ; la copie locale reste le tampon hors ligne
       writeSaved(d);
       set({ draft: null, saved: d });
-      useMail.getState().toast({ message: "Brouillon conservé", actionLabel: "Reprendre", onAction: () => get().resume(), duration: 4000 });
+      useMail.getState().toast({ message: t("composer:draftKept"), actionLabel: t("composer:resume"), onAction: () => get().resume(), duration: 4000 });
     },
 
     discard() {
@@ -246,15 +247,15 @@ export const useComposer = create<ComposerState>((set, get) => {
           onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi
           lastSig.delete(draft.id);
           const failure = typeof report.sentCopy === "object" ? report.sentCopy.failed : null;
-          if (failure === null) toast("Message envoyé");
-          else toast(`Message envoyé, mais la copie dans « Envoyés » a échoué — ${failure}`, "error", 8000);
+          if (failure === null) toast(t("composer:sent"));
+          else toast(t("composer:sentNoCopy", { error: failure }), "error", 8000);
         } catch (e) {
           open(draft); // rien n'est perdu : le message revient dans le panneau
-          toast(`Envoi impossible — ${String(e)}`, "error", 7000);
+          toast(t("composer:sendFailed", { error: String(e) }), "error", 7000);
         }
       }, UNDO_MS);
       pendingSend = { cancel: () => { clearTimeout(timer); open(draft); } };
-      useMail.getState().toast({ message: "Envoi du message…", actionLabel: "Annuler", onAction: () => get().undoSend(), duration: UNDO_MS, countdown: true });
+      useMail.getState().toast({ message: t("composer:sending"), actionLabel: t("composer:cancel"), onAction: () => get().undoSend(), duration: UNDO_MS, countdown: true });
     },
 
     async schedule(at, force = false) {
@@ -265,7 +266,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       try {
         id = await useMail.getState().backend.scheduleSend(draft.accountId, outgoing(draft), Math.floor(at / 1000));
       } catch (e) {
-        return toast(`Programmation impossible — ${String(e)}`, "error", 7000);
+        return toast(t("composer:scheduleFailed", { error: String(e) }), "error", 7000);
       }
       clearTimeout(saveTimer);
       set({ draft: null });
@@ -282,7 +283,7 @@ export const useComposer = create<ComposerState>((set, get) => {
         open({ ...draftFromQueued(accountId, m), fromEmail: knownAlias(account, m.fromEmail) });
         void useMail.getState().refreshScheduled();
       } catch (e) {
-        toast(`Modification impossible — ${String(e)}`, "error", 6000);
+        toast(t("composer:editFailed", { error: String(e) }), "error", 6000);
       }
     },
 
@@ -290,7 +291,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       if (!pendingSend) return false;
       pendingSend.cancel();
       pendingSend = null;
-      toast("Envoi annulé", "default", 2200);
+      toast(t("composer:sendCancelled"), "default", 2200);
       return true;
     },
   };

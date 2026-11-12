@@ -91,9 +91,9 @@ export function toOutgoing(d: Draft): OutgoingMessage {
 
 /** Vérifie qu'ajouter `files` reste dans les limites ; renvoie le message d'erreur sinon. */
 export function attachmentError(current: AttachmentDraft[], files: { name: string; size: number }[]): string | null {
-  if (current.length + files.length > MAX_ATTACHMENTS) return `Trop de pièces jointes (maximum ${MAX_ATTACHMENTS}).`;
+  if (current.length + files.length > MAX_ATTACHMENTS) return t("composer:tooManyAttachments", { max: MAX_ATTACHMENTS });
   const total = [...current, ...files].reduce((n, f) => n + f.size, 0);
-  if (total > MAX_ATTACHMENTS_BYTES) return `Pièces jointes trop volumineuses : ${Math.round(MAX_ATTACHMENTS_BYTES / 1024 / 1024)} Mo au total au maximum.`;
+  if (total > MAX_ATTACHMENTS_BYTES) return t("composer:attachmentsTooBig", { size: Math.round(MAX_ATTACHMENTS_BYTES / 1024 / 1024) });
   return null;
 }
 
@@ -105,7 +105,7 @@ export function readAsBase64(file: File): Promise<string> {
       const url = String(r.result);
       resolve(url.slice(url.indexOf(",") + 1));
     };
-    r.onerror = () => reject(new Error(`lecture impossible : ${file.name}`));
+    r.onerror = () => reject(new Error(t("composer:readFailed", { name: file.name })));
     r.readAsDataURL(file);
   });
 }
@@ -300,15 +300,15 @@ export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetai
   // On répond depuis l'adresse à laquelle le message a été envoyé, si c'est un alias.
   const fromEmail = aliases.find((alias) => [...target.to, ...target.cc].some((a) => sameAddr(a.address, alias)));
   const base = { ...emptyDraft(thread.accountId), fromEmail };
-  const header = `Le ${when(target.date)}, ${who(target.fromName, target.fromAddr)} a écrit :`;
+  const header = t("composer:wrote", { date: when(target.date), who: who(target.fromName, target.fromAddr) });
 
   if (mode === "forward") {
     const lines = [
-      "---------- Message transféré ----------",
-      `De : ${who(target.fromName, target.fromAddr)}`,
-      `Date : ${when(target.date)}`,
-      `Objet : ${target.subject}`,
-      `À : ${target.to.map((a) => who(a.name, a.address)).join(", ")}`,
+      t("composer:forwarded.title"),
+      t("composer:forwarded.from", { who: who(target.fromName, target.fromAddr) }),
+      t("composer:forwarded.date", { date: when(target.date) }),
+      t("composer:forwarded.subject", { subject: target.subject }),
+      t("composer:forwarded.to", { to: target.to.map((a) => who(a.name, a.address)).join(", ") }),
     ];
     const head = lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("");
     return { ...base, mode, subject: withPrefix("Fwd", thread.subject), html: `<p></p>${signatureHtml(signature)}${head}${bodyHtmlOf(target)}` };
