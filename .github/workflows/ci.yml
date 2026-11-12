@@ -50,6 +50,7 @@ jobs:
       # Front : tsc + vite (produit aussi dist/, requis par la compilation de l'application Tauri).
       - run: pnpm build
       - run: pnpm test
+      - run: node scripts/i18n-status.mjs --check
 
       - uses: dtolnay/rust-toolchain@stable
         with:

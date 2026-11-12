@@ -17,7 +17,8 @@
 - Pluriels : `clé_one` / `clé_other` + `{{count}}`. Dates, nombres, temps relatif : `Intl` via `src/lib/format.ts`, jamais `fr-FR` en dur.
 - Une constante de module qui contient du texte (libellés, listes) se lit **à l'affichage** (getter ou fonction), pas à l'import : le changement de langue remonte l'interface (`main.tsx`).
 - Dans un fichier où `t` désigne autre chose (une conversation, un onglet…), importer `t as tr`.
-- Essai : `pnpm dev` puis `?lang=en` ou `?lang=fr`.
+- Erreurs Rust : jamais de phrase pour l'utilisateur en dur ; `AppError::Invalid(msg!("code.stable", "english fallback {x}", x = valeur))` (`src-tauri/src/error.rs`), avec le code traduit dans `src/locales/*/errors.json` (`rust.<code>`) ; le front reçoit `{ code, args, message }`. Une erreur gardée en base ou émise en événement se stocke avec `e.to_wire()` et s'affiche avec `describeStored`.
+- Essai : `pnpm dev` puis `?lang=en` ou `?lang=fr`. État : `pnpm i18n:status` (`docs/translations/STATUS.md`, vérifié en CI) ; contribuer une langue : `TRANSLATING.md`.
 
 ## Architecture
 - `src-tauri/` : application (workspace Cargo). `crates/envelope-core` : requêtes de lecture partagées (recherche, threads). `crates/envelope-mcp` : serveur MCP séparé, lecture seule sur la base ; les actions IMAP (archiver, étiqueter) passeront par l'application (temps 2).

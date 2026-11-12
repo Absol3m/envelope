@@ -20,6 +20,7 @@ Les fusions sont faites par le mainteneur uniquement. Une PR peut être refusée
 ## Principes du projet
 - **Natif d'abord** : utiliser ce que propose le système (trousseau, notifications, sélecteurs de fichiers…) ou un plugin Tauri officiel plutôt que de recoder.
 - **Sécurité** : le contenu des e-mails est une entrée non fiable ; jamais de secret en base ni dans les journaux (trousseau du système uniquement) ; pas de `unsafe` ni de `unwrap()` hors tests.
+- **Textes de l'interface** : aucun texte en dur ; chaque texte passe par une clé avec sa traduction française **et** anglaise dans la même PR (voir `TRANSLATING.md` pour ajouter une langue).
 - **Pas de reprise de code sans licence compatible** : indiquez la provenance de tout code importé.
 
 ## Signaler un problème
