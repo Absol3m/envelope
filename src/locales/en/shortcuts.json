@@ -1,0 +1,20 @@
+{
+  "navigation": "Navigation",
+  "next": "Next conversation",
+  "click": "click",
+  "range": "Select a range",
+  "addToSelection": "Add to selection",
+  "previous": "Previous conversation",
+  "search": "Search (operators: from: to: subject: before: has:attachment)",
+  "tabs": "Smart Inbox tabs",
+  "closeOrDeselect": "Close / deselect",
+  "actions": "Actions",
+  "deleteForever": "Delete permanently (trash and spam)",
+  "star": "Star / unstar",
+  "readUnread": "Mark read / unread",
+  "undoSend": "Undo send",
+  "goTo": "Go to…",
+  "application": "Application",
+  "thisHelp": "This help",
+  "title": "Keyboard shortcuts"
+}

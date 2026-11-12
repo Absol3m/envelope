@@ -1,0 +1,11 @@
+{
+  "locked": "Application locked",
+  "title": "Envelope is locked",
+  "enterPassword": "Enter your password to continue.",
+  "authenticate": "Authenticate to continue.",
+  "password": "Password",
+  "unlock": "Unlock",
+  "cantUnlock": "Can't unlock?",
+  "resetConfirm": "Resetting Envelope erases ALL the data on this computer: accounts, locally archived messages, templates and settings. Emails stay on your servers, but anything that only exists here is lost.\n\nOnly use this if you can no longer unlock Envelope. Continue?",
+  "eraseAll": "Erase everything"
+}

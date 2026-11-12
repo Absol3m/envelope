@@ -15,6 +15,7 @@ import { notifyNewMail, type SyncedPayload } from "@/lib/notify";
 import { startUpdateChecks } from "@/lib/update";
 import { useMail } from "@/lib/store";
 import { dragRegion } from "@/lib/platform";
+import { t as tr } from "@/lib/i18n";
 
 // Écrans rarement ouverts : chargés à la demande, hors du paquet initial.
 const Onboarding = lazy(() => import("@/components/Onboarding").then((m) => ({ default: m.Onboarding })));
@@ -55,7 +56,7 @@ export default function App() {
       unlisten.push(listen<{ subject: string; error: string | null } | null>("scheduled:changed", (e) => {
         const { toast, refreshScheduled } = useMail.getState();
         void refreshScheduled();
-        if (e.payload) toast(e.payload.error ? { message: `Envoi programmé impossible — ${e.payload.subject || "sans objet"} : ${e.payload.error}`, tone: "error", duration: 8000 } : { message: `Message programmé envoyé — ${e.payload.subject || "sans objet"}` });
+        if (e.payload) toast(e.payload.error ? { message: tr("scheduled:sendFailedFor", { subject: e.payload.subject || tr("scheduled:noSubject"), error: e.payload.error }), tone: "error", duration: 8000 } : { message: tr("scheduled:sentFor", { subject: e.payload.subject || tr("scheduled:noSubject") }) });
       }));
     });
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));

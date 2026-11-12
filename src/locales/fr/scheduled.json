@@ -3,5 +3,8 @@
   "title": "Envois programmés",
   "hint": "Ils partent à l'heure prévue si Envelope est ouvert.",
   "sendNow": "Envoyer maintenant",
-  "edit": "Modifier"
+  "edit": "Modifier",
+  "sendFailedFor": "Envoi programmé impossible — {{subject}} : {{error}}",
+  "sentFor": "Message programmé envoyé — {{subject}}",
+  "noSubject": "sans objet"
 }

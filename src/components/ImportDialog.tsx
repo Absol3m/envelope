@@ -3,13 +3,14 @@ import { FolderOpen, HardDrive, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ImportFolder, ImportProgress, ImportReport } from "@/lib/api";
-import { fileSize } from "@/lib/format";
+import { fileSize, formatNumber } from "@/lib/format";
 import { useMail } from "@/lib/store";
 import { btnPrimary } from "./ui/primitives";
+import { t as tr } from "@/lib/i18n";
 
 type Step = "choose" | "pick" | "running" | "done";
 
-const sizeLabel = (f: ImportFolder) => (f.kind === "maildir" ? `${f.size.toLocaleString("fr-FR")} fichier${f.size > 1 ? "s" : ""}` : fileSize(f.size));
+const sizeLabel = (f: ImportFolder) => (f.kind === "maildir" ? tr("import:files", { count: f.size, n: formatNumber(f.size) }) : fileSize(f.size));
 
 /** Importe des dossiers locaux d'un autre client (Thunderbird : mbox ou Maildir) dans « Sur cet ordinateur ». */
 export function ImportDialog() {
@@ -37,7 +38,7 @@ export function ImportDialog() {
       // Le sélecteur est ouvert par l'application ; on ne reçoit qu'un jeton, jamais un chemin à rendre.
       const picked = await backend.importPick();
       if (!picked) return;
-      if (picked.folders.length === 0) return setError("Aucun dossier de mails (mbox ou Maildir) trouvé ici. Choisissez le dossier du profil Thunderbird ou celui qui contient vos boîtes.");
+      if (picked.folders.length === 0) return setError(tr("import:noFolders"));
       setSource({ token: picked.token, path: picked.path });
       setFolders(picked.folders);
       setChecked(new Set(picked.folders.filter((f) => f.selected).map((f) => f.key)));
@@ -74,16 +75,16 @@ export function ImportDialog() {
           <div className="flex items-start gap-3">
             <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent"><HardDrive size={18} /></span>
             <div className="min-w-0 flex-1">
-              <Dialog.Title className="text-[16px] font-semibold tracking-tight">Importer des dossiers locaux</Dialog.Title>
-              <p className="mt-0.5 text-[12.5px] text-muted">Thunderbird (mbox ou Maildir). Les messages sont copiés dans « Sur cet ordinateur » ; rien n'est modifié dans Thunderbird.</p>
+              <Dialog.Title className="text-[16px] font-semibold tracking-tight">{tr("import:title")}</Dialog.Title>
+              <p className="mt-0.5 text-[12.5px] text-muted">{tr("import:subtitle")}</p>
             </div>
-            {!busy && <Dialog.Close aria-label="Fermer" className="press rounded-md p-1 text-muted hover:bg-hover hover:text-fg"><X size={16} /></Dialog.Close>}
+            {!busy && <Dialog.Close aria-label={tr("common:close")} className="press rounded-md p-1 text-muted hover:bg-hover hover:text-fg"><X size={16} /></Dialog.Close>}
           </div>
 
           {step === "choose" && (
             <div className="mt-5">
-              <p className="text-[13px] text-muted">Choisissez le dossier de votre profil Thunderbird (ou un dossier qui contient vos boîtes). Fermez Thunderbird avant, pour que ses fichiers ne changent pas pendant l'import. Les messages supprimés dans Thunderbird ne sont pas repris.</p>
-              <button className={`${btnPrimary} mt-4`} onClick={() => void choose()}><FolderOpen size={15} />Choisir un dossier…</button>
+              <p className="text-[13px] text-muted">{tr("import:choose")}</p>
+              <button className={`${btnPrimary} mt-4`} onClick={() => void choose()}><FolderOpen size={15} />{tr("import:pickFolder")}</button>
             </div>
           )}
 
@@ -91,8 +92,8 @@ export function ImportDialog() {
             <>
               <p className="mt-4 truncate text-[12px] text-faint" title={source?.path}>{source?.path}</p>
               <div className="mt-2 flex items-center justify-between text-[12.5px]">
-                <button className="press rounded-md px-1.5 py-0.5 font-medium text-accent hover:bg-hover" onClick={() => setChecked(allOn ? new Set() : new Set(folders.map((f) => f.key)))}>{allOn ? "Tout désélectionner" : "Tout sélectionner"}</button>
-                <span className="text-muted">{checked.size} sur {folders.length} dossier{folders.length > 1 ? "s" : ""}</span>
+                <button className="press rounded-md px-1.5 py-0.5 font-medium text-accent hover:bg-hover" onClick={() => setChecked(allOn ? new Set() : new Set(folders.map((f) => f.key)))}>{allOn ? tr("import:deselectAll") : tr("import:selectAll")}</button>
+                <span className="text-muted">{tr("import:selectedOf", { checked: checked.size, count: folders.length })}</span>
               </div>
               <ul className="mt-2 min-h-0 flex-1 divide-y divide-border overflow-y-auto rounded-xl border border-border">
                 {folders.map((f) => (
@@ -106,35 +107,35 @@ export function ImportDialog() {
                 ))}
               </ul>
               <div className="mt-4 flex items-center justify-end gap-2">
-                <button className="press h-9 rounded-lg px-3 text-[13px] font-medium text-muted hover:bg-hover hover:text-fg" onClick={() => setStep("choose")}>Changer de dossier</button>
-                <button className={btnPrimary} disabled={checked.size === 0} onClick={() => void run()}>Importer {checked.size} dossier{checked.size > 1 ? "s" : ""}</button>
+                <button className="press h-9 rounded-lg px-3 text-[13px] font-medium text-muted hover:bg-hover hover:text-fg" onClick={() => setStep("choose")}>{tr("import:change")}</button>
+                <button className={btnPrimary} disabled={checked.size === 0} onClick={() => void run()}>{tr("import:importN", { count: checked.size })}</button>
               </div>
             </>
           )}
 
           {step === "running" && (
             <div className="mt-6" aria-live="polite">
-              <p className="truncate text-[13px] font-medium">{progress?.folder ? progress.folder : "Préparation…"}</p>
+              <p className="truncate text-[13px] font-medium">{progress?.folder ? progress.folder : tr("import:preparing")}</p>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-hover" role="progressbar" aria-valuemin={0} aria-valuemax={progress?.foldersTotal ?? 1} aria-valuenow={progress?.foldersDone ?? 0}>
                 <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${progress && progress.foldersTotal > 0 ? Math.max(4, (progress.foldersDone / progress.foldersTotal) * 100) : 4}%` }} />
               </div>
               <p className="tnum mt-2 text-[12.5px] text-muted">
-                {progress ? `Dossier ${Math.min(progress.foldersDone + 1, progress.foldersTotal)} sur ${progress.foldersTotal} · ` : ""}
-                {(progress?.imported ?? 0).toLocaleString("fr-FR")} messages importés
+                {progress ? tr("import:folderOf", { n: Math.min(progress.foldersDone + 1, progress.foldersTotal), total: progress.foldersTotal }) : ""}
+                {tr("import:importedSoFar", { count: progress?.imported ?? 0, n: formatNumber(progress?.imported ?? 0) })}
               </p>
-              <p className="mt-3 text-[12px] text-faint">Vous pouvez continuer à utiliser Envelope. Si l'import est interrompu, relancez-le : les messages déjà importés ne sont pas dupliqués.</p>
+              <p className="mt-3 text-[12px] text-faint">{tr("import:keepUsing")}</p>
             </div>
           )}
 
           {step === "done" && report && (
             <div className="mt-5">
-              <p className="text-[14px] font-semibold">{report.imported.toLocaleString("fr-FR")} message{report.imported > 1 ? "s" : ""} importé{report.imported > 1 ? "s" : ""}</p>
+              <p className="text-[14px] font-semibold">{tr("import:imported", { count: report.imported, n: formatNumber(report.imported) })}</p>
               <ul className="mt-2 space-y-0.5 text-[12.5px] text-muted">
-                {report.duplicates > 0 && <li>{report.duplicates.toLocaleString("fr-FR")} déjà présent{report.duplicates > 1 ? "s" : ""} (ignorés)</li>}
-                {report.deleted > 0 && <li>{report.deleted.toLocaleString("fr-FR")} supprimé{report.deleted > 1 ? "s" : ""} dans Thunderbird (non repris)</li>}
-                {report.failed > 0 && <li className="text-danger">{report.failed.toLocaleString("fr-FR")} illisible{report.failed > 1 ? "s" : ""} ou trop volumineux</li>}
+                {report.duplicates > 0 && <li>{tr("import:duplicates", { count: report.duplicates, n: formatNumber(report.duplicates) })}</li>}
+                {report.deleted > 0 && <li>{tr("import:deleted", { count: report.deleted, n: formatNumber(report.deleted) })}</li>}
+                {report.failed > 0 && <li className="text-danger">{tr("import:failed", { count: report.failed, n: formatNumber(report.failed) })}</li>}
               </ul>
-              <div className="mt-5 flex justify-end"><button className={btnPrimary} onClick={() => setImportOpen(false)}>Terminer</button></div>
+              <div className="mt-5 flex justify-end"><button className={btnPrimary} onClick={() => setImportOpen(false)}>{tr("import:done")}</button></div>
             </div>
           )}
 

@@ -1,0 +1,16 @@
+{
+  "placeholder": "Rechercher une action, un dossier, un e-mail…",
+  "empty": "Aucune commande trouvée.",
+  "searchFor": "Rechercher « {{text}} » dans les e-mails",
+  "conversation": "Conversation",
+  "goTo": "Aller à",
+  "display": "Affichage",
+  "themeLight": "Thème clair",
+  "themeDark": "Thème sombre",
+  "themeSystem": "Thème du système",
+  "density": "Densité : {{value}}",
+  "write": "Écrire",
+  "resumeDraft": "Reprendre le brouillon",
+  "syncNow": "Synchroniser maintenant",
+  "agent": "Agent IA (serveur MCP)"
+}

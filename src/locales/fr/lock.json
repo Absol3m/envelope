@@ -1,0 +1,11 @@
+{
+  "locked": "Application verrouillée",
+  "title": "Envelope est verrouillé",
+  "enterPassword": "Saisissez votre mot de passe pour continuer.",
+  "authenticate": "Authentifiez-vous pour continuer.",
+  "password": "Mot de passe",
+  "unlock": "Déverrouiller",
+  "cantUnlock": "Impossible de déverrouiller ?",
+  "resetConfirm": "Réinitialiser Envelope efface TOUTES les données de cet ordinateur : comptes, messages archivés en local, modèles et réglages. Les e-mails restent sur vos serveurs, mais ce qui n'existe qu'ici est perdu.\n\nÀ n'utiliser que si vous ne pouvez plus déverrouiller Envelope. Continuer ?",
+  "eraseAll": "Tout effacer"
+}

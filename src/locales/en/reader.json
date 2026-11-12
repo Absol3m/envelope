@@ -45,5 +45,6 @@
   "palette": "Command palette",
   "selectOne": "Select a conversation",
   "shortcutsHint": "Shortcuts are there if you want them:",
-  "reading": "Reading"
+  "reading": "Reading",
+  "selectAll": "Select all"
 }

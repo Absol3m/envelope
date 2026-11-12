@@ -1,0 +1,16 @@
+{
+  "placeholder": "Search for an action, a folder, an email…",
+  "empty": "No command found.",
+  "searchFor": "Search emails for “{{text}}”",
+  "conversation": "Conversation",
+  "goTo": "Go to",
+  "display": "Display",
+  "themeLight": "Light theme",
+  "themeDark": "Dark theme",
+  "themeSystem": "System theme",
+  "density": "Density: {{value}}",
+  "write": "Compose",
+  "resumeDraft": "Resume draft",
+  "syncNow": "Sync now",
+  "agent": "AI agent (MCP server)"
+}

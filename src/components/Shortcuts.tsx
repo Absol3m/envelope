@@ -5,18 +5,19 @@ import { useMail } from "@/lib/store";
 import { DESTINATION_IDS, DESTINATIONS, NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
 import { keys, settingsLabel } from "@/lib/platform";
 import { IconButton, Kbd } from "./ui/primitives";
+import { t as tr } from "@/lib/i18n";
 
-const SHORTCUTS: { group: string; items: [string[], string][] }[] = [
-  { group: "Navigation", items: [[["J"], "Conversation suivante"], [["⇧", "clic"], "Sélectionner une plage"], [[...keys("mod"), "clic"], "Ajouter à la sélection"], [keys("mod+a"), "Tout sélectionner"], [["K"], "Conversation précédente"], [["/"], "Rechercher (opérateurs : de: à: objet: avant: pj)"], [keys("mod+k"), "Palette de commandes"], [["1", "–", "4"], "Onglets Smart Inbox"], [["Échap"], "Fermer / désélectionner"]] },
-  { group: "Actions", items: [...DESTINATION_IDS.map((d): [string[], string] => [[DESTINATIONS[d].key], DESTINATIONS[d].label]), [["⌫"], "Supprimer définitivement (corbeille et spam)"], [["S"], "Suivre / ne plus suivre"], [["U"], "Marquer lu / non lu"], [["Z"], "Annuler l'envoi"]] },
-  { group: "Aller à…", items: [...NAV_MAILBOXES, ...NAV_SMART].filter((i) => i.go).map((i): [string[], string] => [["G", (i.go as string).toUpperCase()], i.label]) },
-  { group: "Application", items: [[keys("mod+,"), settingsLabel()], [["?"], "Cette aide"]] },
+const shortcuts = (): { group: string; items: [string[], string][] }[] => [
+  { group: tr("shortcuts:navigation"), items: [[["J"], tr("shortcuts:next")], [["⇧", tr("shortcuts:click")], tr("shortcuts:range")], [[...keys("mod"), tr("shortcuts:click")], tr("shortcuts:addToSelection")], [keys("mod+a"), tr("reader:selectAll")], [["K"], tr("shortcuts:previous")], [["/"], tr("shortcuts:search")], [keys("mod+k"), tr("reader:palette")], [["1", "–", "4"], tr("shortcuts:tabs")], [[tr("common:keys.escape")], tr("shortcuts:closeOrDeselect")]] },
+  { group: tr("shortcuts:actions"), items: [...DESTINATION_IDS.map((d): [string[], string] => [[DESTINATIONS[d].key], DESTINATIONS[d].label]), [["⌫"], tr("shortcuts:deleteForever")], [["S"], tr("shortcuts:star")], [["U"], tr("shortcuts:readUnread")], [["Z"], tr("shortcuts:undoSend")]] },
+  { group: tr("shortcuts:goTo"), items: [...NAV_MAILBOXES, ...NAV_SMART].filter((i) => i.go).map((i): [string[], string] => [["G", (i.go as string).toUpperCase()], i.label]) },
+  { group: tr("shortcuts:application"), items: [[keys("mod+,"), settingsLabel()], [["?"], tr("shortcuts:thisHelp")]] },
 ];
 
 export function ShortcutList() {
   return (
     <div className="grid gap-x-10 gap-y-6 sm:grid-cols-2">
-      {SHORTCUTS.map((g) => (
+      {shortcuts().map((g) => (
         <section key={g.group}>
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">{g.group}</h3>
           <ul className="space-y-1.5">
@@ -41,8 +42,8 @@ export function ShortcutsHelp() {
         <Dialog.Overlay className="fixed inset-0 z-[90] bg-black/35 backdrop-blur-[3px] anim-fade-in" />
         <Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-1/2 z-[91] w-[min(640px,92vw)] rounded-2xl bg-elevated p-6 shadow-pop" style={{ animation: "dialog-in 0.2s cubic-bezier(0.16,1,0.3,1) both" }}>
           <div className="mb-5 flex items-center">
-            <Dialog.Title className="flex-1 text-[16px] font-semibold tracking-tight">Raccourcis clavier</Dialog.Title>
-            <Dialog.Close asChild><IconButton label="Fermer"><X size={16} /></IconButton></Dialog.Close>
+            <Dialog.Title className="flex-1 text-[16px] font-semibold tracking-tight">{tr("shortcuts:title")}</Dialog.Title>
+            <Dialog.Close asChild><IconButton label={tr("common:close")}><X size={16} /></IconButton></Dialog.Close>
           </div>
           <ShortcutList />
         </Dialog.Content>

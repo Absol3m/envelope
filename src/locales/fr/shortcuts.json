@@ -1,0 +1,20 @@
+{
+  "navigation": "Navigation",
+  "next": "Conversation suivante",
+  "click": "clic",
+  "range": "Sélectionner une plage",
+  "addToSelection": "Ajouter à la sélection",
+  "previous": "Conversation précédente",
+  "search": "Rechercher (opérateurs : de: à: objet: avant: pj)",
+  "tabs": "Onglets Smart Inbox",
+  "closeOrDeselect": "Fermer / désélectionner",
+  "actions": "Actions",
+  "deleteForever": "Supprimer définitivement (corbeille et spam)",
+  "star": "Suivre / ne plus suivre",
+  "readUnread": "Marquer lu / non lu",
+  "undoSend": "Annuler l'envoi",
+  "goTo": "Aller à…",
+  "application": "Application",
+  "thisHelp": "Cette aide",
+  "title": "Raccourcis clavier"
+}

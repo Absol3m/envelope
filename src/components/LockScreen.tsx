@@ -4,6 +4,7 @@ import { useMail } from "@/lib/store";
 import { dragRegion } from "@/lib/platform";
 import { errText } from "@/lib/utils";
 import { btnPrimary, inputCls } from "./ui/primitives";
+import { t as tr } from "@/lib/i18n";
 
 /** Écran de déverrouillage : seul écran affiché tant que l'application est verrouillée (le moteur refuse le reste). */
 export function LockScreen() {
@@ -40,26 +41,26 @@ export function LockScreen() {
 
   // Secours : mot de passe oublié, trousseau réinitialisé, authentification du système retirée.
   const reset = async () => {
-    const ok = await backend.confirm("Réinitialiser Envelope efface TOUTES les données de cet ordinateur : comptes, messages archivés en local, modèles et réglages. Les e-mails restent sur vos serveurs, mais ce qui n'existe qu'ici est perdu.\n\nÀ n'utiliser que si vous ne pouvez plus déverrouiller Envelope. Continuer ?", "Tout effacer");
+    const ok = await backend.confirm(tr("lock:resetConfirm"), tr("lock:eraseAll"));
     if (ok) await attempt(() => backend.resetApp());
   };
 
   return (
-    <main className="flex h-full flex-col items-center justify-center gap-5 bg-bg px-6" {...dragRegion} aria-label="Application verrouillée">
+    <main className="flex h-full flex-col items-center justify-center gap-5 bg-bg px-6" {...dragRegion} aria-label={tr("lock:locked")}>
       <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-soft text-accent"><Lock size={26} /></span>
       <div className="text-center">
-        <h1 className="text-[18px] font-semibold tracking-tight">Envelope est verrouillé</h1>
-        <p className="mt-1 text-[13px] text-muted">{method === "password" ? "Saisissez votre mot de passe pour continuer." : "Authentifiez-vous pour continuer."}</p>
+        <h1 className="text-[18px] font-semibold tracking-tight">{tr("lock:title")}</h1>
+        <p className="mt-1 text-[13px] text-muted">{method === "password" ? tr("lock:enterPassword") : tr("lock:authenticate")}</p>
       </div>
       {method === "password" ? (
         <form className="flex w-[min(320px,100%)] flex-col gap-2.5" onSubmit={(e) => { e.preventDefault(); if (password) void attempt(() => backend.unlockPassword(password)); }}>
-          <input ref={field} type="password" aria-label="Mot de passe" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} className={inputCls} />
-          <button type="submit" disabled={busy || !password} className={btnPrimary}>Déverrouiller</button>
+          <input ref={field} type="password" aria-label={tr("lock:password")} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={busy} className={inputCls} />
+          <button type="submit" disabled={busy || !password} className={btnPrimary}>{tr("lock:unlock")}</button>
         </form>
       ) : (
-        <button type="button" onClick={unlockSystem} disabled={busy} className={btnPrimary}>Déverrouiller</button>
+        <button type="button" onClick={unlockSystem} disabled={busy} className={btnPrimary}>{tr("lock:unlock")}</button>
       )}
-      <button type="button" onClick={() => void reset()} disabled={busy} className="press text-[12px] text-muted underline-offset-2 hover:text-fg hover:underline">Impossible de déverrouiller ?</button>
+      <button type="button" onClick={() => void reset()} disabled={busy} className="press text-[12px] text-muted underline-offset-2 hover:text-fg hover:underline">{tr("lock:cantUnlock")}</button>
       {error && <p role="alert" className="max-w-[320px] text-center text-[12.5px] text-danger">{error}</p>}
     </main>
   );

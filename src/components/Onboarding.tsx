@@ -2,6 +2,7 @@ import { Lock, Sparkles } from "lucide-react";
 import { useMail } from "@/lib/store";
 import { dragRegion } from "@/lib/platform";
 import { AddAccountForm } from "./AddAccountForm";
+import { t as tr } from "@/lib/i18n";
 
 /** Premier lancement : un seul écran, un seul choix. */
 export function Onboarding() {
@@ -13,17 +14,17 @@ export function Onboarding() {
       <div className="anim-fade-up relative w-[min(420px,90vw)]">
         <div className="mb-7 text-center">
           <img src="/icon.svg" alt="" className="mx-auto -mb-1 -mt-4 h-24 w-24" draggable={false} />
-          <h1 className="text-[26px] font-semibold tracking-tight">Bienvenue dans Envelope</h1>
-          <p className="mt-1.5 text-[14px] text-muted">Le client mail rapide, privé et prêt pour vos agents IA.</p>
+          <h1 className="text-[26px] font-semibold tracking-tight">{tr("onboarding:welcome")}</h1>
+          <p className="mt-1.5 text-[14px] text-muted">{tr("onboarding:tagline")}</p>
         </div>
 
         <div className="space-y-3 rounded-2xl bg-elevated p-5 shadow-pop">
           <AddAccountForm large />
-          <p className="flex items-start gap-2 pt-1 text-[12px] text-muted"><Lock size={13} className="mt-px shrink-0" />Votre mot de passe est stocké dans le trousseau du système. Vos e-mails restent sur cet ordinateur.</p>
+          <p className="flex items-start gap-2 pt-1 text-[12px] text-muted"><Lock size={13} className="mt-px shrink-0" />{tr("onboarding:privacy")}</p>
         </div>
 
         <button onClick={() => void enterDemo()} className="press mx-auto mt-5 flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-medium text-muted hover:bg-hover hover:text-fg">
-          <Sparkles size={15} className="text-accent" /> Explorer avec des données de démo
+          <Sparkles size={15} className="text-accent" /> {tr("onboarding:demo")}
         </button>
       </div>
     </div>
