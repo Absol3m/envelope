@@ -5,6 +5,7 @@ import type { DiskEncryption, FolderRow } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { useShallow } from "zustand/react/shallow";
 import { useComposer } from "@/lib/composer";
+import { loadComposer } from "@/lib/lazy";
 import { useMail } from "@/lib/store";
 import { DRAG_TYPE, LOCAL_ACCOUNT, parseDragIds, isDestination, NAV_MAILBOXES, NAV_SMART, sameView, type View, type NavItem as NavItemData } from "@/lib/views";
 import { cn } from "@/lib/utils";
@@ -227,7 +228,7 @@ export function Sidebar() {
 
       <div className="px-2.5 pb-2">
         <Tip label="Nouveau message" kbd="C" side="right">
-          <button onClick={() => useComposer.getState().compose()} className="press flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-[13px] font-medium text-white shadow-card hover:opacity-90">
+          <button onClick={() => useComposer.getState().compose()} onPointerEnter={() => void loadComposer()} onFocus={() => void loadComposer()} className="press flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-accent text-[13px] font-medium text-white shadow-card hover:opacity-90">
             <PenSquare size={15} /> <span className="max-[1100px]:hidden">Nouveau message</span>
           </button>
         </Tip>

@@ -490,7 +490,7 @@ pub(crate) async fn deliver(
         }
     }
 
-    let sent_copy = if acct.provider == "gmail" {
+    let sent_copy = if acct.server_files_sent() {
         SentCopy::Server
     } else {
         match file_in_sent(state, &acct, &cred, &raw).await {

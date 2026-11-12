@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
+import { loadComposer } from "@/lib/lazy";
 import { useShallow } from "zustand/react/shallow";
 import { Reader } from "@/components/Reader";
 import { Sidebar } from "@/components/Sidebar";
@@ -17,7 +18,7 @@ import { dragRegion } from "@/lib/platform";
 
 // Écrans rarement ouverts : chargés à la demande, hors du paquet initial.
 const Onboarding = lazy(() => import("@/components/Onboarding").then((m) => ({ default: m.Onboarding })));
-const Composer = lazy(() => import("@/components/Composer").then((m) => ({ default: m.Composer })));
+const Composer = lazy(() => loadComposer().then((m) => ({ default: m.Composer })));
 const Palette = lazy(() => import("@/components/Palette").then((m) => ({ default: m.Palette })));
 const Settings = lazy(() => import("@/components/Settings").then((m) => ({ default: m.Settings })));
 const LockScreen = lazy(() => import("@/components/LockScreen").then((m) => ({ default: m.LockScreen })));

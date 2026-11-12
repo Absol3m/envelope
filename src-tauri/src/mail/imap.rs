@@ -177,9 +177,41 @@ pub async fn find_or_create(
     if let Some(n) = found {
         return Ok(n.name().to_string());
     }
-    session.create(default_name).await?;
-    let _ = session.subscribe(default_name).await; // non bloquant : certains serveurs l'abonnent d'office
-    Ok(default_name.to_string())
+    let path = new_folder_path(
+        names.iter().map(|n| (n.name(), n.delimiter())),
+        default_name,
+    );
+    session.create(&path).await?;
+    let _ = session.subscribe(&path).await; // non bloquant : certains serveurs l'abonnent d'office
+    Ok(path)
+}
+
+/// Chemin sous lequel créer `name`. Un serveur dont l'espace de noms personnel est `INBOX.` (Courier, Dovecot en
+/// configuration historique) refuse un dossier à la racine : si les dossiers existants sont tous des enfants d'INBOX,
+/// on crée `INBOX<délimiteur>name`. Déduit de la réponse LIST déjà en main plutôt que de NAMESPACE, dont la réponse
+/// demanderait un analyseur maison ; sur une boîte qui n'a encore que INBOX on retombe sur la racine.
+fn new_folder_path<'a>(
+    existing: impl Iterator<Item = (&'a str, Option<&'a str>)>,
+    name: &str,
+) -> String {
+    let mut prefix = None;
+    for (path, delimiter) in existing {
+        if path.eq_ignore_ascii_case("INBOX") {
+            continue;
+        }
+        let Some(d) = delimiter.filter(|d| !d.is_empty()) else {
+            return name.to_string();
+        };
+        let under_inbox = path.len() > 5
+            && path.is_char_boundary(5)
+            && path[..5].eq_ignore_ascii_case("INBOX")
+            && path[5..].starts_with(d);
+        if !under_inbox {
+            return name.to_string();
+        }
+        prefix = Some(format!("{}{d}", &path[..5]));
+    }
+    prefix.map_or_else(|| name.to_string(), |p| format!("{p}{name}"))
 }
 
 /// Dépose `raw` (message déjà envoyé) dans le dossier « Envoyés », marqué lu.
@@ -196,6 +228,25 @@ pub async fn append_sent(session: &mut ImapSession, known: Option<&str>, raw: &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dossier_cree_sous_inbox_si_le_serveur_l_exige() {
+        let l = |v: Vec<&'static str>| v.into_iter().map(|p| (p, Some(".")));
+        assert_eq!(
+            new_folder_path(l(vec!["INBOX", "INBOX.Drafts", "INBOX.Trash"]), "Sent"),
+            "INBOX.Sent"
+        );
+        assert_eq!(new_folder_path(l(vec!["INBOX", "Drafts"]), "Sent"), "Sent"); // racine permise
+        assert_eq!(new_folder_path(l(vec!["INBOX"]), "Sent"), "Sent"); // rien à déduire
+        assert_eq!(
+            new_folder_path(l(vec!["INBOX", "INBOX.A", "Autre"]), "Sent"),
+            "Sent"
+        );
+        assert_eq!(
+            new_folder_path(std::iter::once(("INBOX/x", Some("/"))), "Sent"),
+            "INBOX/Sent"
+        );
+    }
 
     #[test]
     fn roles_from_attribute_or_name() {

@@ -61,7 +61,8 @@ interface ComposerState {
   undoSend(): boolean;
 }
 
-let pendingSend: { timer: ReturnType<typeof setTimeout>; draft: Draft } | null = null;
+/** Annule l'envoi en attente (sa minuterie) et rouvre le brouillon. */
+let pendingSend: { cancel: () => void } | null = null;
 
 // ───────────── Brouillons sur le serveur ─────────────
 
@@ -238,23 +239,21 @@ export const useComposer = create<ComposerState>((set, get) => {
       if (!draft) return;
       if (!checkBeforeSend(draft, force, () => get().send(true))) return;
       set({ draft: null });
-      pendingSend = {
-        draft,
-        timer: setTimeout(async () => {
-          pendingSend = null;
-          try {
-            const report = await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
-            onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi
-            lastSig.delete(draft.id);
-            const failure = typeof report.sentCopy === "object" ? report.sentCopy.failed : null;
-            if (failure === null) toast("Message envoyé");
-            else toast(`Message envoyé, mais la copie dans « Envoyés » a échoué — ${failure}`, "error", 8000);
-          } catch (e) {
-            open(draft); // rien n'est perdu : le message revient dans le panneau
-            toast(`Envoi impossible — ${String(e)}`, "error", 7000);
-          }
-        }, UNDO_MS),
-      };
+      const timer = setTimeout(async () => {
+        pendingSend = null;
+        try {
+          const report = await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
+          onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi
+          lastSig.delete(draft.id);
+          const failure = typeof report.sentCopy === "object" ? report.sentCopy.failed : null;
+          if (failure === null) toast("Message envoyé");
+          else toast(`Message envoyé, mais la copie dans « Envoyés » a échoué — ${failure}`, "error", 8000);
+        } catch (e) {
+          open(draft); // rien n'est perdu : le message revient dans le panneau
+          toast(`Envoi impossible — ${String(e)}`, "error", 7000);
+        }
+      }, UNDO_MS);
+      pendingSend = { cancel: () => { clearTimeout(timer); open(draft); } };
       useMail.getState().toast({ message: "Envoi du message…", actionLabel: "Annuler", onAction: () => get().undoSend(), duration: UNDO_MS, countdown: true });
     },
 
@@ -289,10 +288,8 @@ export const useComposer = create<ComposerState>((set, get) => {
 
     undoSend() {
       if (!pendingSend) return false;
-      clearTimeout(pendingSend.timer);
-      const { draft } = pendingSend;
+      pendingSend.cancel();
       pendingSend = null;
-      open(draft);
       toast("Envoi annulé", "default", 2200);
       return true;
     },

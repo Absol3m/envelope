@@ -82,6 +82,13 @@ pub struct Account {
     pub identities: Vec<Identity>,
 }
 
+impl Account {
+    /// Le serveur range lui-même un message envoyé dans « Envoyés » (Gmail) : y déposer une copie ferait un doublon.
+    pub fn server_files_sent(&self) -> bool {
+        self.provider == "gmail"
+    }
+}
+
 pub const ACCOUNT_COLUMNS: &str = "id, email, display_name, provider, auth_kind, username, \
     imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, \
     last_sync_at, sync_status, sync_error, signature";
