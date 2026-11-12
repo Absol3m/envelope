@@ -262,7 +262,7 @@ export function Sidebar() {
       <div className="flex items-center gap-1 border-t border-border px-2.5 py-2 max-[1100px]:flex-col">
         <div className="min-w-0 flex-1 px-1 text-[11px] text-muted max-[1100px]:hidden">
           {backend.demo ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent">{t("sidebar:demo")}</span>
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent">{t("sidebar:demo")}</span>
           ) : errored ? (
             <span className="flex items-center gap-1.5 text-danger" title={describeStored(errored.syncError) ?? undefined}>● {t("sidebar:syncError")}</span>
           ) : backfillLeft > 0 ? (

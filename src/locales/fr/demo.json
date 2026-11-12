@@ -1,0 +1,7 @@
+{
+  "unavailable": "Mode démo : cette action est indisponible.",
+  "threadNotFound": "Conversation {{id}} introuvable",
+  "sendNotFound": "Envoi introuvable.",
+  "ruleRequired": "Nom et condition requis",
+  "wrongPassword": "Mot de passe incorrect"
+}
