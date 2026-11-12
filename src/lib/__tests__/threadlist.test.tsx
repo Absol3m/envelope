@@ -43,4 +43,15 @@ describe("liste des conversations", () => {
     expect(host.textContent).toContain("Objet 1");
     expect(host.textContent).not.toContain("Objet 2999");
   });
+
+  it("la liste est focalisable et désigne la conversation sélectionnée (aria-activedescendant)", async () => {
+    useMail.setState({ backend: demoBackend, threads: Array.from({ length: 30 }, (_, i) => summary(i)), hasMore: false, threadsLoading: false, ready: true, view: { kind: "role", role: "inbox" }, query: "", category: "all", selectedId: 3 });
+    const host = document.body.appendChild(document.createElement("div"));
+    await act(async () => { createRoot(host).render(createElement(TooltipProvider, null, createElement(ThreadList))); });
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    const list = host.querySelector('[role="listbox"]')!;
+    expect(list.getAttribute("tabindex")).toBe("0");
+    expect(list.getAttribute("aria-activedescendant")).toBe("thread-3");
+    expect(host.querySelector("#thread-3")?.getAttribute("role")).toBe("option");
+  });
 });

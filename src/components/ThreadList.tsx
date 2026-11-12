@@ -1,7 +1,7 @@
 import { AlarmClock, Check, Inbox, Mail, MailOpen, Paperclip, SearchX, Star, Trash2 } from "lucide-react";
 import { startThreadDrag } from "@/lib/dragImage";
 import type { MouseEvent } from "react";
-import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
+import { defaultRangeExtractor, measureElement, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ThreadSummary } from "@/lib/api";
@@ -33,6 +33,9 @@ interface RowProps {
   total: number;
 }
 
+/** Identifiant de la ligne dans le DOM : ancre de `aria-activedescendant` (la ligne peut ne pas être montée, la liste est fenêtrée). */
+const rowDomId = (threadId: number) => `thread-${threadId}`;
+
 const Row = memo(function Row({ t, selected, compact, previews, checked, onSelect, destinations, purge, folderName, onDelete, onMove, onStar, onToggleRead, pos, total }: RowProps) {
   const unread = t.unreadCount > 0;
   const active = selected || checked;
@@ -45,6 +48,7 @@ const Row = memo(function Row({ t, selected, compact, previews, checked, onSelec
       aria-selected={selected}
       aria-posinset={pos}
       aria-setsize={total}
+      id={rowDomId(t.id)}
       data-thread={t.id}
       data-checked={checked ? "" : undefined}
       draggable
@@ -217,12 +221,21 @@ export function ThreadList() {
   }, [headerIndexes]);
   // Liste fenêtrée : seules les lignes visibles (et une marge) existent dans le DOM, quel que soit le nombre de
   // conversations chargées. Hauteurs mesurées à l'affichage ; l'en-tête de date en cours reste collé en haut.
+  const measured = useRef<Record<string, number>>({});
+  const sizeKey = (kind: "h" | "t") => (kind === "h" ? "h" : `t${compact ? "c" : ""}${previews ? "p" : ""}`);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scroller.current,
-    // Hauteurs mesurées dans l'application (confortable + aperçu : 78 px, en-tête : 32 px) : plus l'estimation est juste,
-    // plus le défilement vers une ligne lointaine tombe juste avant même qu'elle soit mesurée.
-    estimateSize: (i) => (rows[i]?.kind === "h" ? 32 : compact ? (previews ? 70 : 50) : previews ? 78 : 58),
+    // Estimation : dernière hauteur réellement mesurée pour ce genre de ligne, sinon la valeur mesurée dans l'application
+    // (confortable + aperçu : 78 px, en-tête : 32 px). Plus elle est juste, plus le défilement vers une ligne lointaine
+    // tombe juste avant même qu'elle soit mesurée, et elle ne dérive pas quand le CSS change.
+    estimateSize: (i) => measured.current[sizeKey(rows[i]?.kind ?? "t")] ?? (rows[i]?.kind === "h" ? 32 : compact ? (previews ? 70 : 50) : previews ? 78 : 58),
+    measureElement: (el, entry, instance) => {
+      const h = measureElement(el, entry, instance);
+      const key = (el as HTMLElement).dataset.size;
+      if (key && h > 0) measured.current[key] = h;
+      return h;
+    },
     overscan: 8,
     getItemKey,
     rangeExtractor,
@@ -285,7 +298,7 @@ export function ThreadList() {
         <div className="mt-2 h-px bg-border" />
       </header>
 
-      <div ref={scroller} role="listbox" aria-label="Liste des conversations" className="min-h-0 flex-1 overflow-y-auto pb-6 pt-1">
+      <div ref={scroller} role="listbox" tabIndex={0} aria-activedescendant={selectedId !== null ? rowDomId(selectedId) : undefined} aria-label="Liste des conversations" className="min-h-0 flex-1 overflow-y-auto pb-6 pt-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40">
         {threadsLoading && list.length === 0 ? (
           <Skeletons compact={compact} />
         ) : list.length === 0 ? (
@@ -298,7 +311,7 @@ export function ThreadList() {
               const sticky = v.index === activeHeader.current && r.kind === "h";
               const style = sticky ? { position: "sticky" as const, top: 0, zIndex: 10 } : { position: "absolute" as const, top: 0, left: 0, width: "100%", transform: `translateY(${v.start}px)` };
               return (
-                <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} style={style}>
+                <div key={v.key} data-index={v.index} data-size={sizeKey(r.kind)} ref={virtualizer.measureElement} style={style}>
                   {r.kind === "h" ? (
                     <div className="bg-bg-subtle/90 px-5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-faint backdrop-blur-md">{r.label}</div>
                   ) : (

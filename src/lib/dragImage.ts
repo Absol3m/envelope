@@ -41,14 +41,16 @@ export function startThreadDrag(e: DragEvent<HTMLElement>, t: ThreadSummary, ids
   setTimeout(() => chip.remove(), 0); // l'image est capturée de façon synchrone
 
   // Après la capture : estomper la ligne plus tôt la griserait aussi dans l'image.
-  const rows = ids.length > 1 ? [...document.querySelectorAll<HTMLElement>("[data-checked]")] : [row];
-  requestAnimationFrame(() => rows.forEach((r) => r.classList.add("thread-dragging")));
+  // Plusieurs conversations : le CSS estompe toutes les lignes cochées (`body[data-dragging="many"]`), y compris celles que
+  // la liste fenêtrée monte plus tard ; une seule : la ligne elle-même.
+  const many = ids.length > 1;
+  requestAnimationFrame(() => (many ? (document.body.dataset.dragging = "many") : row.classList.add("thread-dragging")));
   document.body.dataset.dragging = "";
 
   // `dragend` n'arrive pas si la ligne a été retirée de la liste par le dépôt : on écoute aussi `drop`.
   const end = () => {
     endDrag = null;
-    rows.forEach((r) => r.classList.remove("thread-dragging"));
+    row.classList.remove("thread-dragging");
     delete document.body.dataset.dragging;
     window.removeEventListener("dragend", end);
     document.removeEventListener("drop", end, true);
