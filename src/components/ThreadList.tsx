@@ -1,6 +1,7 @@
 import { Check, Inbox, Mail, MailOpen, Paperclip, SearchX, Star, Trash2 } from "lucide-react";
 import { startThreadDrag } from "@/lib/dragImage";
 import type { MouseEvent } from "react";
+import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { ThreadSummary } from "@/lib/api";
@@ -27,9 +28,12 @@ interface RowProps {
   onMove(id: number, to: Destination): void;
   onStar(id: number): void;
   onToggleRead(id: number): void;
+  /** Rang (à partir de 1) et nombre total : la liste n'a dans le DOM que les lignes visibles. */
+  pos: number;
+  total: number;
 }
 
-const Row = memo(function Row({ t, selected, compact, previews, checked, onSelect, destinations, purge, folderName, onDelete, onMove, onStar, onToggleRead }: RowProps) {
+const Row = memo(function Row({ t, selected, compact, previews, checked, onSelect, destinations, purge, folderName, onDelete, onMove, onStar, onToggleRead, pos, total }: RowProps) {
   const unread = t.unreadCount > 0;
   const active = selected || checked;
   const sender = displayName(t.fromName, t.fromAddr);
@@ -39,6 +43,8 @@ const Row = memo(function Row({ t, selected, compact, previews, checked, onSelec
     <div
       role="option"
       aria-selected={selected}
+      aria-posinset={pos}
+      aria-setsize={total}
       data-thread={t.id}
       data-checked={checked ? "" : undefined}
       draggable
@@ -143,7 +149,6 @@ export function ThreadList() {
     useShallow((s) => ({ folders: s.folders, view: s.view, category: s.category, query: s.query, selectedId: s.selectedId, density: s.density, previews: s.previews, threadsLoading: s.threadsLoading, hasMore: s.hasMore, threads: s.threads, hiddenIds: s.hiddenIds, checked: s.checked, toggleCheck: s.toggleCheck, rangeCheck: s.rangeCheck, setCategory: s.setCategory, loadMore: s.loadMore, select: s.select, moveTo: s.moveTo, deleteForever: s.deleteForever, emptyView: s.emptyView, toggleStar: s.toggleStar, toggleRead: s.toggleRead })),
   );
   const scroller = useRef<HTMLDivElement>(null);
-  const sentinel = useRef<HTMLDivElement>(null);
   /** Clic : ouvre ; Maj+clic : plage ; Cmd/Ctrl+clic : ajoute ou retire. */
   const onRowClick = useCallback((id: number, e: MouseEvent) => {
     if (e.shiftKey) rangeCheck(id);
@@ -168,34 +173,69 @@ export function ThreadList() {
 
   // Groupes par date (en-têtes collants).
   const rows = useMemo(() => {
-    const out: ({ kind: "h"; label: string } | { kind: "t"; t: ThreadSummary })[] = [];
+    const out: ({ kind: "h"; label: string; key: string } | { kind: "t"; t: ThreadSummary; pos: number })[] = [];
     let last = "";
-    for (const t of list) {
+    list.forEach((t, i) => {
       const g = groupLabel(t.lastMessageAt);
       if (g !== last) {
-        out.push({ kind: "h", label: g });
+        out.push({ kind: "h", label: g, key: `h-${g}-${t.id}` }); // unique même si une date revenait (liste non triée)
         last = g;
       }
-      out.push({ kind: "t", t });
-    }
+      out.push({ kind: "t", t, pos: i + 1 });
+    });
     return out;
   }, [list]);
 
-  // Garde la conversation sélectionnée visible (navigation clavier).
+  const compact = density === "compact";
+  const headerIndexes = useMemo(() => rows.flatMap((r, i) => (r.kind === "h" ? [i] : [])), [rows]);
+  const activeHeader = useRef(0);
+  // Fonctions de la bibliothèque : leur identité doit rester stable (celle de `getItemKey` invalide ses mesures, donc
+  // les recalculerait pour toutes les lignes à chaque image de défilement).
+  const getItemKey = useCallback((i: number) => { const r = rows[i]; return r ? (r.kind === "h" ? r.key : r.t.id) : i; }, [rows]);
+  const rangeExtractor = useCallback((range: Range) => {
+    // En-tête de la dernière date au-dessus de la fenêtre (recherche binaire dans les indices, triés) : il reste collé en haut.
+    let lo = 0, hi = headerIndexes.length - 1, found = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (headerIndexes[mid] <= range.startIndex) { found = headerIndexes[mid]; lo = mid + 1; } else hi = mid - 1;
+    }
+    activeHeader.current = found;
+    return [...new Set([found, ...defaultRangeExtractor(range)])].sort((x, y) => x - y);
+  }, [headerIndexes]);
+  // Liste fenêtrée : seules les lignes visibles (et une marge) existent dans le DOM, quel que soit le nombre de
+  // conversations chargées. Hauteurs mesurées à l'affichage ; l'en-tête de date en cours reste collé en haut.
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scroller.current,
+    // Hauteurs mesurées dans l'application (confortable + aperçu : 78 px, en-tête : 32 px) : plus l'estimation est juste,
+    // plus le défilement vers une ligne lointaine tombe juste avant même qu'elle soit mesurée.
+    estimateSize: (i) => (rows[i]?.kind === "h" ? 32 : compact ? (previews ? 70 : 50) : previews ? 78 : 58),
+    overscan: 8,
+    getItemKey,
+    rangeExtractor,
+  });
+  const items = virtualizer.getVirtualItems();
+
+  // Garde la conversation sélectionnée visible (navigation clavier) : par indice, la ligne peut ne pas être dans le DOM.
   useEffect(() => {
-    if (selectedId !== null) scroller.current?.querySelector(`[data-thread="${selectedId}"]`)?.scrollIntoView({ block: "nearest" });
+    if (selectedId === null) return;
+    const i = rows.findIndex((r) => r.kind === "t" && r.t.id === selectedId);
+    if (i < 0) return;
+    virtualizer.scrollToIndex(i, { align: "auto" });
+    // Les lignes lointaines n'étaient pas mesurées : une fois affichées, leurs vraies hauteurs décalent la cible ; on recadre
+    // (mesuré : sans cela, la ligne cible n'est pas toujours dans la fenêtre à 4 000 conversations et plus).
+    const again = [80, 250].map((ms) => setTimeout(() => virtualizer.scrollToIndex(i, { align: "auto" }), ms));
+    return () => again.forEach(clearTimeout);
+    // Seule la sélection déclenche le recadrage : dépendre de `rows` le referait à chaque page chargée.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  // Pagination infinie.
+  // Pagination infinie : la page suivante part quand on approche de la fin de la liste chargée.
+  const lastVisible = items.length ? items[items.length - 1].index : -1;
   useEffect(() => {
-    const el = sentinel.current;
-    if (!el || !hasMore) return;
-    const io = new IntersectionObserver((e) => e[0].isIntersecting && void loadMore(), { root: scroller.current, rootMargin: "240px" });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasMore, rows.length, loadMore]);
+    if (hasMore && rows.length > 0 && lastVisible >= rows.length - 12) void loadMore();
+  }, [hasMore, rows.length, lastVisible, loadMore]);
 
-  const compact = density === "compact";
   return (
     <section className="flex h-full min-h-0 flex-col border-r border-border bg-bg-subtle" aria-label="Conversations">
       <header className="shrink-0 px-4 pt-3">
@@ -238,18 +278,23 @@ export function ThreadList() {
         ) : list.length === 0 ? (
           <Empty search={query.trim()} view={view} category={category} />
         ) : (
-          <>
-            {rows.map((r) =>
-              r.kind === "h" ? (
-                <div key={`h-${r.label}`} className="sticky top-0 z-10 bg-bg-subtle/90 px-5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-faint backdrop-blur-md">
-                  {r.label}
+          <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+            {items.map((v) => {
+              const r = rows[v.index];
+              if (!r) return null;
+              const sticky = v.index === activeHeader.current && r.kind === "h";
+              const style = sticky ? { position: "sticky" as const, top: 0, zIndex: 10 } : { position: "absolute" as const, top: 0, left: 0, width: "100%", transform: `translateY(${v.start}px)` };
+              return (
+                <div key={v.key} data-index={v.index} ref={virtualizer.measureElement} style={style}>
+                  {r.kind === "h" ? (
+                    <div className="bg-bg-subtle/90 px-5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-wider text-faint backdrop-blur-md">{r.label}</div>
+                  ) : (
+                    <Row t={r.t} pos={r.pos} total={list.length} selected={r.t.id === selectedId} compact={compact} previews={previews} checked={checked.has(r.t.id)} onSelect={onRowClick} destinations={searching ? destinationsFor(placeOf(r.t, folders) ?? view) : destinations} purge={searching ? isPurgeView(placeOf(r.t, folders) ?? view) : purge} folderName={searching ? folders.find((f) => f.id === r.t.folderId)?.name : undefined} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
+                  )}
                 </div>
-              ) : (
-                <Row key={r.t.id} t={r.t} selected={r.t.id === selectedId} compact={compact} previews={previews} checked={checked.has(r.t.id)} onSelect={onRowClick} destinations={searching ? destinationsFor(placeOf(r.t, folders) ?? view) : destinations} purge={searching ? isPurgeView(placeOf(r.t, folders) ?? view) : purge} folderName={searching ? folders.find((f) => f.id === r.t.folderId)?.name : undefined} onDelete={deleteForever} onMove={moveTo} onStar={toggleStar} onToggleRead={toggleRead} />
-              ),
-            )}
-            <div ref={sentinel} className="h-px" />
-          </>
+              );
+            })}
+          </div>
         )}
       </div>
     </section>
