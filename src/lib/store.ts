@@ -3,7 +3,7 @@ import { parseColors, parseTheme, renderAppearance, type ColorsPref, type ThemeP
 import { applyFont, savedFont, type FontPref } from "./font";
 import { pref } from "./pref";
 import { demoBackend } from "./mock";
-import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type LockStatus, type ScheduledSend, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
+import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type LockStatus, type ReminderKind, type ScheduledSend, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
 import { DESTINATIONS, isEmptiableView, isInboxView, isPurgeView, LOCAL_ACCOUNT, placeOf, type Destination, type View } from "./views";
 
@@ -104,6 +104,9 @@ interface State {
   move(delta: 1 | -1): void;
   toggleRead(ids: Ids): void;
   toggleStar(ids: Ids): void;
+  /** Pose un rappel (report ou relance) ; `at` en millisecondes. */
+  remind(id: number, kind: ReminderKind, at: number): void;
+  clearReminder(id: number): void;
   /** Archive, corbeille ou spam, avec fenêtre d'annulation. */
   /** `targetFolderId` : dossier local visé quand `to` vaut « local » (par défaut « Archives »). */
   moveTo(ids: Ids, to: Destination, targetFolderId?: number): void;
@@ -159,6 +162,7 @@ function buildQuery(s: Pick<State, "view" | "accountFilter" | "query">): ThreadQ
     case "starred": q.starredOnly = true; break;
     case "unread": q.role = "inbox"; q.unreadOnly = true; break;
     case "attachments": q.withAttachments = true; break;
+    case "reminders": q.remindersOnly = true; break;
     case "folder": q.folderId = v.folderId; break;
   }
   return q;
@@ -393,6 +397,8 @@ export const useMail = create<State>((set, get) => {
       set({ selectedId: id, anchorId: id, checked: NO_IDS });
       if (id === null) return;
       const s = get();
+      // Ouvrir une conversation revenue (rappel échu) l'acquitte.
+      if (s.threads.find((t) => t.id === id)?.reminderFired) get().clearReminder(id);
       if (!s.details[id]) {
         s.backend.getThread(id).then(
           (d) => set((cur) => ({ details: { ...cur.details, [id]: d } })),
@@ -452,6 +458,24 @@ export const useMail = create<State>((set, get) => {
         patchDetail(t.id, (d) => ({ ...d, messages: d.messages.map((m, i, a) => ({ ...m, isRead: read ? true : i < a.length - 1 })) }));
         void optimistic(get().backend.setRead(t.id, read), () => patchThread(t.id, { unreadCount: prev }));
       }
+    },
+
+    remind(id, kind, at) {
+      const prev = get().threads.find((t) => t.id === id);
+      if (!prev) return;
+      const due = Math.floor(at / 1000);
+      // Un report fait sortir la conversation des listes (sauf « Rappels », où elle reste).
+      if (kind === "snooze" && get().view.kind !== "reminders") dropThreads([id]);
+      else patchThread(id, { reminderKind: kind, reminderDue: due, reminderFired: null });
+      void optimistic(get().backend.setReminder(id, kind, due), () => void get().reload({ silent: true }), "Rappel impossible");
+    },
+
+    clearReminder(id) {
+      const t = get().threads.find((x) => x.id === id);
+      if (!t?.reminderKind) return;
+      if (get().view.kind === "reminders") dropThreads([id]);
+      else patchThread(id, { reminderKind: null, reminderDue: null, reminderFired: null });
+      void optimistic(get().backend.clearReminder(id), () => void get().reload({ silent: true }), "Rappel impossible");
     },
 
     toggleStar(ids) {

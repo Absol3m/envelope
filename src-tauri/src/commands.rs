@@ -18,6 +18,7 @@ use crate::mail::mbox;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
+use crate::reminders;
 use crate::scheduled;
 use crate::templates::{self, Template};
 use crate::AppState;
@@ -487,6 +488,21 @@ pub async fn schedule_send(
     let acct = account::get(&state.db, &account_id).await?;
     smtp::build_message(&acct, &message)?;
     scheduled::add(&state.db, &account_id, send_at, &message).await
+}
+
+#[tauri::command]
+pub async fn set_reminder(
+    state: State<'_, AppState>,
+    thread_id: i64,
+    kind: reminders::Kind,
+    due_at: i64,
+) -> Result<()> {
+    reminders::set(&state.db, thread_id, kind, due_at).await
+}
+
+#[tauri::command]
+pub async fn clear_reminder(state: State<'_, AppState>, thread_id: i64) -> Result<()> {
+    reminders::clear(&state.db, thread_id).await
 }
 
 #[tauri::command]

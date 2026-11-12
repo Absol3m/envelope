@@ -15,6 +15,7 @@ mod mail;
 mod mcp;
 mod picks;
 mod private;
+mod reminders;
 mod scheduled;
 mod templates;
 mod tls;
@@ -153,6 +154,7 @@ pub fn run() {
                 picks: picks::Picks::default(),
             });
             tauri::async_runtime::spawn(scheduled::run(app.handle().clone()));
+            tauri::async_runtime::spawn(reminders::run(app.handle().clone()));
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = sync.start_all().await {
                     tracing::error!("démarrage de la synchro : {e}");
@@ -180,6 +182,8 @@ pub fn run() {
             commands::remove_account,
             commands::set_account_signature,
             commands::schedule_send,
+            commands::set_reminder,
+            commands::clear_reminder,
             commands::list_scheduled,
             commands::cancel_scheduled,
             commands::send_scheduled_now,

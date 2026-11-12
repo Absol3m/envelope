@@ -82,7 +82,12 @@ export interface ThreadSummary {
   participants: string | null;
   /** Dossier du dernier message : les résultats de recherche couvrent tous les dossiers. */
   folderId: number | null;
+  /** Rappel local : report ou relance si pas de réponse ; échéance et, une fois échu, heure de retour (secondes Unix). */
+  reminderKind: ReminderKind | null;
+  reminderDue: number | null;
+  reminderFired: number | null;
 }
+export type ReminderKind = "snooze" | "followup";
 export interface Addr {
   name: string | null;
   address: string;
@@ -137,6 +142,8 @@ export interface ThreadQuery {
   starredOnly?: boolean;
   unreadOnly?: boolean;
   withAttachments?: boolean;
+  /** Conversations avec un rappel en attente. */
+  remindersOnly?: boolean;
   query?: string;
   limit?: number;
   offset?: number;
@@ -283,6 +290,9 @@ export interface Backend {
   setAccountSignature(accountId: string, signature: string): Promise<void>;
   /** Met le message en file pour `sendAt` (secondes Unix) ; renvoie l'identifiant de l'envoi programmé. */
   scheduleSend(accountId: string, message: OutgoingMessage, sendAt: number): Promise<number>;
+  /** Pose ou remplace le rappel de la conversation ; `dueAt` en secondes Unix. */
+  setReminder(threadId: number, kind: ReminderKind, dueAt: number): Promise<void>;
+  clearReminder(threadId: number): Promise<void>;
   listScheduled(): Promise<ScheduledSend[]>;
   /** Retire l'envoi de la file et rend le message, pour le rouvrir. */
   cancelScheduled(id: number): Promise<OutgoingMessage>;
@@ -367,6 +377,8 @@ export const tauriBackend: Backend = {
   unsubscribe: (messageId) => invoke("unsubscribe", { messageId }),
   setAccountSignature: (accountId, signature) => invoke("set_account_signature", { accountId, signature }),
   scheduleSend: (accountId, message, sendAt) => invoke("schedule_send", { accountId, message, sendAt }),
+  setReminder: (threadId, kind, dueAt) => invoke("set_reminder", { threadId, kind, dueAt }),
+  clearReminder: (threadId) => invoke("clear_reminder", { threadId }),
   listScheduled: () => invoke("list_scheduled"),
   cancelScheduled: (id) => invoke("cancel_scheduled", { id }),
   sendScheduledNow: (id) => invoke("send_scheduled_now", { id }),

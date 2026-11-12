@@ -1,4 +1,4 @@
-import type { Account, Backend, Detected, SendReport, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, ReminderKind, Detected, SendReport, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
@@ -31,6 +31,7 @@ interface MockThread {
   starred: boolean;
   messages: DetailMessage[];
   attachments: DetailAttachment[];
+  reminder?: { kind: ReminderKind; due: number; fired?: number };
 }
 
 let nextMsg = 1;
@@ -171,6 +172,9 @@ function summarize(t: MockThread): ThreadSummary {
     fromAddr: last.fromAddr,
     participants: names.slice(0, 4).join(", "),
     folderId: folderId(t.accountId, t.role),
+    reminderKind: t.reminder?.kind ?? null,
+    reminderDue: t.reminder?.due ?? null,
+    reminderFired: t.reminder?.fired ?? null,
   };
 }
 const htmlToText = (html: string) => html.replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ");
@@ -198,6 +202,9 @@ function listThreads(q: ThreadQuery): ThreadSummary[] {
     if (q.starredOnly && !t.starred) return false;
     if (q.unreadOnly && !t.messages.some((m) => !m.isRead)) return false;
     if (q.withAttachments && t.attachments.length === 0) return false;
+    const pending = t.reminder && !t.reminder.fired;
+    if (q.remindersOnly && !pending) return false;
+    if (!q.remindersOnly && !words.length && pending && t.reminder?.kind === "snooze") return false;
     if (words.length) {
       if (t.role === "trash" || t.role === "junk") return false; // la recherche ignore corbeille et spam par défaut
       const hay = norm(t.messages.map((m) => `${m.subject} ${m.fromName} ${m.fromAddr} ${m.bodyText ?? htmlToText(m.bodyHtml ?? "")}`).join(" "));
@@ -228,6 +235,14 @@ export const demoBackend: Backend = {
   },
   setRead: (id, read) => {
     find(id).messages.forEach((m) => (m.isRead = read));
+    return delay(undefined, 80);
+  },
+  setReminder: (id, kind, due) => {
+    find(id).reminder = { kind, due };
+    return delay(undefined, 80);
+  },
+  clearReminder: (id) => {
+    delete find(id).reminder;
     return delay(undefined, 80);
   },
   setStarred: (id, starred) => {

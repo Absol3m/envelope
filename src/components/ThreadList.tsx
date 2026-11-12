@@ -1,4 +1,4 @@
-import { Check, Inbox, Mail, MailOpen, Paperclip, SearchX, Star, Trash2 } from "lucide-react";
+import { AlarmClock, Check, Inbox, Mail, MailOpen, Paperclip, SearchX, Star, Trash2 } from "lucide-react";
 import { startThreadDrag } from "@/lib/dragImage";
 import type { MouseEvent } from "react";
 import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
@@ -73,6 +73,7 @@ const Row = memo(function Row({ t, selected, compact, previews, checked, onSelec
             {folderName && <span className="max-w-[90px] truncate rounded bg-hover px-1.5 py-px text-[10.5px] font-medium text-muted" title={`Dossier : ${folderName}`}>{folderName}</span>}
             {t.hasAttachments && <Paperclip size={12} className="text-faint" />}
             {t.isStarred && <Star size={12} className="fill-star text-star" />}
+            {t.reminderKind && <ReminderBadge t={t} />}
             <span className={cn("tnum", unread && "font-medium text-fg/80")}>{listDate(t.lastMessageAt)}</span>
           </span>
         </div>
@@ -141,6 +142,18 @@ function Empty({ search, view, category }: { search: string; view: View; categor
       <p className="text-[14px] font-semibold">{title}</p>
       <p className="mt-1 max-w-[280px] text-[12.5px] text-muted">{hint}</p>
     </div>
+  );
+}
+
+/** Pastille de rappel : échéance tant qu'il est en attente ; « Revenue » / « Sans réponse » une fois échu. */
+function ReminderBadge({ t }: { t: ThreadSummary }) {
+  const followup = t.reminderKind === "followup";
+  const fired = t.reminderFired !== null;
+  const label = fired ? (followup ? "Sans réponse" : "Revenue") : listDate(new Date((t.reminderDue ?? 0) * 1000).toISOString());
+  return (
+    <span className={cn("flex items-center gap-1 rounded bg-hover px-1.5 py-px text-[10.5px] font-medium", fired ? "text-accent" : "text-muted")} title={followup ? "Relance si pas de réponse" : "Conversation reportée"}>
+      <AlarmClock size={11} />{label}
+    </span>
   );
 }
 

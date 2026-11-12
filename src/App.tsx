@@ -44,6 +44,12 @@ export default function App() {
       }));
       unlisten.push(listen<{ accountId: string; remaining: number }>("mail:backfill", (e) => useMail.getState().setBackfill(e.payload.accountId, e.payload.remaining)));
       unlisten.push(listen("mail:status", () => { if (useMail.getState().lock?.locked !== true) void useMail.getState().refreshAccounts(); }));
+      unlisten.push(listen<number>("reminders:fired", (e) => {
+        if (useMail.getState().lock?.locked === true) return;
+        const { toast, reload } = useMail.getState();
+        void reload({ silent: true });
+        toast({ message: e.payload > 1 ? `${e.payload} conversations reviennent` : "Une conversation revient" });
+      }));
       unlisten.push(listen<{ subject: string; error: string | null } | null>("scheduled:changed", (e) => {
         const { toast, refreshScheduled } = useMail.getState();
         void refreshScheduled();

@@ -9,7 +9,7 @@ function runListBench(n: number) {
   const summary = (i: number) => ({
     id: i + 1, accountId: "pro", subject: `Conversation de mesure n° ${i + 1} : un objet d'une longueur ordinaire`, snippet: "Un aperçu de quelques mots pour la ligne, assez long pour être tronqué à l'affichage dans la liste.",
     lastMessageAt: new Date(Date.now() - i * 420_000).toISOString(), messageCount: 1 + (i % 4), unreadCount: i % 5 === 0 ? 1 : 0,
-    isStarred: i % 11 === 0, hasAttachments: i % 3 === 0, fromName: `Expéditeur ${i % 300}`, fromAddr: `exp${i % 300}@example.com`, participants: i % 4 ? "Alice, Bob" : null, folderId: 1,
+    isStarred: i % 11 === 0, hasAttachments: i % 3 === 0, fromName: `Expéditeur ${i % 300}`, fromAddr: `exp${i % 300}@example.com`, participants: i % 4 ? "Alice, Bob" : null, folderId: 1, reminderKind: null, reminderDue: null, reminderFired: null,
   });
   const { backend } = useMail.getState();
   useMail.setState({ backend: { ...backend, listThreads: (q) => Promise.resolve(Array.from({ length: Math.max(0, Math.min(q.limit ?? 100, n - (q.offset ?? 0))) }, (_, k) => summary((q.offset ?? 0) + k))) } });

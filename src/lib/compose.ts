@@ -263,6 +263,16 @@ export function scheduleOptions(now: Date): { label: string; at: Date }[] {
   return out;
 }
 
+/** Délais proposés par « Me relancer si pas de réponse » (à 8 h). */
+export function followupOptions(now: Date): { label: string; at: Date }[] {
+  return [3, 7, 14].map((days) => {
+    const at = new Date(now);
+    at.setDate(at.getDate() + days);
+    at.setHours(8, 0, 0, 0);
+    return { label: days === 7 ? "Dans 1 semaine" : `Dans ${days} jours`, at };
+  });
+}
+
 /** « Nom <adresse> », ou l'adresse seule. */
 export const senderLabel = (name: string | null | undefined, email: string) => (name ? `${name} <${email}>` : email);
 

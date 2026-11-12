@@ -26,7 +26,7 @@ beforeAll(() => {
 });
 afterEach(() => { document.body.innerHTML = ""; });
 
-const summary = (i: number): ThreadSummary => ({ id: i + 1, accountId: "a", subject: `Objet ${i + 1}`, snippet: "aperçu", lastMessageAt: new Date(Date.UTC(2026, 0, 1) - i * 3_600_000).toISOString(), messageCount: 1, unreadCount: 0, isStarred: false, hasAttachments: false, fromName: "Zoe", fromAddr: "zoe@x.fr", participants: null, folderId: 1 });
+const summary = (i: number): ThreadSummary => ({ id: i + 1, accountId: "a", subject: `Objet ${i + 1}`, snippet: "aperçu", lastMessageAt: new Date(Date.UTC(2026, 0, 1) - i * 3_600_000).toISOString(), messageCount: 1, unreadCount: 0, isStarred: false, hasAttachments: false, fromName: "Zoe", fromAddr: "zoe@x.fr", participants: null, folderId: 1, reminderKind: null, reminderDue: null, reminderFired: null });
 
 describe("liste des conversations", () => {
   it("ne met dans le DOM que les lignes visibles, quel que soit le nombre de conversations chargées", async () => {

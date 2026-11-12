@@ -1,4 +1,4 @@
-import { Archive, FileText, HardDrive, Inbox, Mail, Paperclip, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
+import { AlarmClock, Archive, FileText, HardDrive, Inbox, Mail, Paperclip, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { FolderRow } from "./api";
 
@@ -19,6 +19,7 @@ export type View =
   | { kind: "starred" }
   | { kind: "unread" }
   | { kind: "attachments" }
+  | { kind: "reminders" }
   | { kind: "folder"; folderId: number; name: string; /** Dossier local (sans serveur). */ local?: boolean };
 
 export interface NavItem {
@@ -45,6 +46,7 @@ export const NAV_MAILBOXES: NavItem[] = [
 export const NAV_SMART: NavItem[] = [
   { view: { kind: "unread" }, label: "Non lus", icon: Mail, go: "u" },
   { view: { kind: "attachments" }, label: "Avec pièces jointes", icon: Paperclip },
+  { view: { kind: "reminders" }, label: "Rappels", icon: AlarmClock },
 ];
 
 const ALL = [...NAV_MAILBOXES, ...NAV_SMART];

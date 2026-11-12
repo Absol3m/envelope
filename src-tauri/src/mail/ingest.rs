@@ -547,6 +547,7 @@ pub async fn refresh_threads(pool: &SqlitePool, ids: &HashSet<i64>) -> Result<()
         .bind(id)
         .execute(&mut *tx)
         .await?;
+        crate::reminders::on_new_messages(&mut tx, *id).await?;
         sqlx::query("DELETE FROM threads WHERE id = ? AND message_count = 0")
             .bind(id)
             .execute(&mut *tx)

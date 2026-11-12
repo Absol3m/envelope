@@ -1,6 +1,8 @@
-import { ChevronDown, ChevronUp, Forward, Mail, MailOpen, Reply, ReplyAll, Star, Trash2 } from "lucide-react";
+import * as Dropdown from "@radix-ui/react-dropdown-menu";
+import { AlarmClock, ChevronDown, ChevronUp, Forward, Mail, MailOpen, Reply, ReplyAll, Star, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { followupOptions, scheduleOptions } from "@/lib/compose";
 import { useComposer } from "@/lib/composer";
 import { dragRegion } from "@/lib/platform";
 import { actionView, useMail, visibleThreads } from "@/lib/store";
@@ -8,11 +10,13 @@ import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
 import { SearchBox } from "./SearchBox";
 import { IconButton } from "./ui/primitives";
 
+const ITEM = "cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover";
+
 /** Barre d'outils de la fenêtre : actions sur la conversation ouverte à gauche, recherche en haut à droite.
  *  Sous macOS elle double la barre de titre (zone de glisser) ; ailleurs elle se place sous la barre de titre native. */
 export function TopBar() {
-  const { backend, accountFilter, query, setQuery, selectedId, checked, threads, folders, hiddenIds, category, view, moveTo, deleteForever, toggleStar, toggleRead, move } = useMail(
-    useShallow((s) => ({ backend: s.backend, accountFilter: s.accountFilter, query: s.query, setQuery: s.setQuery, selectedId: s.selectedId, checked: s.checked, threads: s.threads, folders: s.folders, hiddenIds: s.hiddenIds, category: s.category, view: s.view, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move })),
+  const { backend, accountFilter, query, setQuery, selectedId, checked, threads, folders, hiddenIds, category, view, moveTo, deleteForever, toggleStar, toggleRead, move, remind, clearReminder } = useMail(
+    useShallow((s) => ({ backend: s.backend, accountFilter: s.accountFilter, query: s.query, setQuery: s.setQuery, selectedId: s.selectedId, checked: s.checked, threads: s.threads, folders: s.folders, hiddenIds: s.hiddenIds, category: s.category, view: s.view, moveTo: s.moveTo, deleteForever: s.deleteForever, toggleStar: s.toggleStar, toggleRead: s.toggleRead, move: s.move, remind: s.remind, clearReminder: s.clearReminder })),
   );
   const summary = checked.size > 1 ? undefined : threads.find((t) => t.id === selectedId);
   const list = useMemo(() => visibleThreads({ threads, hiddenIds, category, view, query }), [threads, hiddenIds, category, view, query]);
@@ -33,6 +37,26 @@ export function TopBar() {
           })}
           {isPurgeView(place) && <IconButton label="Supprimer définitivement" kbd="⌫" onClick={() => void deleteForever(summary.id)}><Trash2 size={16} className="text-danger" /></IconButton>}
           <IconButton label={summary.isStarred ? "Ne plus suivre" : "Suivre"} kbd="S" onClick={() => toggleStar(summary.id)}><Star size={16} className={summary.isStarred ? "fill-star text-star" : ""} /></IconButton>
+          <Dropdown.Root>
+            <Dropdown.Trigger asChild>
+              <IconButton label={summary.reminderKind ? "Modifier le rappel" : "Reporter ou me relancer"}><AlarmClock size={16} className={summary.reminderKind ? "text-accent" : ""} /></IconButton>
+            </Dropdown.Trigger>
+            <Dropdown.Portal>
+              <Dropdown.Content align="start" sideOffset={8} className="anim-fade-in z-[70] min-w-[260px] rounded-xl border border-border bg-elevated p-1 text-[13px] shadow-pop">
+                <div className="px-2.5 py-1 text-[11px] text-faint">Reporter jusqu'à… — l'application doit être ouverte à l'échéance</div>
+                {scheduleOptions(new Date()).map((o) => <Dropdown.Item key={o.label} onSelect={() => remind(summary.id, "snooze", o.at.getTime())} className={ITEM}>{o.label}</Dropdown.Item>)}
+                <Dropdown.Separator className="my-1 h-px bg-border" />
+                <div className="px-2.5 py-1 text-[11px] text-faint">Me relancer si personne ne répond</div>
+                {followupOptions(new Date()).map((o) => <Dropdown.Item key={o.label} onSelect={() => remind(summary.id, "followup", o.at.getTime())} className={ITEM}>{o.label}</Dropdown.Item>)}
+                {summary.reminderKind && (
+                  <>
+                    <Dropdown.Separator className="my-1 h-px bg-border" />
+                    <Dropdown.Item onSelect={() => clearReminder(summary.id)} className={ITEM}>Annuler le rappel</Dropdown.Item>
+                  </>
+                )}
+              </Dropdown.Content>
+            </Dropdown.Portal>
+          </Dropdown.Root>
           <IconButton label={unread ? "Marquer comme lu" : "Marquer comme non lu"} kbd="U" onClick={() => toggleRead(summary.id)}>{unread ? <MailOpen size={16} /> : <Mail size={16} />}</IconButton>
         </>
       )}

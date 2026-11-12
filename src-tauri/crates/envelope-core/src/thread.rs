@@ -126,6 +126,10 @@ pub struct ThreadSummary {
     /// Dossier du dernier message : les résultats de recherche couvrent tous les dossiers, l'interface
     /// en déduit le nom, le rôle et le compte à partir de sa liste de dossiers.
     pub folder_id: Option<i64>,
+    /// Rappel de la conversation : `snooze` | `followup`, échéance (secondes Unix) et, s'il est échu, son heure de retour.
+    pub reminder_kind: Option<String>,
+    pub reminder_due: Option<i64>,
+    pub reminder_fired: Option<i64>,
 }
 
 /// Filtres de la liste. `folder_id` (un dossier) et `role` (ex. `inbox`, tous comptes confondus)
@@ -139,6 +143,8 @@ pub struct ThreadQuery {
     pub starred_only: bool,
     pub unread_only: bool,
     pub with_attachments: bool,
+    /// Conversations ayant un rappel en attente (vue « Reportés »).
+    pub reminders_only: bool,
     /// Recherche plein texte (même syntaxe que `search_emails`).
     pub query: Option<String>,
     pub limit: Option<i64>,
@@ -152,8 +158,9 @@ const SUMMARY_SELECT: &str = "SELECT t.id, t.account_id, t.subject, t.snippet, t
     (SELECT from_addr FROM messages WHERE thread_id = t.id ORDER BY date DESC, id DESC LIMIT 1) AS from_addr, \
     (SELECT group_concat(n, ', ') FROM (SELECT DISTINCT COALESCE(NULLIF(from_name, ''), from_addr) AS n \
         FROM messages WHERE thread_id = t.id ORDER BY date LIMIT 4)) AS participants, \
-    (SELECT m.folder_id FROM messages m WHERE m.thread_id = t.id ORDER BY m.date DESC, m.id DESC LIMIT 1) AS folder_id \
-    FROM threads t WHERE 1 = 1";
+    (SELECT m.folder_id FROM messages m WHERE m.thread_id = t.id ORDER BY m.date DESC, m.id DESC LIMIT 1) AS folder_id, \
+    r.kind AS reminder_kind, r.due_at AS reminder_due, r.fired_at AS reminder_fired \
+    FROM threads t LEFT JOIN reminders r ON r.thread_id = t.id WHERE 1 = 1";
 
 pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<ThreadSummary>> {
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(SUMMARY_SELECT);
@@ -176,6 +183,12 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<Thre
             qb.push(" AND t.account_id = ").push_bind(account);
         }
     }
+    if q.reminders_only {
+        qb.push(" AND r.kind IS NOT NULL AND r.fired_at IS NULL");
+    } else if q.query.as_deref().is_none_or(|t| t.trim().is_empty()) {
+        // Un report en cours masque la conversation des listes ; la recherche, elle, la retrouve toujours.
+        qb.push(" AND (r.kind IS NOT 'snooze' OR r.fired_at IS NOT NULL)");
+    }
     if q.starred_only {
         qb.push(" AND t.is_starred = 1");
     }
@@ -194,7 +207,8 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<Thre
         }
         qb.push(")");
     }
-    qb.push(" ORDER BY t.last_message_at DESC, t.id DESC LIMIT ")
+    // Les conversations revenues (rappel échu) passent en tête, puis ordre chronologique.
+    qb.push(" ORDER BY r.fired_at IS NOT NULL DESC, t.last_message_at DESC, t.id DESC LIMIT ")
         .push_bind(q.limit.unwrap_or(100).clamp(1, 500))
         .push(" OFFSET ")
         .push_bind(q.offset.unwrap_or(0).max(0));
