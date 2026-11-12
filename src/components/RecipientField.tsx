@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Addr, Backend } from "@/lib/api";
 import { parseRecipients, type Recipient } from "@/lib/compose";
 import { cn } from "@/lib/utils";
+import { t as tr } from "@/lib/i18n";
 
 interface Props {
   label: string;
@@ -65,7 +66,7 @@ export function RecipientField({ label, value, onChange, backend, accountId, aut
         {value.map((r) => (
           <span key={r.address} className="inline-flex max-w-full items-center gap-1 rounded-full bg-accent/10 py-0.5 pl-2.5 pr-1 text-[12.5px] text-fg" title={r.address}>
             <span className="truncate">{r.name || r.address}</span>
-            <button type="button" aria-label={`Retirer ${r.address}`} className="press rounded-full p-0.5 text-muted hover:bg-hover hover:text-fg" onClick={(e) => { e.stopPropagation(); onChange(value.filter((v) => v.address !== r.address)); }}>
+            <button type="button" aria-label={tr("composer:remove", { name: r.address })} className="press rounded-full p-0.5 text-muted hover:bg-hover hover:text-fg" onClick={(e) => { e.stopPropagation(); onChange(value.filter((v) => v.address !== r.address)); }}>
               <X size={11} />
             </button>
           </span>

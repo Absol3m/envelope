@@ -1,0 +1,7 @@
+{
+  "sendFailed": "Couldn't send — {{error}}",
+  "title": "Scheduled messages",
+  "hint": "They go out at the scheduled time if Envelope is open.",
+  "sendNow": "Send now",
+  "edit": "Edit"
+}

@@ -17,5 +17,7 @@
     "shift": "Maj",
     "enter": "Entrée",
     "escape": "Échap"
-  }
+  },
+  "close": "Fermer",
+  "loading": "Chargement"
 }

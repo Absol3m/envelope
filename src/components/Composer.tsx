@@ -12,8 +12,9 @@ import { btnPrimary, IconButton, Kbd } from "./ui/primitives";
 import { RecipientField } from "./RecipientField";
 import { RichEditor } from "./RichEditor";
 import { shortcut } from "@/lib/platform";
+import { t as tr } from "@/lib/i18n";
 
-const TITLES = { new: "Nouveau message", reply: "Réponse", replyAll: "Réponse à tous", forward: "Transfert" } as const;
+const titleOf = (mode: "new" | "reply" | "replyAll" | "forward") => tr(`composer:titles.${mode}`);
 
 /** Panneau de rédaction flottant (bas droite) : le reste de l'application reste utilisable. */
 export function Composer() {
@@ -33,14 +34,14 @@ export function Composer() {
   useEffect(() => setShowCc(false), [draft?.id]);
 
   if (!draft) return null;
-  const fail = (what: string) => (e: unknown) => toast({ message: `${what} impossible — ${String(e)}`, tone: "error" });
-  const loadTemplates = () => void backend.listTemplates().then(setTemplates).catch(fail("Chargement des modèles"));
+  const fail = (what: string) => (e: unknown) => toast({ message: tr("composer:failed", { what, error: String(e) }), tone: "error" });
+  const loadTemplates = () => void backend.listTemplates().then(setTemplates).catch(fail(tr("composer:loadingTemplates")));
   const insertTemplate = (t: Template) => { update(applyTemplate(draft, t)); setRev((r) => r + 1); };
   const saveAsTemplate = async () => {
     const name = draft.subject.trim() || htmlToPlain(draft.html).slice(0, 40).trim();
-    if (!name) return toast({ message: "Écrivez un objet ou un texte avant d'enregistrer un modèle.", tone: "error" });
+    if (!name) return toast({ message: tr("composer:templateEmpty"), tone: "error" });
     const signature = accounts.find((a) => a.id === draft.accountId)?.signature ?? "";
-    await backend.saveTemplate({ name, subject: draft.subject, bodyHtml: templateBody(draft, signature) }).then(() => toast({ message: `Modèle « ${name} » enregistré` })).catch(fail("Enregistrement"));
+    await backend.saveTemplate({ name, subject: draft.subject, bodyHtml: templateBody(draft, signature) }).then(() => toast({ message: tr("composer:templateSaved", { name }) })).catch(fail(tr("composer:saving")));
   };
   const removeTemplate = (t: Template) => void backend.deleteTemplate(t.id).then(() => setTemplates((l) => l.filter((x) => x.id !== t.id))).catch(fail("Suppression"));
   const senders = senderOptions(accounts);
@@ -51,7 +52,7 @@ export function Composer() {
   return (
     <section
       role="dialog"
-      aria-label={TITLES[draft.mode]}
+      aria-label={titleOf(draft.mode)}
       className="anim-fade-up fixed bottom-4 right-6 z-[60] flex h-[min(640px,calc(100vh-32px))] w-[min(620px,calc(100vw-48px))] flex-col overflow-hidden rounded-2xl border border-border bg-elevated shadow-pop"
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
@@ -67,20 +68,20 @@ export function Composer() {
       }}
     >
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-4">
-        <h2 className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">{draft.subject || TITLES[draft.mode]}</h2>
+        <h2 className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">{draft.subject || titleOf(draft.mode)}</h2>
         {syncState !== "idle" && serverDraftsEnabled() && (
-          <span role="status" className={cn("shrink-0 text-[11.5px]", syncState === "error" ? "text-danger" : "text-faint")} title={syncState === "error" ? "Le brouillon est gardé sur cet ordinateur ; nouvel essai à la prochaine modification." : "Le brouillon est enregistré dans le dossier Brouillons du serveur."}>
-            {syncState === "saving" ? "Enregistrement…" : syncState === "saved" ? "Brouillon enregistré" : "Non enregistré sur le serveur"}
+          <span role="status" className={cn("shrink-0 text-[11.5px]", syncState === "error" ? "text-danger" : "text-faint")} title={syncState === "error" ? tr("composer:syncErrorHint") : tr("composer:syncOkHint")}>
+            {syncState === "saving" ? tr("composer:savingDraft") : syncState === "saved" ? tr("composer:draftSaved") : tr("composer:notSaved")}
           </span>
         )}
-        <IconButton label="Fermer (brouillon conservé)" kbd="Échap" onClick={close}><X size={16} /></IconButton>
+        <IconButton label={tr("composer:closeKeep")} kbd={tr("common:keys.escape")} onClick={close}><X size={16} /></IconButton>
       </header>
 
       {senders.length > 1 && (
         <div className="flex min-h-[38px] items-center gap-2 border-b border-border px-4 text-[13px]">
           <span className="w-6 shrink-0 text-[12px] text-muted">De</span>
           <select
-            aria-label="Expéditeur"
+            aria-label={tr("composer:sender")}
             value={sender.key}
             onChange={(e) => {
               const next = senders.find((x) => x.key === e.target.value);
@@ -96,21 +97,21 @@ export function Composer() {
       )}
 
       <div className="relative">
-        <RecipientField label="À" value={draft.to} onChange={(to) => update({ to })} backend={backend} accountId={draft.accountId} autoFocus={!replying} />
+        <RecipientField label={tr("composer:to")} value={draft.to} onChange={(to) => update({ to })} backend={backend} accountId={draft.accountId} autoFocus={!replying} />
         {!ccOpen && (
-          <button type="button" onClick={() => setShowCc(true)} className="press absolute right-3 top-2 rounded-md px-2 py-0.5 text-[12px] text-muted hover:bg-hover hover:text-fg">Cc / Cci</button>
+          <button type="button" onClick={() => setShowCc(true)} className="press absolute right-3 top-2 rounded-md px-2 py-0.5 text-[12px] text-muted hover:bg-hover hover:text-fg">{tr("composer:ccBcc")}</button>
         )}
       </div>
       {ccOpen && (
         <>
-          <RecipientField label="Cc" value={draft.cc} onChange={(cc) => update({ cc })} backend={backend} accountId={draft.accountId} />
-          <RecipientField label="Cci" value={draft.bcc} onChange={(bcc) => update({ bcc })} backend={backend} accountId={draft.accountId} />
+          <RecipientField label={tr("composer:cc")} value={draft.cc} onChange={(cc) => update({ cc })} backend={backend} accountId={draft.accountId} />
+          <RecipientField label={tr("composer:bcc")} value={draft.bcc} onChange={(bcc) => update({ bcc })} backend={backend} accountId={draft.accountId} />
         </>
       )}
 
       <input
-        aria-label="Objet"
-        placeholder="Objet"
+        aria-label={tr("composer:subject")}
+        placeholder={tr("composer:subject")}
         value={draft.subject}
         onChange={(e) => update({ subject: e.target.value })}
         className="h-[42px] shrink-0 border-b border-border bg-transparent px-4 text-[14px] font-medium outline-none placeholder:font-normal placeholder:text-faint"
@@ -123,13 +124,13 @@ export function Composer() {
       <RichEditor key={`${draft.id}:${draft.accountId}:${rev}`} html={draft.html} onChange={(html) => update({ html })} focusAtStart={replying} />
 
       {draft.attachments.length > 0 && (
-        <ul className="flex max-h-[84px] shrink-0 flex-wrap gap-1.5 overflow-y-auto border-t border-border px-3 py-2" aria-label="Pièces jointes">
+        <ul className="flex max-h-[84px] shrink-0 flex-wrap gap-1.5 overflow-y-auto border-t border-border px-3 py-2" aria-label={tr("composer:attachments")}>
           {draft.attachments.map((a) => (
             <li key={a.id} className="inline-flex max-w-[260px] items-center gap-1.5 rounded-lg bg-hover py-1 pl-2 pr-1 text-[12.5px]">
               <Paperclip size={12} className="shrink-0 text-muted" />
               <span className="truncate" title={a.name}>{a.name}</span>
               <span className="tnum shrink-0 text-muted">{fileSize(a.size)}</span>
-              <button type="button" aria-label={`Retirer ${a.name}`} onClick={() => detach(a.id)} className="press rounded p-0.5 text-muted hover:bg-active hover:text-fg"><X size={12} /></button>
+              <button type="button" aria-label={tr("composer:remove", { name: a.name })} onClick={() => detach(a.id)} className="press rounded p-0.5 text-muted hover:bg-active hover:text-fg"><X size={12} /></button>
             </li>
           ))}
         </ul>
@@ -141,31 +142,31 @@ export function Composer() {
           onSubmit={(e) => {
             e.preventDefault();
             const at = new Date(picking).getTime(); // « datetime-local » : heure locale, sans fuseau
-            if (!Number.isFinite(at) || at <= Date.now()) return toast({ message: "Choisissez une date dans le futur.", tone: "error" });
+            if (!Number.isFinite(at) || at <= Date.now()) return toast({ message: tr("composer:futureDate"), tone: "error" });
             setPicking(null);
             void schedule(at);
           }}
         >
-          <input type="datetime-local" aria-label="Date et heure d'envoi" value={picking} onChange={(e) => setPicking(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-2 py-1 outline-none focus:border-accent" />
-          <button type="submit" className={`${btnPrimary} h-8 px-3`}>Programmer</button>
-          <IconButton label="Annuler" onClick={() => setPicking(null)}><X size={14} /></IconButton>
+          <input type="datetime-local" aria-label={tr("composer:sendDateTime")} value={picking} onChange={(e) => setPicking(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-2 py-1 outline-none focus:border-accent" />
+          <button type="submit" className={`${btnPrimary} h-8 px-3`}>{tr("composer:schedule")}</button>
+          <IconButton label={tr("composer:cancel")} onClick={() => setPicking(null)}><X size={14} /></IconButton>
         </form>
       )}
       <footer className="flex h-14 shrink-0 items-center gap-2 border-t border-border px-3">
         <button type="button" className={`${btnPrimary} h-9 gap-2 px-4`} onClick={() => send()}>
-          <Send size={14} /> Envoyer <Kbd className="border-white/30 bg-transparent text-white/80">{shortcut("mod+enter")}</Kbd>
+          <Send size={14} /> {tr("composer:send")} <Kbd className="border-white/30 bg-transparent text-white/80">{shortcut("mod+enter")}</Kbd>
         </button>
         <Dropdown.Root>
           <Dropdown.Trigger asChild>
-            <IconButton label="Envoyer plus tard" tooltipSide="top"><ChevronDown size={16} /></IconButton>
+            <IconButton label={tr("composer:sendLater")} tooltipSide="top"><ChevronDown size={16} /></IconButton>
           </Dropdown.Trigger>
           <Dropdown.Portal>
             <Dropdown.Content side="top" align="start" sideOffset={8} className="anim-fade-in z-[70] min-w-[260px] rounded-xl border border-border bg-elevated p-1 text-[13px] shadow-pop">
-              <div className="px-2.5 py-1 text-[11px] text-faint">Envoyer plus tard — l'application doit être ouverte à l'heure prévue</div>
+              <div className="px-2.5 py-1 text-[11px] text-faint">{tr("composer:sendLaterHint")}</div>
               {scheduleOptions(new Date()).map((o) => (
                 <Dropdown.Item key={o.label} onSelect={() => void schedule(o.at.getTime())} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">{o.label}</Dropdown.Item>
               ))}
-              <Dropdown.Item onSelect={() => setPicking(new Date(Date.now() + 3600_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16))} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">Choisir une date…</Dropdown.Item>
+              <Dropdown.Item onSelect={() => setPicking(new Date(Date.now() + 3600_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16))} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">{tr("composer:pickDate")}</Dropdown.Item>
             </Dropdown.Content>
           </Dropdown.Portal>
         </Dropdown.Root>
@@ -176,27 +177,27 @@ export function Composer() {
           hidden
           onChange={(e) => { void attach(Array.from(e.target.files ?? [])); e.target.value = ""; }}
         />
-        <IconButton label="Joindre un fichier" onClick={() => fileInput.current?.click()}><Paperclip size={16} /></IconButton>
+        <IconButton label={tr("composer:attach")} onClick={() => fileInput.current?.click()}><Paperclip size={16} /></IconButton>
         <Dropdown.Root onOpenChange={(o) => o && loadTemplates()}>
           <Dropdown.Trigger asChild>
-            <IconButton label="Modèles" tooltipSide="top"><FileText size={16} /></IconButton>
+            <IconButton label={tr("composer:templates")} tooltipSide="top"><FileText size={16} /></IconButton>
           </Dropdown.Trigger>
           <Dropdown.Portal>
             <Dropdown.Content side="top" align="start" sideOffset={8} className="anim-fade-in z-[70] min-w-[220px] max-w-[320px] rounded-xl border border-border bg-elevated p-1 text-[13px] shadow-pop">
-              {templates.length === 0 && <div className="px-2.5 py-1.5 text-muted">Aucun modèle enregistré</div>}
+              {templates.length === 0 && <div className="px-2.5 py-1.5 text-muted">{tr("composer:noTemplates")}</div>}
               {templates.map((t) => (
                 <Dropdown.Item key={t.id} onSelect={() => insertTemplate(t)} className="group/tpl flex cursor-default items-center gap-2 rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">
                   <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                  <button type="button" aria-label={`Supprimer le modèle ${t.name}`} onClick={(e) => { e.stopPropagation(); removeTemplate(t); }} className="press hidden rounded p-0.5 text-muted hover:bg-active hover:text-danger group-data-[highlighted]/tpl:block"><X size={12} /></button>
+                  <button type="button" aria-label={tr("composer:deleteTemplate", { name: t.name })} onClick={(e) => { e.stopPropagation(); removeTemplate(t); }} className="press hidden rounded p-0.5 text-muted hover:bg-active hover:text-danger group-data-[highlighted]/tpl:block"><X size={12} /></button>
                 </Dropdown.Item>
               ))}
               <Dropdown.Separator className="my-1 h-px bg-border" />
-              <Dropdown.Item onSelect={() => void saveAsTemplate()} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">Enregistrer ce message comme modèle</Dropdown.Item>
+              <Dropdown.Item onSelect={() => void saveAsTemplate()} className="cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover">{tr("composer:saveTemplate")}</Dropdown.Item>
             </Dropdown.Content>
           </Dropdown.Portal>
         </Dropdown.Root>
         <span className="flex-1" />
-        <IconButton label="Supprimer le brouillon" onClick={discard}><Trash2 size={16} /></IconButton>
+        <IconButton label={tr("composer:discard")} onClick={discard}><Trash2 size={16} /></IconButton>
       </footer>
     </section>
   );

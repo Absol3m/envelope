@@ -3,6 +3,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { avatarBackground, displayName, initials } from "@/lib/format";
 import { shortcut } from "@/lib/platform";
+import { t as tr } from "@/lib/i18n";
 
 export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -87,7 +88,7 @@ export function Spinner({ size = 14 }: { size?: number }) {
   return (
     <span
       role="progressbar"
-      aria-label="Chargement"
+      aria-label={tr("common:loading")}
       className="inline-block rounded-full border-2 border-current border-t-transparent opacity-70"
       style={{ width: size, height: size, animation: "spin 0.7s linear infinite" }}
     />

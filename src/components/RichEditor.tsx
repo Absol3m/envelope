@@ -11,6 +11,7 @@ import { isEmail, isNeutralColor } from "@/lib/compose";
 import { cn } from "@/lib/utils";
 import { isMac } from "@/lib/platform";
 import { btnGhost, IconButton } from "./ui/primitives";
+import { t as tr } from "@/lib/i18n";
 
 /** Couleur de texte : tout HTML qui entre dans l'éditeur (collage, citation, brouillon) perd ses
  *  couleurs neutres (le noir ou le blanc de sa source) et prend celle du thème, lisible en sombre
@@ -100,8 +101,8 @@ function FormatBar({ editor }: { editor: Editor }) {
         <Link2 size={15} className="shrink-0 text-muted" />
         <input
           autoFocus
-          aria-label="Adresse du lien"
-          placeholder="https://… ou adresse e-mail"
+          aria-label={tr("editor:linkAddress")}
+          placeholder={tr("editor:linkPlaceholder")}
           value={url}
           spellCheck={false}
           onChange={(e) => { setUrl(e.target.value); setLinkError(false); }}
@@ -111,32 +112,32 @@ function FormatBar({ editor }: { editor: Editor }) {
           }}
           className={cn("min-w-0 flex-1 bg-transparent text-[13px] outline-none", linkError && "text-danger")}
         />
-        {linkError && <span className="text-[11.5px] text-danger">Adresse invalide</span>}
-        <button type="button" className={btnGhost} onClick={applyLink}>{url.trim() ? "Appliquer" : "Retirer le lien"}</button>
+        {linkError && <span className="text-[11.5px] text-danger">{tr("editor:invalidAddress")}</span>}
+        <button type="button" className={btnGhost} onClick={applyLink}>{url.trim() ? tr("editor:apply") : tr("editor:removeLink")}</button>
       </div>
     );
   }
 
   return (
-    <div className="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-t border-border px-2" role="toolbar" aria-label="Mise en forme">
-      <Tool label="Gras" kbd="mod+b" active={st.bold} onClick={() => chain().toggleBold().run()}><Bold size={15} /></Tool>
-      <Tool label="Italique" kbd="mod+i" active={st.italic} onClick={() => chain().toggleItalic().run()}><Italic size={15} /></Tool>
-      <Tool label="Souligné" kbd="mod+u" active={st.underline} onClick={() => chain().toggleUnderline().run()}><Underline size={15} /></Tool>
-      <Tool label="Barré" active={st.strike} onClick={() => chain().toggleStrike().run()}><Strikethrough size={15} /></Tool>
+    <div className="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-t border-border px-2" role="toolbar" aria-label={tr("editor:formatting")}>
+      <Tool label={tr("editor:bold")} kbd="mod+b" active={st.bold} onClick={() => chain().toggleBold().run()}><Bold size={15} /></Tool>
+      <Tool label={tr("editor:italic")} kbd="mod+i" active={st.italic} onClick={() => chain().toggleItalic().run()}><Italic size={15} /></Tool>
+      <Tool label={tr("editor:underline")} kbd="mod+u" active={st.underline} onClick={() => chain().toggleUnderline().run()}><Underline size={15} /></Tool>
+      <Tool label={tr("editor:strike")} active={st.strike} onClick={() => chain().toggleStrike().run()}><Strikethrough size={15} /></Tool>
       <Sep />
-      <Tool label="Titre" active={st.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()}><Heading2 size={15} /></Tool>
-      <Tool label="Liste à puces" active={st.bullet} onClick={() => chain().toggleBulletList().run()}><List size={15} /></Tool>
-      <Tool label="Liste numérotée" active={st.ordered} onClick={() => chain().toggleOrderedList().run()}><ListOrdered size={15} /></Tool>
-      <Tool label="Citation" active={st.quote} onClick={() => chain().toggleBlockquote().run()}><Quote size={15} /></Tool>
+      <Tool label={tr("editor:heading")} active={st.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()}><Heading2 size={15} /></Tool>
+      <Tool label={tr("editor:bulletList")} active={st.bullet} onClick={() => chain().toggleBulletList().run()}><List size={15} /></Tool>
+      <Tool label={tr("editor:orderedList")} active={st.ordered} onClick={() => chain().toggleOrderedList().run()}><ListOrdered size={15} /></Tool>
+      <Tool label={tr("editor:quote")} active={st.quote} onClick={() => chain().toggleBlockquote().run()}><Quote size={15} /></Tool>
       <Sep />
-      <Tool label="Aligner à gauche" active={st.left} onClick={() => chain().setTextAlign("left").run()}><AlignLeft size={15} /></Tool>
-      <Tool label="Centrer" active={st.center} onClick={() => chain().setTextAlign("center").run()}><AlignCenter size={15} /></Tool>
-      <Tool label="Aligner à droite" active={st.right} onClick={() => chain().setTextAlign("right").run()}><AlignRight size={15} /></Tool>
+      <Tool label={tr("editor:alignLeft")} active={st.left} onClick={() => chain().setTextAlign("left").run()}><AlignLeft size={15} /></Tool>
+      <Tool label={tr("editor:center")} active={st.center} onClick={() => chain().setTextAlign("center").run()}><AlignCenter size={15} /></Tool>
+      <Tool label={tr("editor:alignRight")} active={st.right} onClick={() => chain().setTextAlign("right").run()}><AlignRight size={15} /></Tool>
       <Sep />
-      <Tool label="Lien" kbd="mod+k" active={st.link} onClick={openLink}><Link2 size={15} /></Tool>
+      <Tool label={tr("editor:link")} kbd="mod+k" active={st.link} onClick={openLink}><Link2 size={15} /></Tool>
       <Dropdown.Root>
         <Dropdown.Trigger asChild>
-          <IconButton label="Couleur du texte" tooltipSide="top" {...keepFocus}><Palette size={15} /></IconButton>
+          <IconButton label={tr("editor:textColor")} tooltipSide="top" {...keepFocus}><Palette size={15} /></IconButton>
         </Dropdown.Trigger>
         <Dropdown.Portal>
           <Dropdown.Content side="top" align="start" sideOffset={8} onCloseAutoFocus={(e) => { e.preventDefault(); editor.commands.focus(); }} className="anim-fade-in z-[70] grid grid-cols-5 gap-1.5 rounded-xl bg-elevated p-2 shadow-pop">
@@ -146,10 +147,10 @@ function FormatBar({ editor }: { editor: Editor }) {
           </Dropdown.Content>
         </Dropdown.Portal>
       </Dropdown.Root>
-      <Tool label="Effacer la mise en forme" onClick={() => chain().unsetAllMarks().clearNodes().unsetTextAlign().run()}><RemoveFormatting size={15} /></Tool>
+      <Tool label={tr("editor:clearFormatting")} onClick={() => chain().unsetAllMarks().clearNodes().unsetTextAlign().run()}><RemoveFormatting size={15} /></Tool>
       <span className="flex-1" />
-      <Tool label="Annuler" kbd="mod+z" disabled={!st.canUndo} onClick={() => chain().undo().run()}><Undo2 size={15} /></Tool>
-      <Tool label="Rétablir" kbd={isMac ? "shift+mod+z" : "mod+y"} disabled={!st.canRedo} onClick={() => chain().redo().run()}><Redo2 size={15} /></Tool>
+      <Tool label={tr("editor:undo")} kbd="mod+z" disabled={!st.canUndo} onClick={() => chain().undo().run()}><Undo2 size={15} /></Tool>
+      <Tool label={tr("editor:redo")} kbd={isMac ? "shift+mod+z" : "mod+y"} disabled={!st.canRedo} onClick={() => chain().redo().run()}><Redo2 size={15} /></Tool>
     </div>
   );
 }
@@ -162,7 +163,7 @@ export function RichEditor({ html, onChange, focusAtStart }: { html: string; onC
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       TextStyle,
       ThemedColor,
-      Placeholder.configure({ placeholder: "Écrivez votre message…" }),
+      Placeholder.configure({ placeholder: tr("editor:placeholder") }),
     ],
     content: html,
     autofocus: focusAtStart ? "start" : false,

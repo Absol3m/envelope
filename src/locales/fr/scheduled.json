@@ -1,0 +1,7 @@
+{
+  "sendFailed": "Envoi impossible — {{error}}",
+  "title": "Envois programmés",
+  "hint": "Ils partent à l'heure prévue si Envelope est ouvert.",
+  "sendNow": "Envoyer maintenant",
+  "edit": "Modifier"
+}

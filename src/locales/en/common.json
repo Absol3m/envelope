@@ -17,5 +17,7 @@
     "shift": "Shift",
     "enter": "Enter",
     "escape": "Esc"
-  }
+  },
+  "close": "Close",
+  "loading": "Loading"
 }
