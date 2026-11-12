@@ -1,6 +1,9 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Bot, Check, Download, Filter, Copy, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import { LANGUAGES, parseLangPref, setLanguage, type LangPref } from "@/lib/i18n";
+import { pref } from "@/lib/pref";
 import { isTauri, type Account, type LockMethod, type McpInfo } from "@/lib/api";
 import { senderLabel } from "@/lib/compose";
 import { relativeTime } from "@/lib/format";
@@ -454,10 +457,22 @@ function NotificationsSection() {
   );
 }
 
+/** Langue de l'interface : le système par défaut, ou une langue livrée. */
+function LanguageSection() {
+  const { t } = useTranslation("language");
+  const [value, setValue] = useState<LangPref>(() => parseLangPref(pref.get("lang", "system")));
+  return (
+    <Section title={t("title")} hint={t("hint")}>
+      <Segmented<LangPref> value={value} onChange={(v) => { setValue(v); void setLanguage(v); }} options={[{ value: "system", label: t("system"), icon: Monitor }, ...LANGUAGES.map((l) => ({ value: l.code as LangPref, label: l.label }))]} />
+    </Section>
+  );
+}
+
 function AppearancePanel() {
   const s = useMail();
   return (
     <>
+      <LanguageSection />
       <Section title="Thème">
         <Segmented<ThemePref> value={s.theme} onChange={s.setTheme} options={[{ value: "system", label: "Système", icon: Monitor }, { value: "light", label: "Clair", icon: Sun }, { value: "dark", label: "Sombre", icon: Moon }]} />
       </Section>

@@ -1,0 +1,16 @@
+{
+  "unknown": "Inconnu",
+  "time": {
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "thisWeek": "Cette semaine",
+    "thisMonth": "Ce mois-ci",
+    "never": "jamais",
+    "justNow": "à l'instant"
+  },
+  "size": {
+    "bytes": "{{n}} o",
+    "kilobytes": "{{n}} Ko",
+    "megabytes": "{{n}} Mo"
+  }
+}

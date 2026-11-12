@@ -5,6 +5,7 @@ import { watchSystemAppearance } from "@/lib/theme";
 import { useMail } from "@/lib/store";
 import { suppressWebviewContextMenu } from "@/lib/platform";
 import { applyFont, savedFont } from "@/lib/font";
+import "@/lib/i18n";
 import "./index.css";
 
 suppressWebviewContextMenu(document);

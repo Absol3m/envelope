@@ -1,11 +1,14 @@
 import { useComposer } from "@/lib/composer";
 import { useMail, type SettingsTab } from "@/lib/store";
+import { i18next, resolveLanguage } from "@/lib/i18n";
 import { runListBench } from "./dev-bench";
 
 /** Aides de développement (captures d'écran reproductibles), actives uniquement en `pnpm dev` :
- *  ?bench=N (mesure : N conversations synthétiques, défilement jusqu'au bout, résultat dans #bench) · ?theme=light|dark · ?thread=ID · ?settings=TAB · ?palette=1 · ?help=1 · ?onboarding=1 · ?compose=new|reply|replyAll|forward */
+ *  ?bench=N (mesure : N conversations synthétiques, défilement jusqu'au bout, résultat dans #bench) · ?lang=fr|en · ?theme=light|dark · ?thread=ID · ?settings=TAB · ?palette=1 · ?help=1 · ?onboarding=1 · ?compose=new|reply|replyAll|forward */
 export function applyDevParams() {
   const q = new URLSearchParams(location.search);
+  const lang = q.get("lang"); // ?lang=fr|en : langue de l'interface, sans toucher au réglage mémorisé
+  if (lang) void i18next.changeLanguage(resolveLanguage(lang));
   const bench = Number(q.get("bench"));
   if (bench > 0) {
     const unsubBench = useMail.subscribe((s) => { if (s.ready && !s.threadsLoading) { unsubBench(); runListBench(bench); } });

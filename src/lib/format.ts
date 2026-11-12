@@ -1,62 +1,77 @@
+import { locale, t } from "./i18n";
+
 const DAY = 86_400_000;
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
-const time = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
-const weekdayShort = new Intl.DateTimeFormat("fr-FR", { weekday: "short" });
-const dayMonth = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
-const dayMonthYear = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "2-digit" });
-const full = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
-const scheduled = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
-const monthYear = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" });
+/** Formateurs `Intl` de la langue active, gardés par langue et par options (leur construction est coûteuse). */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+function dtf(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale()}|${JSON.stringify(options)}`;
+  let f = formatters.get(key);
+  if (!f) formatters.set(key, (f = new Intl.DateTimeFormat(locale(), options)));
+  return f;
+}
+const time = () => dtf({ hour: "2-digit", minute: "2-digit" });
+const weekdayShort = () => dtf({ weekday: "short" });
+const dayMonth = () => dtf({ day: "numeric", month: "short" });
+const dayMonthYear = () => dtf({ day: "numeric", month: "short", year: "2-digit" });
+const full = () => dtf({ weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const scheduled = () => dtf({ weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
+const monthYear = () => dtf({ month: "long", year: "numeric" });
 
 /** Date et heure d'un envoi programmé (millisecondes) : « lundi 16 novembre à 08:00 ». */
-export const scheduledAt = (ms: number) => scheduled.format(ms);
+export const scheduledAt = (ms: number) => scheduled().format(ms);
 
 /** Heure du jour, « Hier », jour de semaine, puis date : le plus court lisible. */
 export function listDate(iso: string, now = new Date()): string {
   const d = new Date(iso);
   const days = Math.round((startOfDay(now) - startOfDay(d)) / DAY);
-  if (days <= 0) return time.format(d);
-  if (days === 1) return "Hier";
-  if (days < 7) return weekdayShort.format(d).replace(".", "");
-  return (d.getFullYear() === now.getFullYear() ? dayMonth : dayMonthYear).format(d).replace(".", "");
+  if (days <= 0) return time().format(d);
+  if (days === 1) return t("common:time.yesterday");
+  if (days < 7) return weekdayShort().format(d).replace(".", "");
+  return (d.getFullYear() === now.getFullYear() ? dayMonth() : dayMonthYear()).format(d).replace(".", "");
 }
 
-export const fullDate = (iso: string) => full.format(new Date(iso));
+export const fullDate = (iso: string) => full().format(new Date(iso));
 
 /** Intitulé de groupe dans la liste : Aujourd'hui, Hier, 7 derniers jours, puis par mois. */
 export function groupLabel(iso: string, now = new Date()): string {
   const d = new Date(iso);
   const days = Math.round((startOfDay(now) - startOfDay(d)) / DAY);
-  if (days <= 0) return "Aujourd'hui";
-  if (days === 1) return "Hier";
-  if (days < 7) return "Cette semaine";
-  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) return "Ce mois-ci";
-  const label = monthYear.format(d);
+  if (days <= 0) return t("common:time.today");
+  if (days === 1) return t("common:time.yesterday");
+  if (days < 7) return t("common:time.thisWeek");
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) return t("common:time.thisMonth");
+  const label = monthYear().format(d);
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
+/** « il y a 5 min » : `Intl.RelativeTimeFormat` (forme abrégée) plutôt que des phrases à traduire une à une. */
 export function relativeTime(iso: string | null, now = Date.now()): string {
-  if (!iso) return "jamais";
+  if (!iso) return t("common:time.never");
   const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
-  if (s < 45) return "à l'instant";
-  if (s < 3600) return `il y a ${Math.round(s / 60)} min`;
-  if (s < 86_400) return `il y a ${Math.round(s / 3600)} h`;
-  return `il y a ${Math.round(s / 86_400)} j`;
+  if (s < 45) return t("common:time.justNow");
+  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: "always", style: "short" });
+  if (s < 3600) return rtf.format(-Math.round(s / 60), "minute");
+  if (s < 86_400) return rtf.format(-Math.round(s / 3600), "hour");
+  return rtf.format(-Math.round(s / 86_400), "day");
 }
 
+/** Nombre selon les usages de la langue active (séparateurs de milliers et décimal). */
+export const formatNumber = (n: number, maximumFractionDigits = 0) => new Intl.NumberFormat(locale(), { maximumFractionDigits }).format(n);
+
 export function fileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;
-  return `${(bytes / 1024 / 1024).toFixed(1).replace(".", ",")} Mo`;
+  if (bytes < 1024) return t("common:size.bytes", { n: bytes });
+  if (bytes < 1024 * 1024) return t("common:size.kilobytes", { n: Math.round(bytes / 1024) });
+  return t("common:size.megabytes", { n: formatNumber(bytes / 1024 / 1024, 1) });
 }
 
 /** « Nom <adresse> » → nom affichable (repli : partie locale de l'adresse). */
 export function displayName(name: string | null | undefined, addr: string | null | undefined): string {
   if (name?.trim()) return name.trim();
   const a = addr ?? "";
-  return a.split("@")[0] || a || "Inconnu";
+  return a.split("@")[0] || a || t("common:unknown");
 }
 
 export function initials(name: string): string {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { i18next } from "../i18n";
 import { categorize } from "../categories";
 import { displayName, fileSize, groupLabel, hue, initials, listDate, relativeTime } from "../format";
 
@@ -21,7 +22,7 @@ describe("dates de liste", () => {
   });
   it("temps relatif", () => {
     const t = new Date("2026-11-09T14:58:00").toISOString();
-    expect(relativeTime(t, NOW.getTime())).toBe("il y a 2 min");
+    expect(relativeTime(t, NOW.getTime()).replace(/\s/g, " ")).toBe("il y a 2 min"); // Intl met des espaces insécables
     expect(relativeTime(null)).toBe("jamais");
   });
 });
@@ -54,5 +55,23 @@ describe("Smart Inbox (heuristique)", () => {
     expect(c("newsletter@lalettretech.fr")).toBe("newsletters");
     expect(c("x@y.fr", "Webinar : -30 % cette semaine")).toBe("newsletters");
     expect(c("camille.laurent@atelier-nord.fr", "Revue de la roadmap")).toBe("priority");
+  });
+});
+
+describe("en anglais", () => {
+  it("textes et formats suivent la langue active", async () => {
+    await i18next.changeLanguage("en");
+    try {
+      expect(listDate("2026-11-08T23:59:00", NOW)).toBe("Yesterday");
+      expect(listDate("2026-11-05T10:00:00", NOW)).toMatch(/^Thu/);
+      expect(groupLabel("2026-11-09T01:00:00", NOW)).toBe("Today");
+      expect(groupLabel("2026-03-01T12:00:00", NOW)).toBe("March 2026");
+      expect(relativeTime(new Date("2026-11-09T14:58:00").toISOString(), NOW.getTime()).replace(/\s/g, " ")).toBe("2 min. ago");
+      expect(relativeTime(null)).toBe("never");
+      expect(fileSize(3_450_000)).toBe("3.3 MB");
+      expect(displayName("  ", null)).toBe("Unknown");
+    } finally {
+      await i18next.changeLanguage("fr");
+    }
   });
 });
