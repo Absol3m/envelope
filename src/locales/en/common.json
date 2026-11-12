@@ -15,6 +15,7 @@
   },
   "keys": {
     "shift": "Shift",
-    "enter": "Enter"
+    "enter": "Enter",
+    "escape": "Esc"
   }
 }

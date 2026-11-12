@@ -1,0 +1,85 @@
+{
+  "ops": {
+    "from": {
+      "insert": "from:",
+      "hint": "sender"
+    },
+    "to": {
+      "insert": "to:",
+      "hint": "recipient (To or Cc)"
+    },
+    "subject": {
+      "insert": "subject:",
+      "hint": "words in the subject"
+    },
+    "in": {
+      "insert": "in:",
+      "hint": "a folder (archive, sent…)"
+    },
+    "before": {
+      "insert": "before:",
+      "hint": "before a date"
+    },
+    "after": {
+      "insert": "after:",
+      "hint": "from a date on"
+    },
+    "attachment": {
+      "insert": "has:attachment",
+      "hint": "with an attachment"
+    },
+    "unread": {
+      "insert": "is:unread",
+      "hint": "unread"
+    },
+    "starred": {
+      "insert": "is:starred",
+      "hint": "starred"
+    }
+  },
+  "folders": {
+    "archive": {
+      "label": "Archive",
+      "value": "archive"
+    },
+    "sent": {
+      "label": "Sent",
+      "value": "sent"
+    },
+    "drafts": {
+      "label": "Drafts",
+      "value": "drafts"
+    },
+    "inbox": {
+      "label": "Inbox",
+      "value": "inbox"
+    },
+    "trash": {
+      "label": "Trash",
+      "value": "trash"
+    },
+    "spam": {
+      "label": "Spam",
+      "value": "spam"
+    },
+    "all": {
+      "label": "All (trash and spam included)",
+      "value": "all"
+    }
+  },
+  "values": {
+    "attachment": "attachment",
+    "unread": "unread",
+    "starred": "starred"
+  },
+  "dates": {
+    "today": "Today",
+    "thisMonth": "This month",
+    "lastMonth": "Last month",
+    "thisYear": "This year",
+    "lastYear": "Last year"
+  },
+  "placeholder": "Search (from: to: subject: before: has:attachment…)",
+  "label": "Search",
+  "clear": "Clear search"
+}

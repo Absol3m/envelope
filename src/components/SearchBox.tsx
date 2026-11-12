@@ -4,6 +4,7 @@ import type { Backend } from "@/lib/api";
 import { applySuggestion, contextAt, operatorItems, valueItems, type Suggestion } from "@/lib/searchSuggest";
 import { cn } from "@/lib/utils";
 import { Kbd } from "./ui/primitives";
+import { t } from "@/lib/i18n";
 
 /** Barre de recherche avec suggestions : opérateurs, puis valeurs (contacts, dates). Tab ou Entrée (après ↑/↓) accepte. */
 export function SearchBox({ query, setQuery, backend, accountId }: {
@@ -89,8 +90,8 @@ export function SearchBox({ query, setQuery, backend, accountId }: {
               e.currentTarget.blur();
             }
           }}
-          placeholder="Rechercher (de: à: objet: avant: pj…)"
-          aria-label="Rechercher"
+          placeholder={t("search:placeholder")}
+          aria-label={t("search:label")}
           role="combobox"
           aria-expanded={open}
           aria-controls="search-suggestions"
@@ -98,7 +99,7 @@ export function SearchBox({ query, setQuery, backend, accountId }: {
           className="selectable min-w-0 flex-1 bg-transparent text-[13px] text-fg outline-none placeholder:text-faint"
         />
         {query ? (
-          <button aria-label="Effacer la recherche" onClick={() => setQuery("")} className="press rounded p-0.5 hover:bg-hover">
+          <button aria-label={t("search:clear")} onClick={() => setQuery("")} className="press rounded p-0.5 hover:bg-hover">
             <X size={13} />
           </button>
         ) : (

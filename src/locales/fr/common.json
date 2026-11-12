@@ -15,6 +15,7 @@
   },
   "keys": {
     "shift": "Maj",
-    "enter": "Entrée"
+    "enter": "Entrée",
+    "escape": "Échap"
   }
 }

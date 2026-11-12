@@ -1,6 +1,7 @@
 import { AlarmClock, Check, Inbox, Mail, MailOpen, Paperclip, SearchX, Star, Trash2 } from "lucide-react";
 import { startThreadDrag } from "@/lib/dragImage";
 import type { MouseEvent } from "react";
+import { t as tr } from "@/lib/i18n";
 import { defaultRangeExtractor, measureElement, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -62,7 +63,7 @@ const Row = memo(function Row({ t, selected, compact, previews, checked, onSelec
     >
       {active && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-accent" />}
       <div className="flex w-2 shrink-0 items-start pt-[7px]">
-        {unread && <span aria-label="Non lu" className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_3px_var(--accent-soft)]" />}
+        {unread && <span aria-label={tr("list:unread")} className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_3px_var(--accent-soft)]" />}
       </div>
       {!compact && (
         <div className="pt-px">
@@ -74,14 +75,14 @@ const Row = memo(function Row({ t, selected, compact, previews, checked, onSelec
           <span className={cn("truncate text-[13px]", unread ? "font-semibold text-fg" : "font-medium text-fg/85")}>{who}</span>
           {t.messageCount > 1 && <span className="tnum shrink-0 rounded bg-hover px-1 text-[10.5px] font-medium text-muted">{t.messageCount}</span>}
           <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted">
-            {folderName && <span className="max-w-[90px] truncate rounded bg-hover px-1.5 py-px text-[10.5px] font-medium text-muted" title={`Dossier : ${folderName}`}>{folderName}</span>}
+            {folderName && <span className="max-w-[90px] truncate rounded bg-hover px-1.5 py-px text-[10.5px] font-medium text-muted" title={tr("list:folder", { name: folderName })}>{folderName}</span>}
             {t.hasAttachments && <Paperclip size={12} className="text-faint" />}
             {t.isStarred && <Star size={12} className="fill-star text-star" />}
             {t.reminderKind && <ReminderBadge t={t} />}
             <span className={cn("tnum", unread && "font-medium text-fg/80")}>{listDate(t.lastMessageAt)}</span>
           </span>
         </div>
-        <div className={cn("truncate text-[13px]", unread ? "font-medium text-fg" : "text-fg/80")}>{t.subject || "(sans objet)"}</div>
+        <div className={cn("truncate text-[13px]", unread ? "font-medium text-fg" : "text-fg/80")}>{t.subject || tr("list:noSubject")}</div>
         {previews && <div className="truncate text-[12.5px] text-muted">{t.snippet || "—"}</div>}
       </div>
 
@@ -96,14 +97,14 @@ const Row = memo(function Row({ t, selected, compact, previews, checked, onSelec
           );
         })}
         {purge && (
-          <IconButton label="Supprimer définitivement" kbd="⌫" onClick={(e) => { e.stopPropagation(); onDelete(t.id); }}>
+          <IconButton label={tr("topbar:deleteForever")} kbd="⌫" onClick={(e) => { e.stopPropagation(); onDelete(t.id); }}>
             <Trash2 size={15} className="text-danger" />
           </IconButton>
         )}
-        <IconButton label={t.isStarred ? "Ne plus suivre" : "Suivre"} kbd="S" onClick={(e) => { e.stopPropagation(); onStar(t.id); }}>
+        <IconButton label={t.isStarred ? tr("topbar:unstar") : tr("topbar:star")} kbd="S" onClick={(e) => { e.stopPropagation(); onStar(t.id); }}>
           <Star size={15} className={t.isStarred ? "fill-star text-star" : ""} />
         </IconButton>
-        <IconButton label={unread ? "Marquer comme lu" : "Marquer comme non lu"} kbd="U" onClick={(e) => { e.stopPropagation(); onToggleRead(t.id); }}>
+        <IconButton label={unread ? tr("topbar:markRead") : tr("topbar:markUnread")} kbd="U" onClick={(e) => { e.stopPropagation(); onToggleRead(t.id); }}>
           {unread ? <MailOpen size={15} /> : <Mail size={15} />}
         </IconButton>
       </div>
@@ -132,12 +133,12 @@ function Skeletons({ compact }: { compact: boolean }) {
 function Empty({ search, view, category }: { search: string; view: View; category: Category }) {
   const inboxZero = isInboxView(view) && !search && category === "all";
   const Icon = search ? SearchX : inboxZero ? Check : Inbox;
-  const title = search ? `Aucun résultat pour « ${search} »` : inboxZero ? "Boîte de réception à zéro" : "Rien ici pour l'instant";
+  const title = search ? tr("list:empty.noResults", { search }) : inboxZero ? tr("list:empty.inboxZero") : tr("list:empty.nothing");
   const hint = search
-    ? "Essayez d'autres mots-clés : la recherche ignore les accents et accepte les débuts de mots. La recherche couvre tous les dossiers sauf corbeille et spam (dans:tout les inclut). Opérateurs : de:  à:  objet:  dans:  avant:  apres:  pj  non-lu  suivi"
+    ? tr("list:empty.searchHint")
     : inboxZero
-      ? "Tout est traité. Profitez-en."
-      : "Les conversations de cette vue apparaîtront ici.";
+      ? tr("list:empty.inboxZeroHint")
+      : tr("list:empty.nothingHint");
   return (
     <div className="anim-fade-up flex h-full flex-col items-center justify-center px-10 text-center">
       <span className={cn("mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl", inboxZero ? "bg-success/10 text-success" : "bg-hover text-faint")}>
@@ -153,9 +154,9 @@ function Empty({ search, view, category }: { search: string; view: View; categor
 function ReminderBadge({ t }: { t: ThreadSummary }) {
   const followup = t.reminderKind === "followup";
   const fired = t.reminderFired !== null;
-  const label = fired ? (followup ? "Sans réponse" : "Revenue") : listDate(new Date((t.reminderDue ?? 0) * 1000).toISOString());
+  const label = fired ? (followup ? tr("list:reminder.noReply") : tr("list:reminder.back")) : listDate(new Date((t.reminderDue ?? 0) * 1000).toISOString());
   return (
-    <span className={cn("flex items-center gap-1 rounded bg-hover px-1.5 py-px text-[10.5px] font-medium", fired ? "text-accent" : "text-muted")} title={followup ? "Relance si pas de réponse" : "Conversation reportée"}>
+    <span className={cn("flex items-center gap-1 rounded bg-hover px-1.5 py-px text-[10.5px] font-medium", fired ? "text-accent" : "text-muted")} title={followup ? tr("list:reminder.followUpHint") : tr("list:reminder.snoozedHint")}>
       <AlarmClock size={11} />{label}
     </span>
   );
@@ -263,14 +264,14 @@ export function ThreadList() {
   }, [hasMore, rows.length, lastVisible, loadMore]);
 
   return (
-    <section className="flex h-full min-h-0 flex-col border-r border-border bg-bg-subtle" aria-label="Conversations">
+    <section className="flex h-full min-h-0 flex-col border-r border-border bg-bg-subtle" aria-label={tr("list:conversations")}>
       <header className="shrink-0 px-4 pt-3">
         <div {...dragRegion} className="flex h-[30px] items-baseline gap-2">
-          <h1 {...dragRegion} className="pointer-events-none text-[17px] font-semibold tracking-tight">{query.trim() ? "Recherche" : viewTitle(view)}</h1>
+          <h1 {...dragRegion} className="pointer-events-none text-[17px] font-semibold tracking-tight">{query.trim() ? tr("list:search") : viewTitle(view)}</h1>
           {list.length > 0 && <span {...dragRegion} className="tnum pointer-events-none text-[12px] text-faint">{list.length}</span>}
           {isEmptiableView(view) && list.length > 0 && !query.trim() && (
             <button onClick={() => void emptyView()} className="press ml-auto rounded-md px-2 py-0.5 text-[12px] font-medium text-danger hover:bg-hover">
-              {view.role === "trash" ? "Vider la corbeille" : "Vider le spam"}
+              {view.role === "trash" ? tr("list:emptyTrash") : tr("list:emptySpam")}
             </button>
           )}
         </div>
@@ -298,7 +299,7 @@ export function ThreadList() {
         <div className="mt-2 h-px bg-border" />
       </header>
 
-      <div ref={scroller} role="listbox" tabIndex={0} aria-activedescendant={selectedId !== null ? rowDomId(selectedId) : undefined} aria-label="Liste des conversations" className="min-h-0 flex-1 overflow-y-auto pb-6 pt-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40">
+      <div ref={scroller} role="listbox" tabIndex={0} aria-activedescendant={selectedId !== null ? rowDomId(selectedId) : undefined} aria-label={tr("list:listLabel")} className="min-h-0 flex-1 overflow-y-auto pb-6 pt-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40">
         {threadsLoading && list.length === 0 ? (
           <Skeletons compact={compact} />
         ) : list.length === 0 ? (

@@ -1,3 +1,5 @@
+import { t } from "./i18n";
+
 /** Suggestions de la barre de recherche (opérateurs, valeurs) : logique pure, sans interface. */
 
 export interface Suggestion {
@@ -39,21 +41,14 @@ export function contextAt(q: string, caret: number): Context | null {
 }
 
 interface Operator { insert: string; hint: string; flag?: boolean }
-export const OPERATORS: Operator[] = [
-  { insert: "de:", hint: "expéditeur" },
-  { insert: "à:", hint: "destinataire (À ou Cc)" },
-  { insert: "objet:", hint: "mots de l'objet" },
-  { insert: "dans:", hint: "un dossier (archives, envoyés…)" },
-  { insert: "avant:", hint: "avant une date" },
-  { insert: "apres:", hint: "à partir d'une date" },
-  { insert: "pj", hint: "avec pièce jointe", flag: true },
-  { insert: "non-lu", hint: "non lus", flag: true },
-  { insert: "suivi", hint: "suivis (étoile)", flag: true },
-];
+/** Opérateurs proposés, écrits dans la langue de l'interface (le moteur de recherche accepte les deux : `de:` comme `from:`). */
+const OPERATOR_KEYS = ["from", "to", "subject", "in", "before", "after", "attachment", "unread", "starred"] as const;
+const FLAG_OPERATORS = new Set<string>(["attachment", "unread", "starred"]);
+export const operators = (): Operator[] => OPERATOR_KEYS.map((k) => ({ insert: t(`search:ops.${k}.insert`), hint: t(`search:ops.${k}.hint`), flag: FLAG_OPERATORS.has(k) }));
 
 export function operatorItems(prefix: string): Suggestion[] {
   const p = norm(prefix);
-  return OPERATORS.filter((o) => norm(o.insert).startsWith(p)).map((o) => ({ label: o.insert, hint: o.hint, insert: o.flag ? `${o.insert} ` : o.insert }));
+  return operators().filter((o) => norm(o.insert).startsWith(p)).map((o) => ({ label: o.insert, hint: o.hint, insert: o.flag ? `${o.insert} ` : o.insert }));
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -65,20 +60,18 @@ export function valueItems(op: string, prefix: string, now = new Date()): Sugges
   const key = norm(prefix);
   let items: { label: string; value: string; hint?: string }[];
   if (op === "dans" || op === "in") items = [
-    { label: "Archives", value: "archives" }, { label: "Envoyés", value: "envoyes" }, { label: "Brouillons", value: "brouillons" },
-    { label: "Réception", value: "reception" }, { label: "Corbeille", value: "corbeille" }, { label: "Spam", value: "spam" },
-    { label: "Tous (corbeille et spam inclus)", value: "tout" },
+    ...(["archive", "sent", "drafts", "inbox", "trash", "spam", "all"] as const).map((k) => ({ label: t(`search:folders.${k}.label`), value: t(`search:folders.${k}.value`) })),
   ];
-  else if (op === "has") items = [{ label: "attachment", value: "attachment", hint: "pièce jointe" }];
-  else if (op === "is" || op === "est") items = [{ label: "unread", value: "unread", hint: "non lu" }, { label: "starred", value: "starred", hint: "suivi" }];
+  else if (op === "has") items = [{ label: "attachment", value: "attachment", hint: t("search:values.attachment") }];
+  else if (op === "is" || op === "est") items = [{ label: "unread", value: "unread", hint: t("search:values.unread") }, { label: "starred", value: "starred", hint: t("search:values.starred") }];
   else {
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     items = [
-      { label: "Aujourd'hui", value: ymd(now), hint: ymd(now) },
-      { label: "Ce mois-ci", value: ym(now), hint: ym(now) },
-      { label: "Le mois dernier", value: ym(lastMonth), hint: ym(lastMonth) },
-      { label: "Cette année", value: String(now.getFullYear()), hint: String(now.getFullYear()) },
-      { label: "L'année dernière", value: String(now.getFullYear() - 1), hint: String(now.getFullYear() - 1) },
+      { label: t("search:dates.today"), value: ymd(now), hint: ymd(now) },
+      { label: t("search:dates.thisMonth"), value: ym(now), hint: ym(now) },
+      { label: t("search:dates.lastMonth"), value: ym(lastMonth), hint: ym(lastMonth) },
+      { label: t("search:dates.thisYear"), value: String(now.getFullYear()), hint: String(now.getFullYear()) },
+      { label: t("search:dates.lastYear"), value: String(now.getFullYear() - 1), hint: String(now.getFullYear() - 1) },
     ];
   }
   // Tape-t-on déjà une date (« 2026-0… ») ? On filtre sur la valeur ; sinon sur le libellé.

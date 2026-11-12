@@ -1,0 +1,85 @@
+{
+  "ops": {
+    "from": {
+      "insert": "de:",
+      "hint": "expéditeur"
+    },
+    "to": {
+      "insert": "à:",
+      "hint": "destinataire (À ou Cc)"
+    },
+    "subject": {
+      "insert": "objet:",
+      "hint": "mots de l'objet"
+    },
+    "in": {
+      "insert": "dans:",
+      "hint": "un dossier (archives, envoyés…)"
+    },
+    "before": {
+      "insert": "avant:",
+      "hint": "avant une date"
+    },
+    "after": {
+      "insert": "apres:",
+      "hint": "à partir d'une date"
+    },
+    "attachment": {
+      "insert": "pj",
+      "hint": "avec pièce jointe"
+    },
+    "unread": {
+      "insert": "non-lu",
+      "hint": "non lus"
+    },
+    "starred": {
+      "insert": "suivi",
+      "hint": "suivis (étoile)"
+    }
+  },
+  "folders": {
+    "archive": {
+      "label": "Archives",
+      "value": "archives"
+    },
+    "sent": {
+      "label": "Envoyés",
+      "value": "envoyes"
+    },
+    "drafts": {
+      "label": "Brouillons",
+      "value": "brouillons"
+    },
+    "inbox": {
+      "label": "Réception",
+      "value": "reception"
+    },
+    "trash": {
+      "label": "Corbeille",
+      "value": "corbeille"
+    },
+    "spam": {
+      "label": "Spam",
+      "value": "spam"
+    },
+    "all": {
+      "label": "Tous (corbeille et spam inclus)",
+      "value": "tout"
+    }
+  },
+  "values": {
+    "attachment": "pièce jointe",
+    "unread": "non lu",
+    "starred": "suivi"
+  },
+  "dates": {
+    "today": "Aujourd'hui",
+    "thisMonth": "Ce mois-ci",
+    "lastMonth": "Le mois dernier",
+    "thisYear": "Cette année",
+    "lastYear": "L'année dernière"
+  },
+  "placeholder": "Rechercher (de: à: objet: avant: pj…)",
+  "label": "Rechercher",
+  "clear": "Effacer la recherche"
+}

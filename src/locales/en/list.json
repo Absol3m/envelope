@@ -1,0 +1,30 @@
+{
+  "unread": "Unread",
+  "folder": "Folder: {{name}}",
+  "noSubject": "(no subject)",
+  "conversations": "Conversations",
+  "listLabel": "Conversation list",
+  "search": "Search",
+  "emptyTrash": "Empty trash",
+  "emptySpam": "Empty spam",
+  "empty": {
+    "noResults": "No results for “{{search}}”",
+    "inboxZero": "Inbox zero",
+    "nothing": "Nothing here yet",
+    "searchHint": "Try other keywords: search ignores accents and matches word beginnings. It covers every folder except trash and spam (in:all includes them). Operators: from:  to:  subject:  in:  before:  after:  has:attachment  is:unread  is:starred",
+    "inboxZeroHint": "All done. Enjoy it.",
+    "nothingHint": "Conversations in this view will appear here."
+  },
+  "reminder": {
+    "noReply": "No reply",
+    "back": "Back",
+    "followUpHint": "Follow-up if no reply",
+    "snoozedHint": "Snoozed conversation"
+  },
+  "categories": {
+    "all": "All",
+    "priority": "Priority",
+    "newsletters": "Newsletters",
+    "notifications": "Notifications"
+  }
+}

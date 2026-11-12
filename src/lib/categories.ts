@@ -1,14 +1,16 @@
+import { t } from "./i18n";
 import type { ThreadSummary } from "./api";
 
 /** Smart Inbox (maquette) : classement heuristique côté client, sans IA ni serveur.
  *  Remplaçable plus tard par un vrai classifieur sans toucher à l'interface. */
 export type Category = "all" | "priority" | "newsletters" | "notifications";
 
+/** Libellés lus à l'affichage (langue active). */
 export const CATEGORY_LABELS: Record<Category, string> = {
-  all: "Tout",
-  priority: "Prioritaires",
-  newsletters: "Newsletters",
-  notifications: "Notifications",
+  get all() { return t("list:categories.all"); },
+  get priority() { return t("list:categories.priority"); },
+  get newsletters() { return t("list:categories.newsletters"); },
+  get notifications() { return t("list:categories.notifications"); },
 };
 
 const NOTIFICATION = /(no-?reply|do-?not-?reply|notification|alert|notify|billing|receipt|invoice|security|github|gitlab|jira|slack|stripe|calendar|mailer-daemon)/i;

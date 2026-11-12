@@ -12,6 +12,7 @@ import { useComposer } from "@/lib/composer";
 import { Avatar, btnPrimary, Kbd } from "./ui/primitives";
 import { BellOff } from "lucide-react";
 import { shortcut, suppressWebviewContextMenu } from "@/lib/platform";
+import { t as tr } from "@/lib/i18n";
 
 // ───────────── Corps du message ─────────────
 
@@ -51,7 +52,7 @@ function HtmlFrame({ srcDoc }: { srcDoc: string }) {
     };
   }, [srcDoc]);
 
-  return <iframe ref={ref} title="Contenu du message" sandbox="allow-same-origin" srcDoc={srcDoc} style={{ height }} className="block w-full border-0 bg-white" />;
+  return <iframe ref={ref} title={tr("reader:content")} sandbox="allow-same-origin" srcDoc={srcDoc} style={{ height }} className="block w-full border-0 bg-white" />;
 }
 
 const QUOTE_START = /^(>|le .{5,120} a écrit\s*:|on .{5,120} wrote:|-{2,}\s*(message d'origine|original message))/i;
@@ -85,7 +86,7 @@ function TextBody({ text }: { text: string }) {
       <Linkified text={main} />
       {quoted && (
         <>
-          <button onClick={() => setOpen(!open)} aria-expanded={open} className="press mt-2 block rounded-md bg-hover px-2 py-0.5 text-[12px] font-medium tracking-widest text-muted hover:bg-active" title={open ? "Masquer la citation" : "Afficher la citation"}>
+          <button onClick={() => setOpen(!open)} aria-expanded={open} className="press mt-2 block rounded-md bg-hover px-2 py-0.5 text-[12px] font-medium tracking-widest text-muted hover:bg-active" title={open ? tr("reader:hideQuote") : tr("reader:showQuote")}>
             ···
           </button>
           {open && <div className="anim-fade-in mt-2 border-l-2 border-border-strong pl-3 text-[13px] text-muted"><Linkified text={quoted} /></div>}
@@ -118,19 +119,19 @@ function MessageBody({ m }: { m: DetailMessage }) {
         {prepared.blocked > 0 && (
           <div className="anim-fade-in mb-2 flex items-center gap-2.5 rounded-lg bg-warn/10 px-3 py-2 text-[12.5px] text-fg">
             <ImageOff size={15} className="shrink-0 text-warn" />
-            <span className="flex-1">Images distantes bloquées pour protéger votre vie privée.</span>
-            <button onClick={() => setAllow(true)} className="press rounded-md bg-bg px-2 py-1 font-medium shadow-card hover:bg-hover">Afficher</button>
-            <button onClick={() => { trustSender(m.fromAddr); setAllow(true); }} className="press rounded-md px-2 py-1 font-medium text-muted hover:bg-hover hover:text-fg">Toujours pour cet expéditeur</button>
+            <span className="flex-1">{tr("reader:imagesBlocked")}</span>
+            <button onClick={() => setAllow(true)} className="press rounded-md bg-bg px-2 py-1 font-medium shadow-card hover:bg-hover">{tr("reader:show")}</button>
+            <button onClick={() => { trustSender(m.fromAddr); setAllow(true); }} className="press rounded-md px-2 py-1 font-medium text-muted hover:bg-hover hover:text-fg">{tr("reader:alwaysShow")}</button>
           </div>
         )}
         {prepared.trackers > 0 && (
-          <p className="mb-2 flex items-center gap-1.5 px-1 text-[12px] text-muted"><ShieldCheck size={13} className="shrink-0 text-success" />{prepared.trackers} traqueur{prepared.trackers > 1 ? "s" : ""} invisible{prepared.trackers > 1 ? "s" : ""} bloqué{prepared.trackers > 1 ? "s" : ""} (image d'un pixel qui signale l'ouverture du message).</p>
+          <p className="mb-2 flex items-center gap-1.5 px-1 text-[12px] text-muted"><ShieldCheck size={13} className="shrink-0 text-success" />{tr("reader:trackers", { count: prepared.trackers })}</p>
         )}
         <div className="overflow-hidden rounded-xl shadow-card"><HtmlFrame srcDoc={prepared.srcDoc} /></div>
       </div>
     );
   }
-  return <TextBody text={m.bodyText ?? "(message vide)"} />;
+  return <TextBody text={m.bodyText ?? tr("reader:empty")} />;
 }
 
 // ───────────── Pièces jointes ─────────────
@@ -152,12 +153,12 @@ function Attachments({ items }: { items: DetailAttachment[] }) {
         return (
           <button
             key={a.id}
-            onClick={() => backend.openAttachment(a.id).catch((e) => toast({ message: `Ouverture impossible — ${String(e)}`, tone: "error" }))}
+            onClick={() => backend.openAttachment(a.id).catch((e) => toast({ message: tr("reader:openFailed", { error: String(e) }), tone: "error" }))}
             className="press group flex max-w-[260px] items-center gap-2.5 rounded-lg bg-bg py-1.5 pl-2 pr-3 text-left shadow-card hover:bg-hover"
           >
             <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent"><Icon size={16} /></span>
             <span className="min-w-0">
-              <span className="block truncate text-[12.5px] font-medium">{a.filename ?? "pièce jointe"}</span>
+              <span className="block truncate text-[12.5px] font-medium">{a.filename ?? tr("reader:attachment")}</span>
               <span className="tnum block text-[11px] text-muted">{fileSize(a.size)}</span>
             </span>
           </button>
@@ -170,15 +171,11 @@ function Attachments({ items }: { items: DetailAttachment[] }) {
 // ───────────── Carte de message ─────────────
 
 function recipients(m: DetailMessage, me: string): string {
-  const names = m.to.map((r) => (r.address.toLowerCase() === me.toLowerCase() ? "moi" : displayName(r.name, r.address).split(" ")[0]));
-  return names.length ? `à ${names.join(", ")}` : "";
+  const names = m.to.map((r) => (r.address.toLowerCase() === me.toLowerCase() ? tr("reader:me") : displayName(r.name, r.address).split(" ")[0]));
+  return names.length ? tr("reader:to", { names: names.join(", ") }) : "";
 }
 
-const AUTH_FAIL_TEXT = {
-  dmarc: "Le serveur de réception n'a pas pu confirmer que ce message vient bien du domaine affiché (échec DMARC) : l'adresse a peut-être été usurpée.",
-  spf: "Le message ne vient pas d'un serveur autorisé par le domaine affiché (échec SPF) : l'adresse a peut-être été usurpée.",
-  dkim: "La signature du domaine affiché est invalide (échec DKIM) : le message a pu être modifié ou usurpé.",
-} as const;
+const authFailText = (kind: "dmarc" | "spf" | "dkim") => tr(`reader:authFail.${kind}`);
 
 function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; atts: DetailAttachment[]; me: string; expanded: boolean; onToggle(): void }) {
   const [details, setDetails] = useState(false);
@@ -198,12 +195,12 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
     );
   }
   return (
-    <article className="anim-fade-up rounded-2xl bg-bg px-4 pb-4 pt-3.5 shadow-card" aria-label={`Message de ${sender}`}>
+    <article className="anim-fade-up rounded-2xl bg-bg px-4 pb-4 pt-3.5 shadow-card" aria-label={tr("reader:messageFrom", { sender })}>
       <header className="flex items-start gap-3">
         <Avatar name={m.fromName} address={m.fromAddr} size={36} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <button onClick={onToggle} className="truncate text-[14px] font-semibold hover:underline" title="Replier">{sender}</button>
+            <button onClick={onToggle} className="truncate text-[14px] font-semibold hover:underline" title={tr("reader:collapse")}>{sender}</button>
             <span className="selectable truncate text-[12px] text-muted">&lt;{m.fromAddr}&gt;</span>
           </div>
           <button onClick={() => setDetails(!details)} className="flex items-center gap-1 text-[12px] text-muted hover:text-fg" aria-expanded={details}>
@@ -217,16 +214,16 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
       {m.authFail && (
         <div role="alert" className="anim-fade-in mt-3 flex items-start gap-2.5 rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-fg">
           <ShieldAlert size={15} className="mt-px shrink-0 text-danger" />
-          <span><strong className="font-semibold">Expéditeur non vérifié.</strong> {AUTH_FAIL_TEXT[m.authFail]} Ne cliquez pas sur les liens et n'ouvrez pas les pièces jointes sans être sûr de l'origine du message.</span>
+          <span><strong className="font-semibold">{tr("reader:unverified")}</strong> {authFailText(m.authFail)} {tr("reader:unverifiedAdvice")}</span>
         </div>
       )}
 
       {details && (
         <dl className="selectable anim-fade-in mt-3 grid grid-cols-[52px_1fr] gap-x-3 gap-y-1 rounded-lg bg-bg-subtle px-3 py-2 text-[12px]">
-          <dt className="text-faint">De</dt><dd>{m.fromName ? `${m.fromName} <${m.fromAddr}>` : m.fromAddr}</dd>
-          <dt className="text-faint">À</dt><dd>{m.to.map((r) => r.address).join(", ") || "—"}</dd>
+          <dt className="text-faint">{tr("reader:from")}</dt><dd>{m.fromName ? `${m.fromName} <${m.fromAddr}>` : m.fromAddr}</dd>
+          <dt className="text-faint">{tr("reader:toLabel")}</dt><dd>{m.to.map((r) => r.address).join(", ") || "—"}</dd>
           {m.cc.length > 0 && (<><dt className="text-faint">Cc</dt><dd>{m.cc.map((r) => r.address).join(", ")}</dd></>)}
-          <dt className="text-faint">Date</dt><dd className="first-letter:uppercase">{fullDate(m.date)}</dd>
+          <dt className="text-faint">{tr("reader:date")}</dt><dd className="first-letter:uppercase">{fullDate(m.date)}</dd>
         </dl>
       )}
 
@@ -264,20 +261,20 @@ function UnsubscribeButton({ m }: { m: DetailMessage }) {
   const run = async () => {
     // Un simple lien (sans POST ni adresse) s'ouvre dans le navigateur : l'utilisateur termine sur la page.
     if (!u.oneClick && !u.mailto && u.url) return void openExternal(u.url);
-    if (!(await backend.confirm(`Se désabonner de ${sender} ?`, "Se désabonner"))) return;
+    if (!(await backend.confirm(tr("reader:unsubscribeConfirm", { sender }), tr("reader:unsubscribe")))) return;
     setBusy(true);
     try {
       await backend.unsubscribe(m.id);
-      toast({ message: u.oneClick ? `Désabonné de ${sender}` : `Demande de désabonnement envoyée à ${sender}` });
+      toast({ message: u.oneClick ? tr("reader:unsubscribed", { sender }) : tr("reader:unsubscribeRequested", { sender }) });
     } catch (e) {
-      toast({ message: `Désabonnement impossible — ${String(e)}`, tone: "error", duration: 6000 });
+      toast({ message: tr("reader:unsubscribeFailed", { error: String(e) }), tone: "error", duration: 6000 });
     } finally {
       setBusy(false);
     }
   };
   return (
     <button onClick={() => void run()} disabled={busy} className="press inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-medium hover:bg-hover hover:text-fg disabled:opacity-50">
-      <BellOff size={12} />Se désabonner
+      <BellOff size={12} />{tr("reader:unsubscribe")}
     </button>
   );
 }
@@ -306,20 +303,20 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
     <div className="mx-auto max-w-[780px] px-8 pb-24 pt-7">
       {hasDraft && (
         <div className="anim-fade-up mb-4 flex items-center gap-3 rounded-xl bg-accent-soft px-4 py-2.5 text-[13px]">
-          <span className="flex-1">Cette conversation contient un brouillon non envoyé.</span>
-          <button className={btnPrimary} onClick={() => void useComposer.getState().openDraft(d.id)}>Modifier le brouillon</button>
+          <span className="flex-1">{tr("reader:hasDraft")}</span>
+          <button className={btnPrimary} onClick={() => void useComposer.getState().openDraft(d.id)}>{tr("reader:editDraft")}</button>
         </div>
       )}
       <div className="anim-fade-up">
-        <h2 className="selectable text-[22px] font-semibold leading-tight tracking-tight">{d.subject || "(sans objet)"}</h2>
+        <h2 className="selectable text-[22px] font-semibold leading-tight tracking-tight">{d.subject || tr("list:noSubject")}</h2>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-muted">
-          <span className="tnum">{d.messages.length} message{d.messages.length > 1 ? "s" : ""}</span>
+          <span className="tnum">{tr("reader:messageCount", { count: d.messages.length })}</span>
           {files > 0 && <span className="inline-flex items-center gap-1"><Paperclip size={12} />{files}</span>}
           {unsubscribable && <UnsubscribeButton m={unsubscribable} />}
           {accounts.length > 1 && account && <span className="rounded-full bg-hover px-2 py-0.5 text-[11px] font-medium">{account.email}</span>}
           {d.messages.length > 1 && (
             <button onClick={() => setExpanded(allOpen ? new Set([d.messages[d.messages.length - 1].id]) : new Set(d.messages.map((m) => m.id)))} className="press ml-auto rounded-md px-2 py-0.5 font-medium hover:bg-hover hover:text-fg">
-              {allOpen ? "Tout replier" : "Tout déplier"}
+              {allOpen ? tr("reader:collapseAll") : tr("reader:expandAll")}
             </button>
           )}
         </div>
@@ -351,27 +348,27 @@ function MultiSelection({ ids }: { ids: number[] }) {
   const anyUnread = picked.some((t) => t.unreadCount > 0);
   const anyUnstarred = picked.some((t) => !t.isStarred);
   return (
-    <main className="anim-fade-in flex h-full min-h-0 min-w-0 flex-col items-center justify-center bg-bg-subtle px-6 text-center" aria-label="Sélection multiple">
+    <main className="anim-fade-in flex h-full min-h-0 min-w-0 flex-col items-center justify-center bg-bg-subtle px-6 text-center" aria-label={tr("reader:multiSelection")}>
       <span className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-accent-soft text-[24px] font-semibold tnum text-accent">{picked.length}</span>
-      <p className="text-[15px] font-semibold">{picked.length} conversations sélectionnées</p>
+      <p className="text-[15px] font-semibold">{tr("reader:selected", { count: picked.length })}</p>
       <div className="mt-6 flex max-w-[560px] flex-wrap justify-center gap-2">
         {destinationsFor(place).map((d) => <BatchButton key={d} icon={DESTINATIONS[d].icon} label={DESTINATIONS[d].label} kbd={DESTINATIONS[d].key} onClick={() => moveTo(ids, d)} />)}
-        {isPurgeView(place) && <BatchButton icon={Trash2} label="Supprimer définitivement" kbd="⌫" danger onClick={() => void deleteForever(ids)} />}
-        <BatchButton icon={anyUnread ? MailOpen : Mail} label={anyUnread ? "Marquer comme lues" : "Marquer comme non lues"} kbd="U" onClick={() => toggleRead(ids)} />
-        <BatchButton icon={Star} label={anyUnstarred ? "Suivre" : "Ne plus suivre"} kbd="S" onClick={() => toggleStar(ids)} />
+        {isPurgeView(place) && <BatchButton icon={Trash2} label={tr("topbar:deleteForever")} kbd="⌫" danger onClick={() => void deleteForever(ids)} />}
+        <BatchButton icon={anyUnread ? MailOpen : Mail} label={anyUnread ? tr("reader:markReadMany") : tr("reader:markUnreadMany")} kbd="U" onClick={() => toggleRead(ids)} />
+        <BatchButton icon={Star} label={anyUnstarred ? tr("topbar:star") : tr("topbar:unstar")} kbd="S" onClick={() => toggleStar(ids)} />
       </div>
-      <button onClick={clearChecked} className="press mt-5 text-[12.5px] text-muted hover:text-fg">Désélectionner <Kbd>Échap</Kbd></button>
+      <button onClick={clearChecked} className="press mt-5 text-[12.5px] text-muted hover:text-fg">{tr("reader:deselect")} <Kbd>{tr("common:keys.escape")}</Kbd></button>
     </main>
   );
 }
 
 function EmptyReader() {
-  const items: [string, string][] = [["C", "Nouveau message"], ["J / K", "Naviguer"], [DESTINATIONS.archive.key, DESTINATIONS.archive.label], [shortcut("mod+k"), "Palette de commandes"]];
+  const items: [string, string][] = [["C", tr("sidebar:newMessage")], ["J / K", tr("reader:navigate")], [DESTINATIONS.archive.key, DESTINATIONS.archive.label], [shortcut("mod+k"), tr("reader:palette")]];
   return (
     <div className="anim-fade-in flex h-full flex-col items-center justify-center text-center">
       <span className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-accent/15 to-[#8b5cf6]/15 text-accent"><Mail size={28} strokeWidth={1.5} /></span>
-      <p className="text-[15px] font-semibold">Sélectionnez une conversation</p>
-      <p className="mt-1 text-[13px] text-muted">Sélectionnez une conversation. Les raccourcis sont là si vous les voulez : <Kbd>?</Kbd>.</p>
+      <p className="text-[15px] font-semibold">{tr("reader:selectOne")}</p>
+      <p className="mt-1 text-[13px] text-muted">{tr("reader:shortcutsHint")} <Kbd>?</Kbd>.</p>
       <div className="mt-6 flex gap-5 text-[12px] text-muted">
         {items.map(([k, label]) => (
           <span key={k} className="flex items-center gap-1.5"><Kbd>{k}</Kbd>{label}</span>
@@ -391,7 +388,7 @@ export function Reader() {
   if (checked.size > 1) return <MultiSelection ids={[...checked]} />;
 
   return (
-    <main className="flex h-full min-h-0 min-w-0 flex-col bg-bg-subtle" aria-label="Lecture">
+    <main className="flex h-full min-h-0 min-w-0 flex-col bg-bg-subtle" aria-label={tr("reader:reading")}>
       <div className="selectable min-h-0 flex-1 overflow-y-auto" key={selectedId ?? "none"}>
         {selectedId === null ? <EmptyReader /> : d ? <ThreadView d={d} account={account} /> : <Skeleton summary={summary} />}
       </div>

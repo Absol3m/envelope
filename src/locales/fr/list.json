@@ -1,0 +1,30 @@
+{
+  "unread": "Non lu",
+  "folder": "Dossier : {{name}}",
+  "noSubject": "(sans objet)",
+  "conversations": "Conversations",
+  "listLabel": "Liste des conversations",
+  "search": "Recherche",
+  "emptyTrash": "Vider la corbeille",
+  "emptySpam": "Vider le spam",
+  "empty": {
+    "noResults": "Aucun résultat pour « {{search}} »",
+    "inboxZero": "Boîte de réception à zéro",
+    "nothing": "Rien ici pour l'instant",
+    "searchHint": "Essayez d'autres mots-clés : la recherche ignore les accents et accepte les débuts de mots. La recherche couvre tous les dossiers sauf corbeille et spam (dans:tout les inclut). Opérateurs : de:  à:  objet:  dans:  avant:  apres:  pj  non-lu  suivi",
+    "inboxZeroHint": "Tout est traité. Profitez-en.",
+    "nothingHint": "Les conversations de cette vue apparaîtront ici."
+  },
+  "reminder": {
+    "noReply": "Sans réponse",
+    "back": "Revenue",
+    "followUpHint": "Relance si pas de réponse",
+    "snoozedHint": "Conversation reportée"
+  },
+  "categories": {
+    "all": "Tout",
+    "priority": "Prioritaires",
+    "newsletters": "Newsletters",
+    "notifications": "Notifications"
+  }
+}
