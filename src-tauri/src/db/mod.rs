@@ -23,7 +23,10 @@ pub async fn init(path: &Path) -> Result<SqlitePool> {
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal) // lecteurs concurrents pendant la synchro
         .synchronous(SqliteSynchronous::Normal)
-        .foreign_keys(true);
+        .foreign_keys(true)
+        // `PRAGMA optimize` à la fermeture d'une connexion : statistiques du planificateur tenues à jour sans
+        // `ANALYZE` complet (la lecture est bornée à 400 lignes par index), utiles aux requêtes de lecture.
+        .optimize_on_close(true, 400);
 
     let pool = SqlitePoolOptions::new()
         .max_connections(5)

@@ -257,13 +257,37 @@ pub fn store_password(account_id: &str, password: &str) -> Result<()> {
 fn load_password(account_id: &str) -> Result<String> {
     Ok(entry(account_id, PASSWORD)?.get_password()?)
 }
+/// Jetons OAuth déjà lus ou écrits, gardés en mémoire : chaque connexion IMAP/SMTP en demande un, et une lecture du
+/// trousseau coûte (voire une autorisation) alors que le jeton ne change qu'au rafraîchissement.
+/// Le trousseau reste la référence : `store_oauth` et `delete_secrets` tiennent le cache à jour.
+fn token_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, oauth::OAuthTokens>>
+{
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, oauth::OAuthTokens>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
 pub fn store_oauth(account_id: &str, tokens: &oauth::OAuthTokens) -> Result<()> {
-    Ok(entry(account_id, OAUTH)?.set_password(&serde_json::to_string(tokens)?)?)
+    entry(account_id, OAUTH)?.set_password(&serde_json::to_string(tokens)?)?;
+    if let Ok(mut cache) = token_cache().lock() {
+        cache.insert(account_id.to_string(), tokens.clone());
+    }
+    Ok(())
 }
 pub fn load_oauth(account_id: &str) -> Result<oauth::OAuthTokens> {
-    Ok(serde_json::from_str(
-        &entry(account_id, OAUTH)?.get_password()?,
-    )?)
+    if let Some(t) = token_cache()
+        .lock()
+        .ok()
+        .and_then(|c| c.get(account_id).cloned())
+    {
+        return Ok(t);
+    }
+    let tokens: oauth::OAuthTokens =
+        serde_json::from_str(&entry(account_id, OAUTH)?.get_password()?)?;
+    if let Ok(mut cache) = token_cache().lock() {
+        cache.insert(account_id.to_string(), tokens.clone());
+    }
+    Ok(tokens)
 }
 /// Secret de l'application elle-même (hors compte) dans le trousseau du système ; `kind` en désigne l'usage.
 pub fn store_app_secret(kind: &str, value: &str) -> Result<()> {
@@ -302,6 +326,9 @@ pub fn delete_client(provider: OAuthProvider) {
     }
 }
 pub fn delete_secrets(account_id: &str) {
+    if let Ok(mut cache) = token_cache().lock() {
+        cache.remove(account_id);
+    }
     for kind in [PASSWORD, OAUTH] {
         if let Ok(e) = entry(account_id, kind) {
             let _ = e.delete_credential();
