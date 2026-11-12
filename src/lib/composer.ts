@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { attachmentError, draftFrom, forgotAttachment, draftFromQueued, draftFromServer, emptyDraft, knownAlias, isBlank, readAsBase64, textToHtml, toOutgoing, type ComposeMode, type Draft } from "./compose";
+import { attachmentError, draftFrom, forgotAttachment, draftFromQueued, draftFromServer, emptyDraft, knownAlias, isBlank, readAsBase64, toOutgoing, type ComposeMode, type Draft } from "./compose";
 import { scheduledAt } from "./format";
 import { pref } from "./pref";
 import { useMail } from "./store";
@@ -20,9 +20,9 @@ const readSaved = (): Draft | null => {
   try {
     const raw = localStorage.getItem(SAVED_KEY);
     if (!raw) return null;
-    // Brouillons d'avant l'éditeur riche : `body` (texte) → `html`, et un identifiant.
-    const d = JSON.parse(raw) as Draft & { body?: string };
-    return { ...d, id: d.id ?? crypto.randomUUID(), html: d.html ?? textToHtml(d.body ?? ""), attachments: [] };
+    const d = JSON.parse(raw) as Draft;
+    // Un brouillon d'avant l'éditeur riche (texte dans `body`, sans identifiant ni `html`) est abandonné.
+    return d.id && typeof d.html === "string" ? { ...d, attachments: [] } : null;
   } catch { return null; }
 };
 const writeSaved = (d: Draft | null) => {

@@ -229,6 +229,8 @@ const MAIL_FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,s
 export function emailHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   doc.querySelectorAll("p,h2,h3,ul,ol").forEach((n) => ((n as HTMLElement).style.margin = "0 0 12px"));
+  // Marque de couleur retirée : il reste des <span> sans attribut, inutiles dans le message envoyé.
+  doc.querySelectorAll("span").forEach((n) => { if (!n.attributes.length) n.replaceWith(...n.childNodes); });
   doc.querySelectorAll("blockquote").forEach((n) => ((n as HTMLElement).style.cssText = "margin:0 0 12px 4px;padding-left:12px;border-left:2px solid #c9c9d1;color:#555"));
   return `<div style="font-family:${MAIL_FONT};font-size:14px;line-height:1.55">${doc.body.innerHTML}</div>`;
 }

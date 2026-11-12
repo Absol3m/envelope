@@ -42,6 +42,11 @@ describe("corps HTML", () => {
     expect(out).toContain("border-left");
     expect(out.startsWith("<div style=")).toBe(true);
   });
+  it("les <span> sans attribut sont retirés, ceux qui portent une couleur restent", () => {
+    const out = emailHtml('<p><span>a</span> <span style="color: rgb(220, 38, 38);">b</span></p>');
+    expect(out).toContain('a <span style="color: rgb(220, 38, 38);">b</span>');
+    expect(out).not.toContain("<span>");
+  });
   it("couleurs neutres : noir, blanc, gris (pas le gris bleuté de la palette)", () => {
     for (const c of ["rgb(0, 0, 0)", "rgb(34, 34, 34)", "rgba(255, 255, 255, 0.9)", "Black", "windowtext"]) expect(isNeutralColor(c)).toBe(true);
     for (const c of ["rgb(211, 47, 47)", "rgb(107, 107, 120)", "navy", ""]) expect(isNeutralColor(c)).toBe(false);

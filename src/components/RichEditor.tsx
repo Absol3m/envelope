@@ -15,6 +15,7 @@ import { btnGhost, IconButton } from "./ui/primitives";
 /** Couleur de texte : tout HTML qui entre dans l'éditeur (collage, citation, brouillon) perd ses
  *  couleurs neutres (le noir ou le blanc de sa source) et prend celle du thème, lisible en sombre
  *  comme en clair. Les vraies couleurs (rouge, bleu…) sont gardées. */
+let probe: HTMLElement | undefined;
 export const ThemedColor = Color.extend({
   addGlobalAttributes() {
     return (this.parent?.() ?? []).map((g) => {
@@ -25,7 +26,8 @@ export const ThemedColor = Color.extend({
         const v = parse(el);
         if (typeof v !== "string") return v;
         // Valeur brute du style (`#000`, `black`…) ramenée à la forme normalisée (`rgb(0, 0, 0)`).
-        const probe = document.createElement("span");
+        probe ??= document.createElement("span");
+        probe.style.color = "";
         probe.style.color = v;
         return isNeutralColor(probe.style.color) ? null : v;
       };
