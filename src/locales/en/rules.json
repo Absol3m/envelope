@@ -1,0 +1,36 @@
+{
+  "moves": {
+    "none": "Don't move",
+    "archive": "Archive",
+    "trash": "Move to trash",
+    "junk": "Mark as spam"
+  },
+  "summary": {
+    "markRead": "mark as read",
+    "star": "star"
+  },
+  "loadFailed": "Couldn't read the rules — {{error}}",
+  "saveFailed": "Rule not saved — {{error}}",
+  "deleteFailed": "Couldn't delete — {{error}}",
+  "processed_one": "{{count}} conversation processed",
+  "processed_other": "{{count}} conversations processed",
+  "noMatch": "No conversation matches",
+  "applyFailed": "Couldn't apply — {{error}}",
+  "intro": "Rules apply to new unread messages in the inbox while Envelope is open; they act on the whole conversation. The condition uses the search syntax (<code>from:alice</code>, <code>subject:invoice</code>, <code>has:attachment</code>, a word…). They also act on your mailbox on the server (archive, trash, spam).",
+  "enable": "Enable “{{name}}”",
+  "accountGone": "deleted account",
+  "delete": "Delete",
+  "none": "No rules yet.",
+  "new": "New rule",
+  "confirmRun": "Confirm: act on the server",
+  "runNow": "Apply to unread messages in the inbox",
+  "editRule": "Edit rule",
+  "name": "Name",
+  "condition": "Condition (search syntax)",
+  "conditionPlaceholder": "from:newsletter subject:promo",
+  "account": "Account",
+  "allAccounts": "All accounts",
+  "actions": "Actions",
+  "starAction": "Star",
+  "move": "Move"
+}

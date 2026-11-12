@@ -1,0 +1,36 @@
+{
+  "moves": {
+    "none": "Ne pas déplacer",
+    "archive": "Archiver",
+    "trash": "Mettre à la corbeille",
+    "junk": "Marquer comme spam"
+  },
+  "summary": {
+    "markRead": "marquer lu",
+    "star": "suivre"
+  },
+  "loadFailed": "Règles illisibles — {{error}}",
+  "saveFailed": "Règle non enregistrée — {{error}}",
+  "deleteFailed": "Suppression impossible — {{error}}",
+  "processed_one": "{{count}} conversation traitée",
+  "processed_other": "{{count}} conversations traitées",
+  "noMatch": "Aucune conversation ne correspond",
+  "applyFailed": "Application impossible — {{error}}",
+  "intro": "Les règles s'appliquent aux nouveaux messages non lus de la boîte de réception, quand Envelope est ouvert ; elles agissent sur la conversation entière. La condition utilise la syntaxe de la recherche (<code>de:alice</code>, <code>objet:facture</code>, <code>pj</code>, un mot…). Elles agissent aussi sur votre boîte côté serveur (archivage, corbeille, spam).",
+  "enable": "Activer « {{name}} »",
+  "accountGone": "compte supprimé",
+  "delete": "Supprimer",
+  "none": "Aucune règle pour l'instant.",
+  "new": "Nouvelle règle",
+  "confirmRun": "Confirmer : agir sur le serveur",
+  "runNow": "Appliquer aux messages non lus de la boîte de réception",
+  "editRule": "Modifier la règle",
+  "name": "Nom",
+  "condition": "Condition (syntaxe de recherche)",
+  "conditionPlaceholder": "de:newsletter objet:promo",
+  "account": "Compte",
+  "allAccounts": "Tous les comptes",
+  "actions": "Actions",
+  "starAction": "Suivre (étoile)",
+  "move": "Déplacer"
+}
