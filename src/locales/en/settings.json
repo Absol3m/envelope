@@ -147,5 +147,6 @@
     "install": "Install {{version}} and restart",
     "upToDate": "Envelope is up to date (checked {{when}})"
   },
-  "copied": "Copied"
+  "copied": "Copied",
+  "copy": "Copy"
 }

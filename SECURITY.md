@@ -1,29 +1,30 @@
-# Politique de sécurité
+# Security policy
 
-## Signaler une vulnérabilité
-**Ne la publiez pas dans une issue.** Utilisez le signalement privé de GitHub : onglet *Security* du dépôt → *Report a vulnerability* (s'il n'apparaît pas, ouvrez une issue qui demande un contact privé, sans détail technique). Indiquez la version d'Envelope, le système, les étapes pour reproduire et l'impact que vous voyez. Pas de vrais identifiants ni de vrais e-mails dans le rapport.
+## Report a vulnerability
+**Do not publish it in an issue.** Use GitHub's private reporting: the repository's *Security* tab → *Report a vulnerability* (if it doesn't appear, open an issue asking for a private contact, without technical details). Include the Envelope version, your system, the steps to reproduce and the impact you see. No real credentials or real emails in the report.
 
-Envelope est maintenu par une seule personne : réponse et correctif au mieux, sans délai garanti. Le rapporteur est cité dans les notes de version s'il le souhaite.
+Envelope is maintained by one person: response and fix on a best-effort basis, with no guaranteed delay. The reporter is credited in the release notes if they wish.
 
-## Versions prises en charge
-Envelope est en pré-version : seule la dernière version publiée reçoit des correctifs.
+## Supported versions
+Envelope is a pre-release: only the latest published version receives fixes.
 
-## Ce qui est considéré comme sensible
-- Le contenu des e-mails est une entrée **non fiable** (HTML, en-têtes, pièces jointes, noms de dossiers IMAP) : toute exécution de code, fuite de données ou contournement du blocage des contenus distants qui en découle est une vulnérabilité.
-- Secrets (mots de passe, jetons OAuth2) : trousseau du système uniquement, jamais en base ni dans les journaux.
-- Certificats TLS : toujours vérifiés par le système, sans exception globale.
-- Serveur MCP : lecture seule sur la base ; tout contenu d'e-mail qu'il renvoie est signalé comme non fiable.
+## What is considered sensitive
+- Email content is **untrusted** input (HTML, headers, attachments, IMAP folder names): any code execution, data leak or bypass of the remote-content blocking that results from it is a vulnerability.
+- Secrets (passwords, OAuth2 tokens): system keychain only, never in the database or in logs.
+- TLS certificates: always verified by the system, with no global exception.
+- MCP server: read-only on the database; any email content it returns is flagged as untrusted.
 
-## Données au repos
-Les messages, leur index de recherche et les pièces jointes sont stockés **en clair** dans le dossier de données de l'application : Envelope ne chiffre pas ses fichiers (comme Thunderbird, Apple Mail ou Outlook). La protection repose sur :
-- le **chiffrement de disque du système** (FileVault, BitLocker, LUKS) : une pastille dans la barre latérale indique s'il est actif ;
-- les **droits des fichiers** : sous Unix, le dossier de données est en `0700` et les fichiers en `0600` (utilisateur seul, ni groupe ni autres ; `root` passe toujours outre les droits) ; sous Windows, les listes de contrôle d'accès héritées du profil. Les exportations (mbox, eml) suivent le `umask` du dossier choisi, et un serveur MCP lancé par un autre compte ne pourra plus lire la base ;
-- le **verrouillage de l'application** (mot de passe, Touch ID, Windows Hello), qui n'est **pas** un chiffrement : un programme qui lit directement les fichiers n'est pas arrêté, ni une sauvegarde du profil ;
-- les secrets (mots de passe, jetons OAuth) restent dans le trousseau du système, jamais dans ces fichiers.
-Penser à chiffrer les sauvegardes du dossier de données. Le chiffrement de la base elle-même a été étudié puis écarté pour l'instant (voir l'issue #9).
+## Data at rest
+Messages, their search index and attachments are stored **in clear text** in the application's data folder: Envelope does not encrypt its files (like Thunderbird, Apple Mail or Outlook). Protection relies on:
+- the **system's disk encryption** (FileVault, BitLocker, LUKS): a badge in the sidebar shows whether it is on;
+- **file permissions**: on Unix the data folder is `0700` and files are `0600` (owner only, no group, no others; `root` always bypasses permissions); on Windows, the access control lists inherited from the profile. Exports (mbox, eml) follow the `umask` of the chosen folder, and an MCP server started by another account can no longer read the database;
+- the **application lock** (password, Touch ID, Windows Hello), which is **not** encryption: a program that reads the files directly is not stopped, nor is a backup of the profile;
+- secrets (passwords, OAuth tokens) stay in the system keychain, never in these files.
 
-## Chaîne d'approvisionnement
-Dépendances surveillées par Dependabot et par `cargo deny` (RustSec, licences, sources) / `pnpm audit` dans la CI ; actions GitHub de publication épinglées par empreinte ; fichiers de version accompagnés de `SHA256SUMS` et d'une attestation de provenance (`gh attestation verify <fichier> --repo Absol3m/envelope`).
+Remember to encrypt backups of the data folder. Encrypting the database itself was studied and set aside for now (see issue #9).
 
-## Mises à jour automatiques
-Plugin officiel `tauri-plugin-updater`. L'application lit `latest.json` sur la Release « updater » du dépôt (HTTPS, certificats vérifiés par le système), puis n'installe une archive qu'après vérification de sa signature par la clé publique de `tauri.conf.json`. La clé privée reste au mainteneur ; en CI, seul le job de signature la reçoit (il n'exécute pas le build). Chaque signature porte la version signée (`requireSignedVersion`) : une ancienne version ne peut pas être resservie sous un numéro plus récent. Les binaires ne sont pas signés par Apple ni Microsoft pour l'instant : cette signature-là est indépendante. La vérification automatique (au démarrage puis chaque jour) contacte GitHub, qui voit l'adresse IP et la version ; elle se désactive dans Réglages → À propos.
+## Supply chain
+Dependencies are monitored by Dependabot and by `cargo deny` (RustSec, licenses, sources) and `pnpm audit` in CI; publishing GitHub Actions are pinned by hash; release files come with `SHA256SUMS` and a provenance attestation (`gh attestation verify <file> --repo Absol3m/envelope`).
+
+## Automatic updates
+Official `tauri-plugin-updater` plugin. The app reads `latest.json` from the repository's “updater” Release (HTTPS, certificates verified by the system), then installs an archive only after verifying its signature against the public key in `tauri.conf.json`. The private key stays with the maintainer; in CI only the signing job receives it (it does not run the build). Each signature carries the signed version (`requireSignedVersion`): an old version cannot be served again under a newer number. Binaries are not signed by Apple or Microsoft yet: that signature is independent. The automatic check (at startup, then daily) contacts GitHub, which sees the IP address and the version; it can be turned off in Settings → About.

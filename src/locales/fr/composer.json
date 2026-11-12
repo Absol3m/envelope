@@ -71,5 +71,6 @@
   "sending": "Envoi du message…",
   "scheduleFailed": "Programmation impossible — {{error}}",
   "editFailed": "Modification impossible — {{error}}",
-  "sendCancelled": "Envoi annulé"
+  "sendCancelled": "Envoi annulé",
+  "scheduledAt": "Envoi programmé — {{when}}"
 }

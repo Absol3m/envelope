@@ -273,7 +273,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       onServer.delete(draft.id); // le brouillon du serveur est retiré à l'envoi, comme pour un envoi immédiat
       lastSig.delete(draft.id);
       void useMail.getState().refreshScheduled();
-      useMail.getState().toast({ message: `Envoi programmé — ${scheduledAt(at)}`, actionLabel: "Annuler", onAction: () => void get().editScheduled(id, draft.accountId), duration: 6000 });
+      useMail.getState().toast({ message: t("composer:scheduledAt", { when: scheduledAt(at) }), actionLabel: t("composer:cancel"), onAction: () => void get().editScheduled(id, draft.accountId), duration: 6000 });
     },
 
     async editScheduled(id, accountId) {

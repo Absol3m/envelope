@@ -387,7 +387,7 @@ export const tauriBackend: Backend = {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().setBadgeCount(count > 0 ? count : undefined);
   },
-  confirm: (message, okLabel) => ask(message, { title: "Envelope", kind: "warning", okLabel, cancelLabel: "Annuler" }),
+  confirm: (message, okLabel) => ask(message, { title: "Envelope", kind: "warning", okLabel, cancelLabel: t("composer:cancel") }),
   syncNow: (accountId) => invoke("sync_now", { accountId }),
   addAccount: (input) => invoke("add_account", { input }),
   addOAuthAccount: (provider, email) => invoke("add_oauth_account", { provider, email }),

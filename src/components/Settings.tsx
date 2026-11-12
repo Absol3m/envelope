@@ -64,7 +64,7 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange(v: bo
   );
 }
 
-function CopyButton({ text, label = "Copier" }: { text: string; label?: string }) {
+function CopyButton({ text, label = tr("settings:copy") }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   return (
     <button

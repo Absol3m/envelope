@@ -71,5 +71,6 @@
   "sending": "Sending message…",
   "scheduleFailed": "Couldn't schedule — {{error}}",
   "editFailed": "Couldn't edit — {{error}}",
-  "sendCancelled": "Send cancelled"
+  "sendCancelled": "Send cancelled",
+  "scheduledAt": "Scheduled — {{when}}"
 }

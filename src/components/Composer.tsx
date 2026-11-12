@@ -79,7 +79,7 @@ export function Composer() {
 
       {senders.length > 1 && (
         <div className="flex min-h-[38px] items-center gap-2 border-b border-border px-4 text-[13px]">
-          <span className="w-6 shrink-0 text-[12px] text-muted">De</span>
+          <span className="w-6 shrink-0 text-[12px] text-muted">{tr("reader:from")}</span>
           <select
             aria-label={tr("composer:sender")}
             value={sender.key}

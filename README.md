@@ -22,7 +22,7 @@
 </picture>
 
 > [!NOTE]
-> Envelope is in **alpha**. It is usable day to day, but expect rough edges. The interface is currently **French only**; English is next on the list ([#18](https://github.com/Absol3m/envelope/issues/18)).
+> Envelope is in **alpha**. It is usable day to day, but expect rough edges. The interface is available in **English and French** and follows your system language; more languages are welcome (see [TRANSLATING.md](TRANSLATING.md)).
 
 ## Why Envelope
 
@@ -117,11 +117,11 @@ See [SECURITY.md](SECURITY.md) for details and how to report a vulnerability pri
 
 ## Roadmap
 
-Planned work is tracked in [GitHub issues](https://github.com/Absol3m/envelope/issues?q=is%3Aissue+is%3Aopen+Roadmap) — highlights include English UI, attachment previews and calendar invites, a full offline mode, JMAP / Microsoft Graph / Gmail API, PGP and S/MIME, and MCP write actions with human confirmation.
+Planned work is tracked in [GitHub issues](https://github.com/Absol3m/envelope/issues?q=is%3Aissue+is%3Aopen+Roadmap) — highlights include attachment previews and calendar invites, a full offline mode, JMAP / Microsoft Graph / Gmail API, PGP and S/MIME, and MCP write actions with human confirmation.
 
 ## Contributing
 
-Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; it is in French for now, but issues and pull requests in English are just as welcome.
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first. Want to translate the interface into your language? See [TRANSLATING.md](TRANSLATING.md).
 
 ## License
 
