@@ -31,6 +31,18 @@ describe("fichiers de langue", () => {
     const real = diffs.filter((k) => vars(frKeys[k]).filter((v) => v !== "count").join() !== vars(enKeys[k]).filter((v) => v !== "count").join());
     expect(real).toEqual([]);
   });
+  it("toute langue ajoutée (hors fr) : les textes présents ont les mêmes variables que l'anglais", () => {
+    const others = readdirSync(ROOT).filter((l) => l !== "en" && l !== "fr" && statSync(join(ROOT, l)).isDirectory());
+    for (const lang of others) {
+      const keys = flat(load(lang));
+      const bad = Object.keys(keys).filter((k) => enKeys[k] !== undefined && vars(keys[k]).filter((v) => v !== "count").join() !== vars(enKeys[k]).filter((v) => v !== "count").join());
+      expect(bad, lang).toEqual([]);
+    }
+  });
+  it("le contexte des textes ambigus ne désigne que des textes qui existent", () => {
+    const ctx = JSON.parse(readFileSync(join(SRC, "../docs/translations/context.json"), "utf8")) as Record<string, string>;
+    expect(Object.keys(ctx).filter((k) => !(k in enKeys) && !(`${k}_one` in enKeys))).toEqual([]);
+  });
   it("aucune valeur vide", () => {
     expect(Object.entries({ ...enKeys, ...frKeys }).filter(([, v]) => v.trim() === "").map(([k]) => k)).toEqual([]);
   });
