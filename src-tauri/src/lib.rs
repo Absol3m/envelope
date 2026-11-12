@@ -3,13 +3,15 @@
 //! Architecture :
 //!   frontend (React) ──invoke──▶ commands ──▶ db / mail ◀── mcp (agents IA)
 
+// Déclaré en premier : la macro `msg!` n'est visible que des modules qui suivent.
+#[macro_use]
+mod error;
 mod commands;
 mod db;
 #[cfg(debug_assertions)]
 #[doc(hidden)]
 pub mod dev;
 mod diskcrypt;
-mod error;
 mod lock;
 mod mail;
 mod mcp;
@@ -55,7 +57,10 @@ fn gated<R: tauri::Runtime>(
             .try_state::<lock::Lock>()
             .map_or(true, |l| l.is_locked()); // échoue fermé : verrou introuvable = verrouillé
         if lock::blocks(locked, invoke.message.command()) {
-            invoke.resolver.reject("l'application est verrouillée");
+            invoke.resolver.reject(error::AppError::Auth(msg!(
+                "lock.locked",
+                "the application is locked"
+            )));
             return true;
         }
         inner(invoke)
@@ -302,7 +307,7 @@ mod gate_tests {
     fn verrouille_seules_les_commandes_de_deverrouillage_passent() {
         let (_app, w) = webview(lock::Method::Password); // verrouillé dès le lancement
         let refused = call(&w, "secret").expect_err("refusée");
-        assert!(refused.to_string().contains("verrouillée"), "{refused}");
+        assert_eq!(refused["code"], "lock.locked", "{refused}");
         let status = call(&w, "lock_status").expect("autorisée");
         assert!(status.deserialize::<bool>().unwrap());
     }

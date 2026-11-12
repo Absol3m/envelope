@@ -59,7 +59,11 @@ async fn count(pool: &SqlitePool, folder_id: i64) -> Result<usize> {
             .fetch_one(pool)
             .await?;
         if known == 0 {
-            return Err(AppError::NotFound(format!("dossier {folder_id}")));
+            return Err(AppError::NotFound(msg!(
+                "not_found.folder",
+                "folder not found: {id}",
+                id = folder_id
+            )));
         }
     }
     Ok(n as usize)
@@ -194,7 +198,11 @@ pub async fn export_eml(
         let tmp = partial(&path);
         // Jamais d'écrasement silencieux (et pas de lien physique : absents des clés USB en FAT/exFAT).
         if tokio::fs::try_exists(&path).await? {
-            return Err(AppError::Invalid(format!("{} existe déjà", path.display())));
+            return Err(AppError::Invalid(msg!(
+                "export.exists",
+                "{path} already exists",
+                path = path.display()
+            )));
         }
         tokio::fs::write(&tmp, &raw).await?;
         if let Err(e) = tokio::fs::rename(&tmp, &path).await {

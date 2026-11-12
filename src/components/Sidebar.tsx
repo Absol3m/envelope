@@ -13,6 +13,7 @@ import { dragRegion, isMac, isWindows, settingsLabel } from "@/lib/platform";
 import { installUpdate, useUpdate } from "@/lib/update";
 import { btnPrimary, IconButton, Spinner, Tip } from "./ui/primitives";
 import { t } from "@/lib/i18n";
+import { describeStored } from "@/lib/backendError";
 
 type Icon = NavItemData["icon"];
 
@@ -263,7 +264,7 @@ export function Sidebar() {
           {backend.demo ? (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-2 py-0.5 font-medium text-accent">{t("sidebar:demo")}</span>
           ) : errored ? (
-            <span className="flex items-center gap-1.5 text-danger" title={errored.syncError ?? undefined}>● {t("sidebar:syncError")}</span>
+            <span className="flex items-center gap-1.5 text-danger" title={describeStored(errored.syncError) ?? undefined}>● {t("sidebar:syncError")}</span>
           ) : backfillLeft > 0 ? (
             <span className="flex items-center gap-1.5" title={t("sidebar:backfillHint")}><Spinner size={11} /> {t("sidebar:backfill", { n: formatNumber(backfillLeft) })}</span>
           ) : syncing ? (

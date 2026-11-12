@@ -1,4 +1,171 @@
 {
+  "rust": {
+    "lock": {
+      "not_locked": "The application is not locked",
+      "timeout_too_long": "Timeout too long (24 h at most)",
+      "none_configured": "No lock is configured",
+      "too_many_attempts": "Too many attempts: try again in {{seconds}} s",
+      "wrong_password": "Wrong password",
+      "method_inactive": "This lock method is not active",
+      "no_native_choose_password": "No native authentication on this system: choose a password",
+      "choose_password": "Choose a password",
+      "password_length": "The password must be {{min}} to {{max}} characters long",
+      "hash_failed": "Password hashing failed: {{detail}}",
+      "no_password_saved": "No password saved",
+      "hash_unreadable": "Unreadable password hash: {{detail}}",
+      "setting_unreadable": "Unreadable lock setting: “{{value}}”",
+      "system_unavailable": "System authentication unavailable",
+      "timeout": "Timed out",
+      "interrupted": "Authentication interrupted",
+      "no_native": "No native authentication on this system",
+      "locked": "The application is locked"
+    },
+    "account": {
+      "not_oauth": "This account doesn't use OAuth2",
+      "signature_too_long": "Signature too long (2000 characters)",
+      "no_known_servers": "No known servers for provider: {{domain}}"
+    },
+    "oauth": {
+      "empty_client_id": "Client ID is empty",
+      "unknown_provider": "Unknown OAuth2 provider: {{provider}}",
+      "client_not_configured": "{{provider}} client ID not configured (Accounts tab)",
+      "wrong_account": "The account authorized in the browser is {{authorized}}, not {{expected}}: try again and choose the right account",
+      "timeout": "Timed out: authorization not completed in the browser",
+      "token_refused": "Token exchange refused ({{status}}): {{body}}",
+      "expired": "Authorization expired or revoked: reconnect the account (Google expires tokens after 7 days while the app is in “Testing” mode)",
+      "no_refresh_token": "No refresh_token: reconnect the account"
+    },
+    "not_found": {
+      "message": "Message not found: {{id}}",
+      "thread": "Conversation not found: {{id}}",
+      "folder": "Folder not found: {{id}}",
+      "account": "Account not found: {{id}}",
+      "no_draft": "No draft in this conversation",
+      "draft_not_downloaded": "The draft isn't downloaded yet: try again in a moment",
+      "attachment_missing": "Attachment missing from the message",
+      "attachment": "Attachment not found: {{id}}",
+      "raw_unavailable": "Raw message unavailable",
+      "server_message": "Message {{uid}} not found on the server",
+      "thread_in_folder": "Conversation not found in this folder",
+      "conversation": "Conversation not found",
+      "rule": "Rule not found",
+      "no_update": "No update available"
+    },
+    "import": {
+      "source_expired": "Import source expired: choose it again"
+    },
+    "export": {
+      "destination_expired": "Export destination expired: choose it again",
+      "exists": "{{path}} already exists"
+    },
+    "attachment": {
+      "outside_folder": "Attachment outside the allowed folder"
+    },
+    "keychain": {
+      "interrupted": "Keychain access interrupted: {{detail}}"
+    },
+    "identity": {
+      "name_too_long": "Name too long (100 characters)",
+      "exists": "This address already exists for this account",
+      "unknown_sender": "Unknown sender address: {{address}}"
+    },
+    "address": {
+      "invalid": "Invalid address: {{email}}",
+      "invalid_named": "Invalid address “{{address}}”: {{detail}}"
+    },
+    "local": {
+      "cannot_delete": "Local storage can't be deleted: it contains archived mail",
+      "invalid_name": "Invalid folder name (1 to {{max}} characters, without “/”)",
+      "not_local": "This is not a local folder",
+      "folder_exists": "The folder “{{name}}” already exists",
+      "folder_not_empty_one": "This folder contains {{count}} message: empty it first",
+      "folder_not_empty_other": "This folder contains {{count}} messages: empty it first",
+      "already_local": "This conversation is already stored locally",
+      "unreadable_cancelled": "Unreadable message: archiving cancelled",
+      "copy_unverified": "Local copy not verified: archiving cancelled",
+      "copied_not_deleted": "Copied locally but not deleted from the server: {{detail}}",
+      "nothing_to_delete": "Nothing to delete in this folder"
+    },
+    "actions": {
+      "nothing_to_delete": "Nothing to delete: only messages in trash or spam can be",
+      "already_in_folder": "The conversation is already in this folder",
+      "only_trash_spam": "Only trash and spam can be emptied"
+    },
+    "draft": {
+      "id_missing": "Draft identifier missing",
+      "not_in_folder": "Draft saved but not found in the folder",
+      "unreadable": "Unreadable draft",
+      "id_invalid": "Draft identifier missing or too long"
+    },
+    "imap": {
+      "unencrypted": "IMAP: unencrypted connection refused (choose TLS or STARTTLS)",
+      "timeout": "Connection timed out: {{host}}",
+      "invalid_host": "Invalid host: {{detail}}",
+      "starttls_refused": "The server refuses STARTTLS: {{detail}}",
+      "refused": "IMAP connection refused: {{detail}}"
+    },
+    "ingest": {
+      "raw_hash_required": "Large attachment without a raw message: `raw_hash` is required",
+      "raw_unreadable": "Unreadable raw message"
+    },
+    "mbox": {
+      "not_a_folder": "This is not a folder"
+    },
+    "rawstore": {
+      "invalid_hash": "Invalid message hash"
+    },
+    "smtp": {
+      "too_many_attachments": "Too many attachments (maximum {{max}})",
+      "attachment_unreadable": "Attachment “{{name}}” unreadable: {{detail}}",
+      "attachments_too_big": "Attachments too large (maximum {{max}} MB in total)",
+      "no_recipient": "At least one recipient is required",
+      "unencrypted": "SMTP: unencrypted connection refused (choose TLS or STARTTLS)",
+      "not_accepted": "The SMTP server did not reply positively"
+    },
+    "unsubscribe": {
+      "unsupported": "This message doesn't offer automatic unsubscription",
+      "refused_link": "Unsubscribe link refused",
+      "server_refused": "The server refused the unsubscription ({{status}})"
+    },
+    "reminders": {
+      "future": "The due date must be in the future"
+    },
+    "rules": {
+      "too_many": "Too many rules ({{max}} at most)",
+      "name_invalid": "Rule name empty or too long",
+      "condition_invalid": "Condition empty or too long",
+      "action_required": "A rule must have at least one action"
+    },
+    "scheduled": {
+      "time_future": "The send time must be in the future",
+      "too_many": "Too many scheduled sends ({{max}} at most)",
+      "too_big": "Message too large to schedule",
+      "unreadable": "Unreadable scheduled message: {{detail}}",
+      "not_found": "Send not found, or already in progress",
+      "missed": "The app wasn't open at the scheduled time: send it now or edit it",
+      "interrupted": "Send interrupted: check the Sent folder before sending it again"
+    },
+    "templates": {
+      "name_length": "Template name: 1 to {{max}} characters",
+      "too_long": "Template too long"
+    },
+    "tls": {
+      "verifier_unavailable": "Certificate verification unavailable: {{detail}}"
+    },
+    "update": {
+      "failed": "Update: {{detail}}"
+    },
+    "lib": {
+      "database": "Database: {{detail}}",
+      "migration": "Migration: {{detail}}",
+      "io": "I/O: {{detail}}",
+      "tauri": "Tauri: {{detail}}",
+      "imap": "IMAP: {{detail}}",
+      "keychain": "Keychain: {{detail}}",
+      "network": "Network: {{detail}}",
+      "json": "JSON: {{detail}}"
+    }
+  },
   "load": "Couldn't load",
   "action": "Action failed",
   "start": "Couldn't start",

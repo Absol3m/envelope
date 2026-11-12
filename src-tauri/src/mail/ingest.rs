@@ -346,9 +346,10 @@ pub async fn store_with(
             .any(|a| a.data.is_empty() && a.size > 0)
     {
         // Sans brut, une pièce jointe non copiée serait irrécupérable : on refuse plutôt que de la perdre en silence.
-        return Err(AppError::Invalid(
-            "pièce jointe volumineuse sans message brut : `raw_hash` est obligatoire".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "ingest.raw_hash_required",
+            "large attachment without a raw message: `raw_hash` is required"
+        )));
     }
     let existing_thread = find_thread(pool, account_id, &m).await?;
     // Un message est écrit en entier ou pas du tout : conversation, message, références et pièces jointes.
@@ -468,13 +469,15 @@ pub async fn store_with(
 /// Contenu de la pièce jointe de rang `rank` d'un message brut (fonction synchrone : le `Message`
 /// de mail-parser ne traverse aucune attente).
 fn extract_attachment(raw: &[u8], rank: usize) -> Result<Vec<u8>> {
-    let msg = MessageParser::default()
-        .parse(raw)
-        .ok_or_else(|| AppError::Invalid("message brut illisible".into()))?;
-    let part = msg
-        .attachments()
-        .nth(rank)
-        .ok_or_else(|| AppError::NotFound("pièce jointe absente du message".into()))?;
+    let msg = MessageParser::default().parse(raw).ok_or_else(|| {
+        AppError::Invalid(msg!("ingest.raw_unreadable", "unreadable raw message"))
+    })?;
+    let part = msg.attachments().nth(rank).ok_or_else(|| {
+        AppError::NotFound(msg!(
+            "not_found.attachment_missing",
+            "attachment missing from the message"
+        ))
+    })?;
     Ok(part.contents().to_vec())
 }
 
@@ -493,15 +496,15 @@ pub async fn materialize_attachment(
     .bind(attachment_id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AppError::NotFound(format!("pièce jointe {attachment_id}")))?;
+    .ok_or_else(|| AppError::NotFound(msg!("not_found.attachment", "attachment not found: {id}", id = attachment_id)))?;
     let (account_id, hash): (String, Option<String>) =
         sqlx::query_as("SELECT account_id, raw_hash FROM messages WHERE id = ?")
             .bind(message_id)
             .fetch_one(pool)
             .await?;
-    let hash = hash
-        .filter(|h| !h.is_empty())
-        .ok_or_else(|| AppError::NotFound("message brut indisponible".into()))?;
+    let hash = hash.filter(|h| !h.is_empty()).ok_or_else(|| {
+        AppError::NotFound(msg!("not_found.raw_unavailable", "raw message unavailable"))
+    })?;
     let raw = crate::mail::rawstore::get(raw_dir, &hash).await?;
     // Analyse hors de tout `.await` : un `Message` mail-parser ne traverse pas d'attente.
     let data = extract_attachment(&raw, rank as usize)?;

@@ -34,7 +34,13 @@ pub async fn detect(email: &str) -> Result<Discovered> {
         .rsplit_once('@')
         .map(|(_, d)| d.trim().to_lowercase())
         .filter(|d| valid_hostname(d) && d.contains('.'))
-        .ok_or_else(|| AppError::Invalid(format!("adresse e-mail invalide : {email}")))?;
+        .ok_or_else(|| {
+            AppError::Invalid(msg!(
+                "address.invalid",
+                "invalid address: {email}",
+                email = email
+            ))
+        })?;
 
     if let Some(found) = builtin(&domain, email, "builtin") {
         return Ok(found);

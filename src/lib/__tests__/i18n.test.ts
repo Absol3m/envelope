@@ -11,7 +11,7 @@ const load = (lang: string) => Object.fromEntries(readdirSync(join(ROOT, lang)).
 const flatten = (t: Tree, prefix = ""): Record<string, string> => Object.entries(t).reduce<Record<string, string>>((acc, [k, v]) => (typeof v === "string" ? { ...acc, [prefix + k]: v } : { ...acc, ...flatten(v, `${prefix}${k}.`) }), {});
 const vars = (s: string) => [...s.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]).sort();
 /** Un pluriel i18next s'écrit `clé_one` / `clé_other` : la clé « logique » est sans le suffixe. */
-const base = (k: string) => k.replace(/_(zero|one|two|few|many|other)$/, "");
+const base = (k: string) => k.replace(/_(one|other)$/, "");
 
 const en = load("en");
 const fr = load("fr");
@@ -43,6 +43,15 @@ describe("fichiers de langue", () => {
     for (const f of files) {
       for (const m of readFileSync(f, "utf8").matchAll(/\b(?:tr|t)\(\s*["'`]([a-z][A-Za-z]*):([A-Za-z0-9_.-]+)["'`]/g)) if (!known.has(`${m[1]}:${m[2]}`)) missing.push(`${f.replace(SRC, "src")} → ${m[1]}:${m[2]}`);
     }
+    expect(missing).toEqual([]);
+  });
+  it("chaque code d'erreur du moteur Rust (msg!) a sa traduction", () => {
+    const rust: string[] = [];
+    const walk = (d: string) => readdirSync(d).forEach((n) => { const p = join(d, n); statSync(p).isDirectory() ? walk(p) : n.endsWith(".rs") && rust.push(p); });
+    walk(join(SRC, "../src-tauri/src"));
+    const known = new Set(Object.keys(enKeys).map(base));
+    const missing: string[] = [];
+    for (const f of rust) for (const m of readFileSync(f, "utf8").matchAll(/msg!\(\s*"([a-z_.]+)"/g)) if (!known.has(`errors:rust.${m[1]}`)) missing.push(`${f.split("src-tauri/")[1]} → ${m[1]}`);
     expect(missing).toEqual([]);
   });
 });

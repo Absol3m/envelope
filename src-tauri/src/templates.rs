@@ -31,12 +31,17 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Template>> {
 pub async fn save(pool: &SqlitePool, t: &Template) -> Result<Template> {
     let name = t.name.trim();
     if name.is_empty() || name.chars().count() > MAX_NAME {
-        return Err(AppError::Invalid(format!(
-            "nom de modèle : 1 à {MAX_NAME} caractères"
+        return Err(AppError::Invalid(msg!(
+            "templates.name_length",
+            "template name: 1 to {max} characters",
+            max = MAX_NAME
         )));
     }
     if t.subject.chars().count() > MAX_SUBJECT || t.body_html.len() > MAX_BODY {
-        return Err(AppError::Invalid("modèle trop long".into()));
+        return Err(AppError::Invalid(msg!(
+            "templates.too_long",
+            "template too long"
+        )));
     }
     Ok(sqlx::query_as(
         "INSERT INTO templates (name, subject, body_html) VALUES (?, ?, ?)

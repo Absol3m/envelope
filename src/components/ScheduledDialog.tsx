@@ -7,6 +7,7 @@ import { scheduledAt } from "@/lib/format";
 import { useMail } from "@/lib/store";
 import { btnPrimary } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
+import { describeStored } from "@/lib/backendError";
 
 
 /** Envois programmés en attente : envoyer tout de suite, ou retirer de la file pour modifier le message. */
@@ -53,7 +54,7 @@ export function ScheduledDialog() {
                   <span className="shrink-0 text-[12px] text-muted">{q.status === "sending" ? "Envoi en cours…" : scheduledAt(q.sendAt * 1000)}</span>
                 </div>
                 <div className="truncate text-[12px] text-muted">À : {q.to.join(", ")}</div>
-                {q.status === "failed" && <p className="mt-1 text-[12px] text-danger">{q.error}</p>}
+                {q.status === "failed" && <p className="mt-1 text-[12px] text-danger">{describeStored(q.error)}</p>}
                 <div className="mt-2 flex gap-2">
                   <button className={`${btnPrimary} h-7 px-3 text-[12px]`} disabled={busy !== null || q.status === "sending"} onClick={() => void sendNow(q.id)}>{tr("scheduled:sendNow")}</button>
                   <button className="press h-7 rounded-lg px-3 text-[12px] font-medium text-accent hover:bg-hover disabled:opacity-50" disabled={busy !== null || q.status === "sending"} onClick={() => edit(q.id, q.accountId)}>{tr("scheduled:edit")}</button>

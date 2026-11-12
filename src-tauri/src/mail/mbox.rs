@@ -106,7 +106,10 @@ async fn maildir_files(path: &Path) -> Vec<PathBuf> {
 pub async fn discover(root: &Path) -> Result<Vec<Found>> {
     let base = base_dir(root);
     if !base.is_dir() {
-        return Err(AppError::Invalid("ce n'est pas un dossier".into()));
+        return Err(AppError::Invalid(msg!(
+            "mbox.not_a_folder",
+            "this is not a folder"
+        )));
     }
     let mut out = Vec::new();
     walk(&base, &mut Vec::new(), &mut out).await?;

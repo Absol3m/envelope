@@ -22,7 +22,10 @@ fn valid_hash(h: &str) -> bool {
 
 fn path_of(dir: &Path, hash: &str) -> Result<PathBuf> {
     if !valid_hash(hash) {
-        return Err(AppError::Invalid("empreinte de message invalide".into()));
+        return Err(AppError::Invalid(msg!(
+            "rawstore.invalid_hash",
+            "invalid message hash"
+        )));
     }
     Ok(dir.join(&hash[..2]).join(format!("{hash}.eml")))
 }

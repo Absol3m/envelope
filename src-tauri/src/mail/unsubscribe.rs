@@ -65,16 +65,20 @@ pub async fn run(account: &Account, cred: &Credential, u: &Unsubscribe) -> Resul
     }
     match &u.mailto {
         Some(m) => send_mailto(account, cred, m).await,
-        None => Err(AppError::Invalid(
-            "ce message ne propose pas de désabonnement automatique".into(),
-        )),
+        None => Err(AppError::Invalid(msg!(
+            "unsubscribe.unsupported",
+            "this message doesn't offer automatic unsubscription"
+        ))),
     }
 }
 
 async fn post_one_click(url: &str) -> Result<()> {
-    let url = Url::parse(url).map_err(|e| AppError::Invalid(e.to_string()))?;
+    let url = Url::parse(url).map_err(|e| AppError::Invalid((e.to_string()).into()))?;
     if !is_public_https(&url) {
-        return Err(AppError::Invalid("lien de désabonnement refusé".into()));
+        return Err(AppError::Invalid(msg!(
+            "unsubscribe.refused_link",
+            "unsubscribe link refused"
+        )));
     }
     // Redirections suivies seulement vers d'autres liens publics en https.
     let policy = Policy::custom(|a| {
@@ -97,15 +101,16 @@ async fn post_one_click(url: &str) -> Result<()> {
     if res.status().is_success() {
         Ok(())
     } else {
-        Err(AppError::Invalid(format!(
-            "le serveur a refusé le désabonnement ({})",
-            res.status()
+        Err(AppError::Invalid(msg!(
+            "unsubscribe.server_refused",
+            "the server refused the unsubscription ({status})",
+            status = res.status()
         )))
     }
 }
 
 async fn send_mailto(account: &Account, cred: &Credential, mailto: &str) -> Result<()> {
-    let url = Url::parse(mailto).map_err(|e| AppError::Invalid(e.to_string()))?;
+    let url = Url::parse(mailto).map_err(|e| AppError::Invalid((e.to_string()).into()))?;
     let to = percent_encoding::percent_decode_str(url.path())
         .decode_utf8_lossy()
         .trim()

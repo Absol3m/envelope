@@ -55,9 +55,10 @@ pub(crate) async fn connect_with(
 ) -> Result<ImapSession> {
     let security = Security::parse(&account.imap_security);
     if security == Security::None {
-        return Err(AppError::Invalid(
-            "IMAP : connexion non chiffrée refusée (choisissez TLS ou STARTTLS)".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "imap.unencrypted",
+            "IMAP: unencrypted connection refused (choose TLS or STARTTLS)"
+        )));
     }
     let host = account.imap_host.as_str();
     let tcp = tokio::time::timeout(
@@ -65,10 +66,21 @@ pub(crate) async fn connect_with(
         TcpStream::connect((host, account.imap_port as u16)),
     )
     .await
-    .map_err(|_| AppError::Invalid(format!("délai de connexion dépassé : {host}")))??;
+    .map_err(|_| {
+        AppError::Invalid(msg!(
+            "imap.timeout",
+            "connection timed out: {host}",
+            host = host
+        ))
+    })??;
     tcp.set_nodelay(true)?;
-    let name = ServerName::try_from(host.to_string())
-        .map_err(|e| AppError::Invalid(format!("hôte invalide : {e}")))?;
+    let name = ServerName::try_from(host.to_string()).map_err(|e| {
+        AppError::Invalid(msg!(
+            "imap.invalid_host",
+            "invalid host: {detail}",
+            detail = e
+        ))
+    })?;
     let connector = TlsConnector::from(tls);
     let stream: Box<dyn Io> = match security {
         Security::Starttls => {
@@ -78,7 +90,13 @@ pub(crate) async fn connect_with(
             plain
                 .run_command_and_check_ok("STARTTLS", None)
                 .await
-                .map_err(|e| AppError::Auth(format!("le serveur refuse STARTTLS : {e}")))?;
+                .map_err(|e| {
+                    AppError::Auth(msg!(
+                        "imap.starttls_refused",
+                        "the server refuses STARTTLS: {detail}",
+                        detail = e
+                    ))
+                })?;
             Box::new(connector.connect(name, plain.into_inner()).await?)
         }
         _ => Box::new(connector.connect(name, tcp).await?),
@@ -104,7 +122,13 @@ pub(crate) async fn connect_with(
                 .await
         }
     };
-    session.map_err(|(e, _client)| AppError::Auth(format!("connexion IMAP refusée : {e}")))
+    session.map_err(|(e, _client)| {
+        AppError::Auth(msg!(
+            "imap.refused",
+            "IMAP connection refused: {detail}",
+            detail = e
+        ))
+    })
 }
 
 /// Ensemble d'UID au format IMAP (`3,7,12`).
@@ -443,8 +467,10 @@ mod starttls_tests {
         // Aucun serveur n'écoute : l'erreur vient de la politique, pas du réseau.
         let err = connect_with(&account(1, "none"), &cred(), client_cfg)
             .await
-            .expect_err("doit échouer")
-            .to_string();
-        assert!(err.contains("non chiffrée"), "{err}");
+            .expect_err("doit échouer");
+        assert!(
+            matches!(&err, AppError::Invalid(m) if m.code == "imap.unencrypted"),
+            "{err}"
+        );
     }
 }

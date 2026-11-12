@@ -120,7 +120,7 @@ pub async fn save(
     let draft_id = out
         .draft_id
         .as_deref()
-        .ok_or_else(|| AppError::Invalid("identifiant de brouillon manquant".into()))?;
+        .ok_or_else(|| AppError::Invalid(msg!("draft.id_missing", "draft identifier missing")))?;
     let raw = smtp::build_draft(account, out)?.formatted();
     // Versions connues avant le dépôt, pour ne jamais supprimer la nouvelle.
     let known = copies(pool, &account.id, draft_id).await?;
@@ -140,7 +140,10 @@ pub async fn save(
             .max()
             .map(i64::from)
             .ok_or_else(|| {
-                AppError::Invalid("brouillon déposé mais introuvable dans le dossier".into())
+                AppError::Invalid(msg!(
+                    "draft.not_in_folder",
+                    "draft saved but not found in the folder"
+                ))
             })?;
         let mut server = targets(&known, last.as_ref(), &path, uid_validity);
         if let Some(uids) = server.get_mut(&path) {
@@ -242,8 +245,8 @@ pub struct DraftData {
 
 /// Lit un brouillon dans son message brut.
 pub fn parse_draft(raw: &[u8], id: String, account_id: String) -> Result<DraftData> {
-    let parsed =
-        ingest::parse(raw, None).ok_or_else(|| AppError::Invalid("brouillon illisible".into()))?;
+    let parsed = ingest::parse(raw, None)
+        .ok_or_else(|| AppError::Invalid(msg!("draft.unreadable", "unreadable draft")))?;
     let list = |json: &str| {
         addr::decode(json)
             .iter()
@@ -286,12 +289,14 @@ pub async fn open(pool: &SqlitePool, raw_dir: &Path, thread_id: i64) -> Result<D
     .bind(thread_id)
     .fetch_optional(pool)
     .await?;
-    let (message_id, account_id, raw_hash, draft_id) =
-        row.ok_or_else(|| AppError::NotFound("aucun brouillon dans cette conversation".into()))?;
+    let (message_id, account_id, raw_hash, draft_id) = row.ok_or_else(|| {
+        AppError::NotFound(msg!("not_found.no_draft", "no draft in this conversation"))
+    })?;
     let hash = rawstore::usable(raw_hash.as_deref()).ok_or_else(|| {
-        AppError::NotFound(
-            "le brouillon n'est pas encore téléchargé : réessayez dans un instant".into(),
-        )
+        AppError::NotFound(msg!(
+            "not_found.draft_not_downloaded",
+            "the draft isn't downloaded yet: try again in a moment"
+        ))
     })?;
     let raw = rawstore::get(raw_dir, hash).await?;
     let id = match draft_id {

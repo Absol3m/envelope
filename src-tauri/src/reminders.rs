@@ -38,9 +38,10 @@ impl Kind {
 /// Pose (ou remplace) le rappel d'une conversation. `due_at` : secondes Unix, dans le futur.
 pub async fn set(pool: &SqlitePool, thread_id: i64, kind: Kind, due_at: i64) -> Result<()> {
     if due_at <= now() {
-        return Err(AppError::Invalid(
-            "l'échéance doit être dans le futur".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "reminders.future",
+            "the due date must be in the future"
+        )));
     }
     let done = sqlx::query(
         "INSERT INTO reminders (thread_id, kind, due_at, baseline_count, fired_at) \
@@ -54,7 +55,10 @@ pub async fn set(pool: &SqlitePool, thread_id: i64, kind: Kind, due_at: i64) -> 
     .execute(pool)
     .await?;
     if done.rows_affected() == 0 {
-        return Err(AppError::Invalid("conversation introuvable".into()));
+        return Err(AppError::Invalid(msg!(
+            "not_found.conversation",
+            "conversation not found"
+        )));
     }
     Ok(())
 }

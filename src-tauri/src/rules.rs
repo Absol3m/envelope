@@ -100,15 +100,21 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Rule>> {
 }
 
 fn validate(r: &Rule) -> Result<()> {
-    let bad = |m: &str| Err(AppError::Invalid(m.into()));
+    let bad = |m: crate::error::Msg| Err(AppError::Invalid(m));
     if r.name.trim().is_empty() || r.name.chars().count() > MAX_NAME {
-        return bad("nom de règle vide ou trop long");
+        return bad(msg!("rules.name_invalid", "rule name empty or too long"));
     }
     if r.query.trim().is_empty() || r.query.chars().count() > MAX_QUERY {
-        return bad("condition vide ou trop longue");
+        return bad(msg!(
+            "rules.condition_invalid",
+            "condition empty or too long"
+        ));
     }
     if !r.mark_read && !r.star && r.move_to.is_none() {
-        return bad("une règle doit avoir au moins une action");
+        return bad(msg!(
+            "rules.action_required",
+            "a rule must have at least one action"
+        ));
     }
     Ok(())
 }
@@ -123,8 +129,10 @@ pub async fn save(pool: &SqlitePool, r: &Rule) -> Result<i64> {
             .fetch_one(pool)
             .await?;
         if n >= MAX_RULES {
-            return Err(AppError::Invalid(format!(
-                "trop de règles ({MAX_RULES} au plus)"
+            return Err(AppError::Invalid(msg!(
+                "rules.too_many",
+                "too many rules ({max} at most)",
+                max = MAX_RULES
             )));
         }
         return Ok(sqlx::query(
@@ -155,7 +163,7 @@ pub async fn save(pool: &SqlitePool, r: &Rule) -> Result<i64> {
     .execute(pool)
     .await?;
     if done.rows_affected() == 0 {
-        return Err(AppError::Invalid("règle introuvable".into()));
+        return Err(AppError::Invalid(msg!("not_found.rule", "rule not found")));
     }
     Ok(r.id)
 }

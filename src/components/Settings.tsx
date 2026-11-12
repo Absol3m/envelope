@@ -21,6 +21,7 @@ import { RulesPanel } from "./RulesPanel";
 import { isMac, isWindows, settingsLabel } from "@/lib/platform";
 import { Avatar, btnGhost, btnPrimary, IconButton, inputCls, Spinner } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
+import { describeStored } from "@/lib/backendError";
 
 const tab = (id: SettingsTab, icon: ComponentType<{ size?: number }>) => ({ id, icon, get label() { return tr(`settings:tabs.${id}`); } });
 const TABS = [tab("accounts", UserRound), tab("rules", Filter), tab("security", ShieldCheck), tab("agent", Bot), tab("appearance", Palette), tab("shortcuts", Keyboard), tab("about", Info)];
@@ -187,7 +188,7 @@ function AccountsPanel() {
                 <p className="truncate text-[13px] font-medium">{a.displayName ?? a.email}</p>
                 <p className="truncate text-[12px] text-muted">{a.email} · {a.authKind === "oauth2" ? "OAuth2" : tr("settings:password")}</p>
                 <p className={cn("text-[11.5px]", a.syncStatus === "error" ? "text-danger" : "text-faint")}>
-                  {a.syncStatus === "error" ? a.syncError ?? tr("settings:syncError") : a.syncStatus === "syncing" ? tr("sidebar:syncing") : tr("sidebar:synced", { when: relativeTime(a.lastSyncAt) })}
+                  {a.syncStatus === "error" ? describeStored(a.syncError) ?? tr("settings:syncError") : a.syncStatus === "syncing" ? tr("sidebar:syncing") : tr("sidebar:synced", { when: relativeTime(a.lastSyncAt) })}
                 </p>
               </div>
               {a.authKind === "oauth2" && a.syncStatus === "error" && (

@@ -228,7 +228,13 @@ pub fn oauth_servers(provider: OAuthProvider) -> Result<(ServerConfig, ServerCon
     };
     known_provider(domain)
         .map(|(_, imap, smtp, _)| (imap, smtp))
-        .ok_or_else(|| AppError::Invalid(format!("fournisseur sans serveurs connus : {domain}")))
+        .ok_or_else(|| {
+            AppError::Invalid(msg!(
+                "account.no_known_servers",
+                "no known servers for provider: {domain}",
+                domain = domain
+            ))
+        })
 }
 
 /// Dernier recours : `imap.<domaine>` / `smtp.<domaine>`.
@@ -341,16 +347,24 @@ pub fn delete_secrets(account_id: &str) {
 pub async fn blocking_keychain<T: Send + 'static>(
     job: impl FnOnce() -> Result<T> + Send + 'static,
 ) -> Result<T> {
-    tokio::task::spawn_blocking(job)
-        .await
-        .map_err(|e| AppError::Auth(format!("accès au trousseau interrompu : {e}")))?
+    tokio::task::spawn_blocking(job).await.map_err(|e| {
+        AppError::Auth(msg!(
+            "keychain.interrupted",
+            "keychain access interrupted: {detail}",
+            detail = e
+        ))
+    })?
 }
 
 /// Résout les identifiants d'un compte (rafraîchit le jeton OAuth2 si besoin).
 pub async fn resolve_credential(account: &Account) -> Result<Credential> {
     if account.auth_kind == "oauth2" {
         let provider = OAuthProvider::parse(&account.provider).ok_or_else(|| {
-            AppError::Auth(format!("fournisseur OAuth2 inconnu : {}", account.provider))
+            AppError::Auth(msg!(
+                "oauth.unknown_provider",
+                "unknown OAuth2 provider: {provider}",
+                provider = account.provider
+            ))
         })?;
         let access_token = oauth::fresh_access_token(provider, &account.id).await?;
         Ok(Credential::OAuth {
@@ -437,7 +451,13 @@ pub async fn get(pool: &SqlitePool, id: &str) -> Result<Account> {
     .bind(id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AppError::NotFound(format!("compte {id}")))?;
+    .ok_or_else(|| {
+        AppError::NotFound(msg!(
+            "not_found.account",
+            "account not found: {id}",
+            id = id
+        ))
+    })?;
     account.identities =
         sqlx::query_as("SELECT id, name, email FROM identities WHERE account_id = ? ORDER BY id")
             .bind(id)
@@ -456,12 +476,19 @@ pub async fn add_identity(
     let email = email.trim();
     let name = name.trim();
     if name.chars().count() > 100 {
-        return Err(AppError::Invalid("nom trop long (100 caractères)".into()));
+        return Err(AppError::Invalid(msg!(
+            "identity.name_too_long",
+            "name too long (100 characters)"
+        )));
     }
     // Analyse d'adresse par lettre (bibliothèque éprouvée), pas d'expression maison.
-    let parsed: lettre::Address = email
-        .parse()
-        .map_err(|_| AppError::Invalid(format!("adresse invalide : {email}")))?;
+    let parsed: lettre::Address = email.parse().map_err(|_| {
+        AppError::Invalid(msg!(
+            "address.invalid",
+            "invalid address: {email}",
+            email = email
+        ))
+    })?;
     sqlx::query("INSERT INTO identities (account_id, name, email) VALUES (?, ?, ?)")
         .bind(account_id)
         .bind(name)
@@ -469,9 +496,10 @@ pub async fn add_identity(
         .execute(pool)
         .await
         .map_err(|e| match e {
-            sqlx::Error::Database(d) if d.is_unique_violation() => {
-                AppError::Invalid("cette adresse existe déjà pour ce compte".into())
-            }
+            sqlx::Error::Database(d) if d.is_unique_violation() => AppError::Invalid(msg!(
+                "identity.exists",
+                "this address already exists for this account"
+            )),
             e => e.into(),
         })?;
     Ok(())
@@ -499,16 +527,26 @@ pub fn sender(account: &Account, from_email: Option<&str>) -> Result<lettre::mes
                 .identities
                 .iter()
                 .find(|i| i.email.eq_ignore_ascii_case(e))
-                .ok_or_else(|| AppError::Invalid(format!("adresse d'expéditeur inconnue : {e}")))?;
+                .ok_or_else(|| {
+                    AppError::Invalid(msg!(
+                        "identity.unknown_sender",
+                        "unknown sender address: {address}",
+                        address = e
+                    ))
+                })?;
             (
                 Some(id.name.clone()).filter(|n| !n.is_empty()).or(own),
                 id.email.as_str(),
             )
         }
     };
-    let address = email
-        .parse()
-        .map_err(|_| AppError::Invalid(format!("adresse invalide : {email}")))?;
+    let address = email.parse().map_err(|_| {
+        AppError::Invalid(msg!(
+            "address.invalid",
+            "invalid address: {email}",
+            email = email
+        ))
+    })?;
     Ok(lettre::message::Mailbox::new(name, address))
 }
 
@@ -519,16 +557,21 @@ pub async fn set_signature(pool: &SqlitePool, id: &str, signature: &str) -> Resu
         .execute(pool)
         .await?;
     if done.rows_affected() == 0 {
-        return Err(AppError::NotFound(format!("compte {id}")));
+        return Err(AppError::NotFound(msg!(
+            "not_found.account",
+            "account not found: {id}",
+            id = id
+        )));
     }
     Ok(())
 }
 
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
     if id == LOCAL_ID {
-        return Err(AppError::Invalid(
-            "le stockage local ne peut pas être supprimé : il contient des mails archivés".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "local.cannot_delete",
+            "local storage can't be deleted: it contains archived mail"
+        )));
     }
     sqlx::query("DELETE FROM accounts WHERE id = ?")
         .bind(id)

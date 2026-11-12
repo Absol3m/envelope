@@ -46,23 +46,28 @@ pub async fn add(
     message: &OutgoingMessage,
 ) -> Result<i64> {
     if send_at <= now() {
-        return Err(AppError::Invalid(
-            "l'heure d'envoi doit être dans le futur".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "scheduled.time_future",
+            "the send time must be in the future"
+        )));
     }
     let queued: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM scheduled")
         .fetch_one(pool)
         .await?;
     if queued >= MAX_ROWS {
-        return Err(AppError::Invalid(format!(
-            "trop d'envois programmés ({MAX_ROWS} au plus)"
+        return Err(AppError::Invalid(msg!(
+            "scheduled.too_many",
+            "too many scheduled sends ({max} at most)",
+            max = MAX_ROWS
         )));
     }
-    let json = serde_json::to_string(message).map_err(|e| AppError::Invalid(e.to_string()))?;
+    let json =
+        serde_json::to_string(message).map_err(|e| AppError::Invalid((e.to_string()).into()))?;
     if json.len() > MAX_BYTES {
-        return Err(AppError::Invalid(
-            "message trop volumineux pour être programmé".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "scheduled.too_big",
+            "message too large to schedule"
+        )));
     }
     Ok(
         sqlx::query("INSERT INTO scheduled (account_id, send_at, message) VALUES (?, ?, ?)")
@@ -76,8 +81,13 @@ pub async fn add(
 }
 
 fn parse(json: &str) -> Result<OutgoingMessage> {
-    serde_json::from_str(json)
-        .map_err(|e| AppError::Invalid(format!("message programmé illisible : {e}")))
+    serde_json::from_str(json).map_err(|e| {
+        AppError::Invalid(msg!(
+            "scheduled.unreadable",
+            "unreadable scheduled message: {detail}",
+            detail = e
+        ))
+    })
 }
 
 /// Ligne de la file sans le corps du message (voir `list`).
@@ -125,7 +135,12 @@ pub async fn cancel(pool: &SqlitePool, id: i64) -> Result<OutgoingMessage> {
     .bind(id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AppError::Invalid("envoi introuvable, ou déjà en cours".into()))?;
+    .ok_or_else(|| {
+        AppError::Invalid(msg!(
+            "scheduled.not_found",
+            "send not found, or already in progress"
+        ))
+    })?;
     parse(&json)
 }
 
@@ -160,7 +175,12 @@ pub async fn fail(pool: &SqlitePool, id: i64, error: &str) -> Result<()> {
 
 /// Au démarrage : un envoi « en cours » à l'arrêt de l'application a peut-être abouti ; on ne le renvoie pas seul.
 pub async fn recover(pool: &SqlitePool) -> Result<()> {
-    sqlx::query("UPDATE scheduled SET status = 'failed', error = 'Envoi interrompu : vérifiez le dossier Envoyés avant de le renvoyer.' WHERE status = 'sending'")
+    let interrupted = AppError::Invalid(msg!(
+        "scheduled.interrupted",
+        "send interrupted: check the Sent folder before sending it again"
+    ));
+    sqlx::query("UPDATE scheduled SET status = 'failed', error = ? WHERE status = 'sending'")
+        .bind(interrupted.to_wire())
         .execute(pool)
         .await?;
     Ok(())
@@ -202,8 +222,8 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
             None
         }
         Err(e) => {
-            fail(&state.db, id, &e.to_string()).await?;
-            Some(e.to_string())
+            fail(&state.db, id, &e.to_wire()).await?; // codé : le front le traduit à l'affichage
+            Some(e.to_wire())
         }
     };
     let _ = app.emit(
@@ -222,7 +242,11 @@ async fn tick(app: &AppHandle, state: &AppState) {
     };
     for (id, late) in due {
         if late {
-            let _ = fail(&state.db, id, "L'application n'était pas ouverte à l'heure prévue : envoyez-le maintenant ou modifiez-le.").await;
+            let missed = AppError::Invalid(msg!(
+                "scheduled.missed",
+                "the app wasn't open at the scheduled time: send it now or edit it"
+            ));
+            let _ = fail(&state.db, id, &missed.to_wire()).await;
             let _ = app.emit("scheduled:changed", Option::<Outcome>::None);
         } else if let Err(e) = deliver_now(app, state, id).await {
             tracing::warn!("envoi programmé {id} : {e}");

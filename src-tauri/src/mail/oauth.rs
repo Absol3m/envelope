@@ -81,9 +81,10 @@ impl OAuthProvider {
         }
         let cfg = self.config();
         let client_id = std::env::var(cfg.client_id_env).map_err(|_| {
-            AppError::Auth(format!(
-                "identifiant client {} non configuré (onglet Comptes)",
-                self.label()
+            AppError::Auth(msg!(
+                "oauth.client_not_configured",
+                "{provider} client ID not configured (Accounts tab)",
+                provider = self.label()
             ))
         })?;
         Ok(ClientCreds {
@@ -146,9 +147,7 @@ fn id_token_email(id_token: &str) -> Option<String> {
 /// Refuse un compte autorisé dans le navigateur qui n'est pas celui saisi (sans effet si le fournisseur ne dit rien).
 pub fn check_authorized_email(authorized: Option<&str>, expected: &str) -> Result<()> {
     match authorized {
-        Some(a) if !a.eq_ignore_ascii_case(expected) => Err(AppError::Auth(format!(
-            "le compte autorisé dans le navigateur est {a}, pas {expected} : recommencez en choisissant le bon compte"
-        ))),
+        Some(a) if !a.eq_ignore_ascii_case(expected) => Err(AppError::Auth(msg!("oauth.wrong_account", "the account authorized in the browser is {authorized}, not {expected}: try again and choose the right account", authorized = a, expected = expected))),
         _ => Ok(()),
     }
 }
@@ -204,7 +203,7 @@ async fn authorize_with(
     ];
     params.extend_from_slice(cfg.extra_auth_params);
     let url = reqwest::Url::parse_with_params(&cfg.auth_url, &params)
-        .map_err(|e| AppError::Auth(e.to_string()))?;
+        .map_err(|e| AppError::Auth((e.to_string()).into()))?;
     open_browser(url.as_str())?;
 
     let code = tokio::time::timeout(
@@ -213,7 +212,10 @@ async fn authorize_with(
     )
     .await
     .map_err(|_| {
-        AppError::Auth("délai dépassé : autorisation non terminée dans le navigateur".into())
+        AppError::Auth(msg!(
+            "oauth.timeout",
+            "timed out: authorization not completed in the browser"
+        ))
     })??;
 
     let mut form = vec![
@@ -274,7 +276,7 @@ async fn wait_for_code(
                 (
                     "400 Bad Request",
                     "Autorisation refusée. Vous pouvez fermer cet onglet.",
-                    Some(Err(AppError::Auth(err.clone()))),
+                    Some(Err(AppError::Auth((err.clone()).into()))),
                 )
             } else if let Some(code) = q.get("code") {
                 (
@@ -309,8 +311,11 @@ async fn token_request(url: &str, form: &[(&str, String)]) -> Result<TokenRespon
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(AppError::Auth(format!(
-            "échange de jeton refusé ({status}) : {body}"
+        return Err(AppError::Auth(msg!(
+            "oauth.token_refused",
+            "token exchange refused ({status}): {body}",
+            status = status,
+            body = body
         )));
     }
     Ok(resp.json().await?)
@@ -324,11 +329,7 @@ fn refresh_lock() -> &'static tokio::sync::Mutex<()> {
 /// Jeton révoqué ou expiré (Google : 7 jours tant que l'application est en mode « Test »).
 fn explain_refresh_error(e: AppError) -> AppError {
     match e {
-        AppError::Auth(m) if m.contains("invalid_grant") => AppError::Auth(
-            "autorisation expirée ou révoquée : reconnectez le compte (Google expire les jetons \
-             après 7 jours tant que l'application est en mode « Test »)"
-                .into(),
-        ),
+        AppError::Auth(m) if m.text.contains("invalid_grant") => AppError::Auth(msg!("oauth.expired", "authorization expired or revoked: reconnect the account (Google expires tokens after 7 days while the app is in “Testing” mode)")),
         e => e,
     }
 }
@@ -353,9 +354,12 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
     if tokens.expires_at - 60 > now() {
         return Ok(tokens.access_token);
     }
-    let refresh = tokens
-        .refresh_token
-        .ok_or_else(|| AppError::Auth("pas de refresh_token : reconnectez le compte".into()))?;
+    let refresh = tokens.refresh_token.ok_or_else(|| {
+        AppError::Auth(msg!(
+            "oauth.no_refresh_token",
+            "no refresh_token: reconnect the account"
+        ))
+    })?;
     let client = account::blocking_keychain(move || provider.client()).await?;
     let resp = token_request(
         &provider.config().token_url,

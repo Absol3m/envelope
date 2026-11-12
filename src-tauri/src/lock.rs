@@ -157,9 +157,10 @@ impl Lock {
     pub fn lock_now(&self) -> Result<()> {
         let mut s = self.state();
         if s.config.method == Method::Off {
-            return Err(AppError::Invalid(
-                "aucun verrouillage n'est configuré".into(),
-            ));
+            return Err(AppError::Invalid(msg!(
+                "lock.none_configured",
+                "no lock is configured"
+            )));
         }
         s.locked = true;
         Ok(())
@@ -195,19 +196,20 @@ impl Lock {
             Method::System => native_authenticate().await,
             Method::Password => {
                 if let Some(wait) = self.wait_time() {
-                    return Err(AppError::Auth(format!(
-                        "trop d'essais : réessayez dans {} s",
-                        wait.as_secs() + 1
+                    return Err(AppError::Auth(msg!(
+                        "lock.too_many_attempts",
+                        "too many attempts: try again in {seconds} s",
+                        seconds = wait.as_secs() + 1
                     )));
                 }
                 let password = password.unwrap_or_default();
                 // Argon2 est volontairement lent : hors du thread asynchrone.
                 let ok = tokio::task::spawn_blocking(move || verify_password(&password))
                     .await
-                    .map_err(|e| AppError::Auth(e.to_string()))??;
+                    .map_err(|e| AppError::Auth((e.to_string()).into()))??;
                 self.record(ok);
                 ok.then_some(())
-                    .ok_or_else(|| AppError::Auth("mot de passe incorrect".into()))
+                    .ok_or_else(|| AppError::Auth(msg!("lock.wrong_password", "wrong password")))
             }
         }
     }
@@ -216,9 +218,10 @@ impl Lock {
     pub async fn unlock(&self, method: Method, password: Option<String>) -> Result<()> {
         let _one_at_a_time = self.busy.lock().await;
         if self.state().config.method != method {
-            return Err(AppError::Invalid(
-                "cette méthode de verrouillage n'est pas active".into(),
-            ));
+            return Err(AppError::Invalid(msg!(
+                "lock.method_inactive",
+                "this lock method is not active"
+            )));
         }
         self.authenticate(method, password).await?;
         self.state().locked = false;
@@ -240,10 +243,10 @@ impl Lock {
         match next.method {
             Method::Off | Method::System => {
                 if next.method == Method::System && !system_available() {
-                    return Err(AppError::Invalid(
-                        "pas d'authentification native sur ce système : choisissez un mot de passe"
-                            .into(),
-                    ));
+                    return Err(AppError::Invalid(msg!(
+                        "lock.no_native_choose_password",
+                        "no native authentication on this system: choose a password"
+                    )));
                 }
                 account::blocking_keychain(|| {
                     account::delete_app_secret(SECRET_KIND);
@@ -252,12 +255,16 @@ impl Lock {
                 .await?;
             }
             Method::Password => {
-                let password = new_password
-                    .ok_or_else(|| AppError::Invalid("choisissez un mot de passe".into()))?;
+                let password = new_password.ok_or_else(|| {
+                    AppError::Invalid(msg!("lock.choose_password", "choose a password"))
+                })?;
                 let n = password.chars().count();
                 if !(MIN_PASSWORD_CHARS..=MAX_PASSWORD_CHARS).contains(&n) {
-                    return Err(AppError::Invalid(format!(
-                        "le mot de passe doit faire de {MIN_PASSWORD_CHARS} à {MAX_PASSWORD_CHARS} caractères"
+                    return Err(AppError::Invalid(msg!(
+                        "lock.password_length",
+                        "the password must be {min} to {max} characters long",
+                        min = MIN_PASSWORD_CHARS,
+                        max = MAX_PASSWORD_CHARS
                     )));
                 }
                 // Argon2 (lent, volontairement) puis trousseau : un seul saut hors de l'exécuteur.
@@ -279,9 +286,10 @@ impl Lock {
     pub async fn reset(&self, pool: &SqlitePool) -> Result<()> {
         let _one_at_a_time = self.busy.lock().await;
         if !self.is_locked() {
-            return Err(AppError::Invalid(
-                "l'application n'est pas verrouillée".into(),
-            ));
+            return Err(AppError::Invalid(msg!(
+                "lock.not_locked",
+                "the application is not locked"
+            )));
         }
         wipe(pool).await?;
         account::blocking_keychain(|| {
@@ -330,15 +338,25 @@ fn hash_password(password: &str) -> Result<String> {
     argon2()
         .hash_password(password.as_bytes())
         .map(|h| h.to_string())
-        .map_err(|e| AppError::Auth(format!("empreinte : {e}")))
+        .map_err(|e| {
+            AppError::Auth(msg!(
+                "lock.hash_failed",
+                "password hashing failed: {detail}",
+                detail = e
+            ))
+        })
 }
 
 fn verify_password(password: &str) -> Result<bool> {
     let stored = account::load_app_secret(SECRET_KIND)?
-        .ok_or_else(|| AppError::Auth("aucun mot de passe enregistré".into()))?;
-    let parsed: PasswordHash = stored
-        .parse()
-        .map_err(|e| AppError::Auth(format!("empreinte illisible : {e}")))?;
+        .ok_or_else(|| AppError::Auth(msg!("lock.no_password_saved", "no password saved")))?;
+    let parsed: PasswordHash = stored.parse().map_err(|e| {
+        AppError::Auth(msg!(
+            "lock.hash_unreadable",
+            "unreadable password hash: {detail}",
+            detail = e
+        ))
+    })?;
     Ok(argon2()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok())
@@ -360,8 +378,10 @@ pub async fn load_config(pool: &SqlitePool) -> Result<Config> {
         Some("system") => Method::System,
         Some("password") => Method::Password,
         Some(other) => {
-            return Err(AppError::Invalid(format!(
-                "réglage de verrouillage illisible : « {other} »"
+            return Err(AppError::Invalid(msg!(
+                "lock.setting_unreadable",
+                "unreadable lock setting: “{value}”",
+                value = other
             )))
         }
     };
@@ -408,7 +428,12 @@ async fn native_authenticate() -> Result<()> {
                 .password(true) // à défaut de biométrie : mot de passe de la session
                 .companion(true)
                 .build()
-                .ok_or_else(|| AppError::Auth("authentification du système indisponible".into()))?;
+                .ok_or_else(|| {
+                    AppError::Auth(msg!(
+                        "lock.system_unavailable",
+                        "system authentication unavailable"
+                    ))
+                })?;
             let text = Text {
                 android: AndroidText {
                     title: "Envelope",
@@ -421,24 +446,25 @@ async fn native_authenticate() -> Result<()> {
             let (done_tx, done_rx) = std::sync::mpsc::channel();
             Context::new(())
                 .authenticate(text, &policy, move |r| {
-                    let _ = done_tx.send(r.map_err(|e| AppError::Auth(e.to_string())));
+                    let _ = done_tx.send(r.map_err(|e| AppError::Auth((e.to_string()).into())));
                 })
-                .map_err(|e| AppError::Auth(e.to_string()))?;
+                .map_err(|e| AppError::Auth((e.to_string()).into()))?;
             done_rx
                 .recv_timeout(Duration::from_secs(180))
-                .map_err(|_| AppError::Auth("délai dépassé".into()))?
+                .map_err(|_| AppError::Auth(msg!("lock.timeout", "timed out")))?
         })();
         let _ = tx.send(outcome);
     });
     rx.await
-        .map_err(|_| AppError::Auth("authentification interrompue".into()))?
+        .map_err(|_| AppError::Auth(msg!("lock.interrupted", "authentication interrupted")))?
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
 async fn native_authenticate() -> Result<()> {
-    Err(AppError::Auth(
-        "pas d'authentification native sur ce système".into(),
-    ))
+    Err(AppError::Auth(msg!(
+        "lock.no_native",
+        "no native authentication on this system"
+    )))
 }
 
 #[cfg(test)]

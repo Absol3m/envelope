@@ -101,10 +101,10 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
         // Les autres actions sont idempotentes ; supprimer pour de bon ne doit jamais « réussir »
         // à vide (dossier qui n'est ni la corbeille ni le spam, ou conversation déjà supprimée).
         if matches!(action, Action::Delete { .. }) {
-            return Err(AppError::Invalid(
-                "rien à supprimer : seuls les messages de la corbeille ou du spam le peuvent"
-                    .into(),
-            ));
+            return Err(AppError::Invalid(msg!(
+                "actions.nothing_to_delete",
+                "nothing to delete: only messages in trash or spam can be"
+            )));
         }
         return Ok(Vec::new());
     }
@@ -164,9 +164,10 @@ async fn propagate(
             // Gmail : « Archives » est « Tous les messages » ; déplacer un message vers son propre
             // dossier le copierait puis l'effacerait.
             if dest == path {
-                return Err(AppError::Invalid(
-                    "la conversation est déjà dans ce dossier".into(),
-                ));
+                return Err(AppError::Invalid(msg!(
+                    "actions.already_in_folder",
+                    "the conversation is already in this folder"
+                )));
             }
             move_to(session, uids, &dest).await?;
         }
@@ -282,11 +283,18 @@ pub async fn empty_folder(pool: &SqlitePool, folder_id: i64) -> Result<()> {
             .bind(folder_id)
             .fetch_optional(pool)
             .await?
-            .ok_or_else(|| AppError::NotFound(format!("dossier {folder_id}")))?;
+            .ok_or_else(|| {
+                AppError::NotFound(msg!(
+                    "not_found.folder",
+                    "folder not found: {id}",
+                    id = folder_id
+                ))
+            })?;
     if !matches!(role.as_deref(), Some("trash" | "junk")) {
-        return Err(AppError::Invalid(
-            "seuls la corbeille et le spam peuvent être vidés".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "actions.only_trash_spam",
+            "only trash and spam can be emptied"
+        )));
     }
     let threads: Vec<i64> = sqlx::query_scalar(
         "SELECT DISTINCT thread_id FROM messages WHERE folder_id = ? AND thread_id IS NOT NULL",

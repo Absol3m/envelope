@@ -176,7 +176,7 @@ async fn run_account(ctx: Ctx) {
             Err(AppError::NotFound(_)) => return, // compte supprimé
             Err(e) => {
                 tracing::warn!(account = %ctx.account_id, "synchro interrompue : {e}");
-                ctx.set_status("error", Some(e.to_string())).await;
+                ctx.set_status("error", Some(e.to_wire())).await; // codé : le front le traduit à l'affichage
             }
             Ok(()) => {}
         }

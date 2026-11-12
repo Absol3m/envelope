@@ -64,21 +64,29 @@ fn header_filename(name: &str) -> String {
 
 fn attachment_parts(list: &[OutgoingAttachment]) -> Result<Vec<SinglePart>> {
     if list.len() > MAX_ATTACHMENTS {
-        return Err(AppError::Invalid(format!(
-            "trop de pièces jointes (maximum {MAX_ATTACHMENTS})"
+        return Err(AppError::Invalid(msg!(
+            "smtp.too_many_attachments",
+            "too many attachments (maximum {max})",
+            max = MAX_ATTACHMENTS
         )));
     }
     let mut total = 0usize;
     let mut parts = Vec::with_capacity(list.len());
     for a in list {
         let data = STANDARD.decode(a.data_base64.trim()).map_err(|e| {
-            AppError::Invalid(format!("pièce jointe « {} » illisible : {e}", a.filename))
+            AppError::Invalid(msg!(
+                "smtp.attachment_unreadable",
+                "attachment “{name}” unreadable: {detail}",
+                name = a.filename,
+                detail = e
+            ))
         })?;
         total += data.len();
         if total > MAX_ATTACHMENTS_BYTES {
-            return Err(AppError::Invalid(format!(
-                "pièces jointes trop volumineuses (maximum {} Mo au total)",
-                MAX_ATTACHMENTS_BYTES / 1024 / 1024
+            return Err(AppError::Invalid(msg!(
+                "smtp.attachments_too_big",
+                "attachments too large (maximum {max} MB in total)",
+                max = MAX_ATTACHMENTS_BYTES / 1024 / 1024
             )));
         }
         let ct = header::ContentType::parse(&a.mime_type)
@@ -90,12 +98,18 @@ fn attachment_parts(list: &[OutgoingAttachment]) -> Result<Vec<SinglePart>> {
 }
 
 fn smtp_err(e: impl std::fmt::Display) -> AppError {
-    AppError::Smtp(e.to_string())
+    AppError::Smtp((e.to_string()).into())
 }
 
 fn mailbox(s: &str) -> Result<Mailbox> {
-    s.parse()
-        .map_err(|e| AppError::Invalid(format!("adresse invalide « {s} » : {e}")))
+    s.parse().map_err(|e| {
+        AppError::Invalid(msg!(
+            "address.invalid_named",
+            "invalid address “{address}”: {detail}",
+            address = s,
+            detail = e
+        ))
+    })
 }
 
 fn bracket(id: &str) -> String {
@@ -142,7 +156,10 @@ fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Messag
             .map(str::trim)
             .filter(|i| !i.is_empty() && i.len() <= MAX_DRAFT_ID)
             .ok_or_else(|| {
-                AppError::Invalid("identifiant de brouillon manquant ou trop long".into())
+                AppError::Invalid(msg!(
+                    "draft.id_invalid",
+                    "draft identifier missing or too long"
+                ))
             })?;
         b = b.keep_bcc().header(DraftId(id.to_string()));
         if out.to.is_empty() && out.cc.is_empty() && out.bcc.is_empty() {
@@ -152,9 +169,10 @@ fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Messag
             );
         }
     } else if out.to.is_empty() {
-        return Err(AppError::Invalid(
-            "au moins un destinataire est requis".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "smtp.no_recipient",
+            "at least one recipient is required"
+        )));
     }
     for a in &out.to {
         b = b.to(mailbox(a)?);
@@ -207,9 +225,10 @@ fn transport(account: &Account, cred: &Credential) -> Result<AsyncSmtpTransport<
         }
         // Le mot de passe partirait en clair : refusé (comme pour IMAP).
         Security::None => {
-            return Err(AppError::Invalid(
-                "SMTP : connexion non chiffrée refusée (choisissez TLS ou STARTTLS)".into(),
-            ))
+            return Err(AppError::Invalid(msg!(
+                "smtp.unencrypted",
+                "SMTP: unencrypted connection refused (choose TLS or STARTTLS)"
+            )))
         }
     }
     .port(account.smtp_port as u16);
@@ -245,9 +264,10 @@ pub async fn test(account: &Account, cred: &Credential) -> Result<()> {
     if ok {
         Ok(())
     } else {
-        Err(AppError::Smtp(
-            "le serveur SMTP n'a pas répondu positivement".into(),
-        ))
+        Err(AppError::Smtp(msg!(
+            "smtp.not_accepted",
+            "the SMTP server did not reply positively"
+        )))
     }
 }
 

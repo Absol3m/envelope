@@ -22,7 +22,13 @@ pub fn client_config() -> Result<Arc<ClientConfig>> {
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
     let cfg = ClientConfig::builder()
         .with_platform_verifier()
-        .map_err(|e| AppError::Invalid(format!("vérification des certificats indisponible : {e}")))?
+        .map_err(|e| {
+            AppError::Invalid(msg!(
+                "tls.verifier_unavailable",
+                "certificate verification unavailable: {detail}",
+                detail = e
+            ))
+        })?
         .with_no_client_auth();
     Ok(CFG.get_or_init(|| Arc::new(cfg)).clone())
 }

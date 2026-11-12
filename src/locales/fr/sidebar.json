@@ -48,5 +48,7 @@
   "installing": "Installation…",
   "install": "Installer et redémarrer",
   "installVersion": "Installer Envelope {{version}} et redémarrer",
-  "manageAccounts": "Gérer les comptes…"
+  "manageAccounts": "Gérer les comptes…",
+  "exportPickTitle": "Choisir le dossier où écrire les fichiers .eml",
+  "mboxFilter": "Boîte mbox"
 }

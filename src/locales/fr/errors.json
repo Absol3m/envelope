@@ -1,4 +1,171 @@
 {
+  "rust": {
+    "lock": {
+      "not_locked": "L'application n'est pas verrouillée",
+      "timeout_too_long": "Délai trop long (24 h au plus)",
+      "none_configured": "Aucun verrouillage n'est configuré",
+      "too_many_attempts": "Trop d'essais : réessayez dans {{seconds}} s",
+      "wrong_password": "Mot de passe incorrect",
+      "method_inactive": "Cette méthode de verrouillage n'est pas active",
+      "no_native_choose_password": "Pas d'authentification native sur ce système : choisissez un mot de passe",
+      "choose_password": "Choisissez un mot de passe",
+      "password_length": "Le mot de passe doit faire de {{min}} à {{max}} caractères",
+      "hash_failed": "Échec du calcul de l'empreinte : {{detail}}",
+      "no_password_saved": "Aucun mot de passe enregistré",
+      "hash_unreadable": "Empreinte illisible : {{detail}}",
+      "setting_unreadable": "Réglage de verrouillage illisible : « {{value}} »",
+      "system_unavailable": "Authentification du système indisponible",
+      "timeout": "Délai dépassé",
+      "interrupted": "Authentification interrompue",
+      "no_native": "Pas d'authentification native sur ce système",
+      "locked": "L'application est verrouillée"
+    },
+    "account": {
+      "not_oauth": "Ce compte n'utilise pas OAuth2",
+      "signature_too_long": "Signature trop longue (2000 caractères)",
+      "no_known_servers": "Fournisseur sans serveurs connus : {{domain}}"
+    },
+    "oauth": {
+      "empty_client_id": "Identifiant client vide",
+      "unknown_provider": "Fournisseur OAuth2 inconnu : {{provider}}",
+      "client_not_configured": "Identifiant client {{provider}} non configuré (onglet Comptes)",
+      "wrong_account": "Le compte autorisé dans le navigateur est {{authorized}}, pas {{expected}} : recommencez en choisissant le bon compte",
+      "timeout": "Délai dépassé : autorisation non terminée dans le navigateur",
+      "token_refused": "Échange de jeton refusé ({{status}}) : {{body}}",
+      "expired": "Autorisation expirée ou révoquée : reconnectez le compte (Google expire les jetons après 7 jours tant que l'application est en mode « Test »)",
+      "no_refresh_token": "Pas de refresh_token : reconnectez le compte"
+    },
+    "not_found": {
+      "message": "Message introuvable : {{id}}",
+      "thread": "Conversation introuvable : {{id}}",
+      "folder": "Dossier introuvable : {{id}}",
+      "account": "Compte introuvable : {{id}}",
+      "no_draft": "Aucun brouillon dans cette conversation",
+      "draft_not_downloaded": "Le brouillon n'est pas encore téléchargé : réessayez dans un instant",
+      "attachment_missing": "Pièce jointe absente du message",
+      "attachment": "Pièce jointe introuvable : {{id}}",
+      "raw_unavailable": "Message brut indisponible",
+      "server_message": "Message {{uid}} introuvable sur le serveur",
+      "thread_in_folder": "Conversation introuvable dans ce dossier",
+      "conversation": "Conversation introuvable",
+      "rule": "Règle introuvable",
+      "no_update": "Aucune mise à jour disponible"
+    },
+    "import": {
+      "source_expired": "Source d'import expirée : choisissez-la de nouveau"
+    },
+    "export": {
+      "destination_expired": "Destination d'export expirée : choisissez-la de nouveau",
+      "exists": "{{path}} existe déjà"
+    },
+    "attachment": {
+      "outside_folder": "Pièce jointe hors du dossier autorisé"
+    },
+    "keychain": {
+      "interrupted": "Accès au trousseau interrompu : {{detail}}"
+    },
+    "identity": {
+      "name_too_long": "Nom trop long (100 caractères)",
+      "exists": "Cette adresse existe déjà pour ce compte",
+      "unknown_sender": "Adresse d'expéditeur inconnue : {{address}}"
+    },
+    "address": {
+      "invalid": "Adresse invalide : {{email}}",
+      "invalid_named": "Adresse invalide « {{address}} » : {{detail}}"
+    },
+    "local": {
+      "cannot_delete": "Le stockage local ne peut pas être supprimé : il contient des mails archivés",
+      "invalid_name": "Nom de dossier invalide (1 à {{max}} caractères, sans « / »)",
+      "not_local": "Ce n'est pas un dossier local",
+      "folder_exists": "Le dossier « {{name}} » existe déjà",
+      "folder_not_empty_one": "Ce dossier contient {{count}} message : videz-le d'abord",
+      "folder_not_empty_other": "Ce dossier contient {{count}} messages : videz-le d'abord",
+      "already_local": "Cette conversation est déjà stockée en local",
+      "unreadable_cancelled": "Message illisible : archivage annulé",
+      "copy_unverified": "Copie locale non vérifiée : archivage annulé",
+      "copied_not_deleted": "Copié en local mais pas supprimé du serveur : {{detail}}",
+      "nothing_to_delete": "Rien à supprimer dans ce dossier"
+    },
+    "actions": {
+      "nothing_to_delete": "Rien à supprimer : seuls les messages de la corbeille ou du spam le peuvent",
+      "already_in_folder": "La conversation est déjà dans ce dossier",
+      "only_trash_spam": "Seuls la corbeille et le spam peuvent être vidés"
+    },
+    "draft": {
+      "id_missing": "Identifiant de brouillon manquant",
+      "not_in_folder": "Brouillon déposé mais introuvable dans le dossier",
+      "unreadable": "Brouillon illisible",
+      "id_invalid": "Identifiant de brouillon manquant ou trop long"
+    },
+    "imap": {
+      "unencrypted": "IMAP : connexion non chiffrée refusée (choisissez TLS ou STARTTLS)",
+      "timeout": "Délai de connexion dépassé : {{host}}",
+      "invalid_host": "Hôte invalide : {{detail}}",
+      "starttls_refused": "Le serveur refuse STARTTLS : {{detail}}",
+      "refused": "Connexion IMAP refusée : {{detail}}"
+    },
+    "ingest": {
+      "raw_hash_required": "Pièce jointe volumineuse sans message brut : `raw_hash` est obligatoire",
+      "raw_unreadable": "Message brut illisible"
+    },
+    "mbox": {
+      "not_a_folder": "Ce n'est pas un dossier"
+    },
+    "rawstore": {
+      "invalid_hash": "Empreinte de message invalide"
+    },
+    "smtp": {
+      "too_many_attachments": "Trop de pièces jointes (maximum {{max}})",
+      "attachment_unreadable": "Pièce jointe « {{name}} » illisible : {{detail}}",
+      "attachments_too_big": "Pièces jointes trop volumineuses (maximum {{max}} Mo au total)",
+      "no_recipient": "Au moins un destinataire est requis",
+      "unencrypted": "SMTP : connexion non chiffrée refusée (choisissez TLS ou STARTTLS)",
+      "not_accepted": "Le serveur SMTP n'a pas répondu positivement"
+    },
+    "unsubscribe": {
+      "unsupported": "Ce message ne propose pas de désabonnement automatique",
+      "refused_link": "Lien de désabonnement refusé",
+      "server_refused": "Le serveur a refusé le désabonnement ({{status}})"
+    },
+    "reminders": {
+      "future": "L'échéance doit être dans le futur"
+    },
+    "rules": {
+      "too_many": "Trop de règles ({{max}} au plus)",
+      "name_invalid": "Nom de règle vide ou trop long",
+      "condition_invalid": "Condition vide ou trop longue",
+      "action_required": "Une règle doit avoir au moins une action"
+    },
+    "scheduled": {
+      "time_future": "L'heure d'envoi doit être dans le futur",
+      "too_many": "Trop d'envois programmés ({{max}} au plus)",
+      "too_big": "Message trop volumineux pour être programmé",
+      "unreadable": "Message programmé illisible : {{detail}}",
+      "not_found": "Envoi introuvable, ou déjà en cours",
+      "missed": "L'application n'était pas ouverte à l'heure prévue : envoyez-le maintenant ou modifiez-le.",
+      "interrupted": "Envoi interrompu : vérifiez le dossier Envoyés avant de le renvoyer."
+    },
+    "templates": {
+      "name_length": "Nom de modèle : 1 à {{max}} caractères",
+      "too_long": "Modèle trop long"
+    },
+    "tls": {
+      "verifier_unavailable": "Vérification des certificats indisponible : {{detail}}"
+    },
+    "update": {
+      "failed": "Mise à jour : {{detail}}"
+    },
+    "lib": {
+      "database": "Base de données : {{detail}}",
+      "migration": "Migration : {{detail}}",
+      "io": "Entrée/sortie : {{detail}}",
+      "tauri": "Tauri : {{detail}}",
+      "imap": "IMAP : {{detail}}",
+      "keychain": "Trousseau : {{detail}}",
+      "network": "Réseau : {{detail}}",
+      "json": "JSON : {{detail}}"
+    }
+  },
   "load": "Chargement impossible",
   "action": "Action impossible",
   "start": "Démarrage impossible",

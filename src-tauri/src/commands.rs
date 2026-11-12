@@ -73,9 +73,10 @@ pub async fn reset_app(
     lock: State<'_, crate::lock::Lock>,
 ) -> Result<()> {
     if !lock.is_locked() {
-        return Err(AppError::Invalid(
-            "l'application n'est pas verrouillée".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "lock.not_locked",
+            "the application is not locked"
+        )));
     }
     for a in account::list(&state.db).await? {
         state.sync.stop(&a.id);
@@ -111,7 +112,10 @@ pub async fn set_lock(
     current_password: Option<String>,
 ) -> Result<crate::lock::Status> {
     if timeout_secs > 24 * 3600 {
-        return Err(AppError::Invalid("délai trop long (24 h au plus)".into()));
+        return Err(AppError::Invalid(msg!(
+            "lock.timeout_too_long",
+            "timeout too long (24 h at most)"
+        )));
     }
     let next = crate::lock::Config {
         method,
@@ -202,7 +206,7 @@ async fn authorize_in_browser(
     let auth = oauth::authorize(provider, |url| {
         app.opener()
             .open_url(url, None::<&str>)
-            .map_err(|e| AppError::Auth(e.to_string()))
+            .map_err(|e| AppError::Auth((e.to_string()).into()))
     })
     .await?;
     oauth::check_authorized_email(auth.email.as_deref(), email)?;
@@ -217,8 +221,9 @@ pub async fn reconnect_oauth_account(
     id: String,
 ) -> Result<()> {
     let acc = account::get(&state.db, &id).await?;
-    let provider = OAuthProvider::parse(&acc.provider)
-        .ok_or_else(|| AppError::Invalid("ce compte n'utilise pas OAuth2".into()))?;
+    let provider = OAuthProvider::parse(&acc.provider).ok_or_else(|| {
+        AppError::Invalid(msg!("account.not_oauth", "this account doesn't use OAuth2"))
+    })?;
     let tokens = authorize_in_browser(&app, provider, &acc.email).await?;
     let secret_id = id.clone();
     account::blocking_keychain(move || account::store_oauth(&secret_id, &tokens)).await?;
@@ -301,7 +306,10 @@ pub async fn set_oauth_client(
 ) -> Result<()> {
     let client_id = client_id.trim().to_string();
     if client_id.is_empty() {
-        return Err(AppError::Invalid("identifiant client vide".into()));
+        return Err(AppError::Invalid(msg!(
+            "oauth.empty_client_id",
+            "client ID is empty"
+        )));
     }
     let client_secret = client_secret
         .map(|s| s.trim().to_string())
@@ -344,8 +352,13 @@ pub async fn unsubscribe(state: State<'_, AppState>, message_id: i64) -> Result<
     .bind(message_id)
     .fetch_optional(&state.db)
     .await?;
-    let (account_id, url, mailto, one_click) =
-        row.ok_or_else(|| AppError::NotFound(format!("message {message_id}")))?;
+    let (account_id, url, mailto, one_click) = row.ok_or_else(|| {
+        AppError::NotFound(msg!(
+            "not_found.message",
+            "message not found: {id}",
+            id = message_id
+        ))
+    })?;
     let acct = account::get(&state.db, &account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
     let u = envelope_core::thread::Unsubscribe {
@@ -364,9 +377,10 @@ pub async fn set_account_signature(
 ) -> Result<()> {
     // Texte brut, borné : la signature est insérée telle quelle dans le corps des messages.
     if signature.chars().count() > 2000 {
-        return Err(AppError::Invalid(
-            "signature trop longue (2000 caractères)".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "account.signature_too_long",
+            "signature too long (2000 characters)"
+        )));
     }
     account::set_signature(&state.db, &account_id, signature.trim_end()).await
 }
@@ -650,7 +664,13 @@ pub async fn list_threads(
 pub async fn get_thread_detail(state: State<'_, AppState>, thread_id: i64) -> Result<ThreadDetail> {
     thread::get_thread_detail(&state.db, thread_id)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("conversation {thread_id}")))
+        .ok_or_else(|| {
+            AppError::NotFound(msg!(
+                "not_found.thread",
+                "conversation not found: {id}",
+                id = thread_id
+            ))
+        })
 }
 
 /// Actions : le verrou sérialise les connexions IMAP (des raccourcis enchaînés ne doivent pas
@@ -793,12 +813,10 @@ pub struct ImportSource {
 pub async fn import_pick(
     app: AppHandle,
     state: State<'_, AppState>,
+    title: String, // texte de la boîte de dialogue, traduit par l'interface
 ) -> Result<Option<ImportSource>> {
     use tauri_plugin_dialog::DialogExt;
-    let mut dialog = app
-        .dialog()
-        .file()
-        .set_title("Choisir le dossier à importer");
+    let mut dialog = app.dialog().file().set_title(title);
     if let Some(dir) = thunderbird_dir(&app) {
         dialog = dialog.set_directory(dir);
     }
@@ -807,7 +825,7 @@ pub async fn import_pick(
     };
     let path = picked
         .into_path()
-        .map_err(|e| AppError::Invalid(e.to_string()))?;
+        .map_err(|e| AppError::Invalid((e.to_string()).into()))?;
     let folders = mbox::discover(&path).await?;
     Ok(Some(ImportSource {
         token: state.picks.remember(path.clone()),
@@ -827,7 +845,10 @@ pub async fn import_run(
 ) -> Result<mbox::Report> {
     use tauri::Emitter;
     let path = state.picks.get(&token).ok_or_else(|| {
-        AppError::Invalid("source d'import expirée : choisissez-la de nouveau".into())
+        AppError::Invalid(msg!(
+            "import.source_expired",
+            "import source expired: choose it again"
+        ))
     })?;
     // Pas de verrou global : un import long ne doit pas bloquer les autres actions.
     let keys: std::collections::HashSet<String> = keys.into_iter().collect();
@@ -855,6 +876,8 @@ pub async fn export_pick(
     state: State<'_, AppState>,
     format: export::Format,
     default_name: String,
+    title: String, // textes de la boîte de dialogue, traduits par l'interface
+    filter_name: String,
 ) -> Result<Option<String>> {
     use tauri_plugin_dialog::DialogExt;
     let picked = match format {
@@ -862,20 +885,16 @@ pub async fn export_pick(
             .dialog()
             .file()
             .set_file_name(export::slug(&default_name) + ".mbox")
-            .add_filter("Boîte mbox", &["mbox"])
+            .add_filter(filter_name, &["mbox"])
             .blocking_save_file(),
-        export::Format::Eml => app
-            .dialog()
-            .file()
-            .set_title("Choisir le dossier où écrire les fichiers .eml")
-            .blocking_pick_folder(),
+        export::Format::Eml => app.dialog().file().set_title(title).blocking_pick_folder(),
     };
     let Some(picked) = picked else {
         return Ok(None);
     };
     let path = picked
         .into_path()
-        .map_err(|e| AppError::Invalid(e.to_string()))?;
+        .map_err(|e| AppError::Invalid((e.to_string()).into()))?;
     Ok(Some(state.picks.remember(path)))
 }
 
@@ -891,7 +910,10 @@ pub async fn export_folder(
 ) -> Result<export::Report> {
     use tauri::Emitter;
     let chosen = state.picks.get(&token).ok_or_else(|| {
-        AppError::Invalid("destination d'export expirée : choisissez-la de nouveau".into())
+        AppError::Invalid(msg!(
+            "export.destination_expired",
+            "export destination expired: choose it again"
+        ))
     })?;
     let emit = move |p: export::Progress| {
         let _ = app.emit("export:progress", p);
@@ -905,7 +927,13 @@ pub async fn export_folder(
                 .bind(folder_id)
                 .fetch_optional(&state.db)
                 .await?
-                .ok_or_else(|| AppError::NotFound(format!("dossier {folder_id}")))?;
+                .ok_or_else(|| {
+                    AppError::NotFound(msg!(
+                        "not_found.folder",
+                        "folder not found: {id}",
+                        id = folder_id
+                    ))
+                })?;
             export::export_eml(
                 &state.db,
                 &state.raw_dir,
@@ -972,9 +1000,10 @@ async fn attachment_path(state: &AppState, attachment_id: i64) -> Result<std::pa
     let path = tokio::fs::canonicalize(path).await?;
     let root = tokio::fs::canonicalize(&state.attachments_dir).await?;
     if !path.starts_with(&root) {
-        return Err(AppError::Invalid(
-            "pièce jointe hors du dossier autorisé".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "attachment.outside_folder",
+            "attachment outside the allowed folder"
+        )));
     }
     // Sous Windows, `canonicalize` produit un chemin `\\?\C:\…` que certaines applications
     // associées refusent : on le rend sous sa forme habituelle (sans effet ailleurs).
@@ -990,7 +1019,7 @@ pub async fn open_attachment(
     let path = attachment_path(&state, attachment_id).await?;
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
-        .map_err(|e| AppError::Invalid(e.to_string()))
+        .map_err(|e| AppError::Invalid((e.to_string()).into()))
 }
 
 /// Images « inline » d'un message (`cid:`), en data URLs, pour l'affichage hors-ligne.

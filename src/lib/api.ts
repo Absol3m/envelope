@@ -1,4 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { toBackendError } from "./backendError";
+import { t } from "./i18n";
+
+/** Appel IPC : une erreur du moteur est levée en `BackendError`, dont le texte est traduit dans la langue active. */
+const invoke = <T>(command: string, args?: Record<string, unknown>): Promise<T> => tauriInvoke<T>(command, args).catch((e: unknown) => { throw toBackendError(e); });
 import { ask } from "@tauri-apps/plugin-dialog";
 import type { ServerDestination } from "./views";
 
@@ -370,9 +375,9 @@ export const tauriBackend: Backend = {
   moveThread: (threadId, folderId, to) => invoke("move_thread", { threadId, folderId, to }),
   deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
   archiveLocal: (threadId, folderId, localFolderId) => invoke("archive_local", { threadId, folderId, localFolderId }),
-  importPick: () => invoke("import_pick"),
+  importPick: () => invoke("import_pick", { title: t("import:pickTitle") }),
   importRun: (token, keys) => invoke("import_run", { token, keys }),
-  exportPick: (format, defaultName) => invoke("export_pick", { format, defaultName }),
+  exportPick: (format, defaultName) => invoke("export_pick", { format, defaultName, title: t("sidebar:exportPickTitle"), filterName: t("sidebar:mboxFilter") }),
   exportFolder: (folderId, format, token) => invoke("export_folder", { folderId, format, token }),
   createLocalFolder: (name) => invoke("create_local_folder", { name }),
   renameLocalFolder: (folderId, name) => invoke("rename_local_folder", { folderId, name }),

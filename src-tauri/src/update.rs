@@ -11,7 +11,7 @@ use tauri_plugin_updater::UpdaterExt;
 use crate::error::{AppError, Result};
 
 fn failed(e: tauri_plugin_updater::Error) -> AppError {
-    AppError::Invalid(format!("mise à jour : {e}"))
+    AppError::Invalid(msg!("update.failed", "update: {detail}", detail = e))
 }
 
 async fn find(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>> {
@@ -30,7 +30,7 @@ pub async fn check_update(app: AppHandle) -> Result<Option<String>> {
 pub async fn install_update(app: AppHandle) -> Result<()> {
     let update = find(&app)
         .await?
-        .ok_or_else(|| AppError::NotFound("aucune mise à jour disponible".into()))?;
+        .ok_or_else(|| AppError::NotFound(msg!("not_found.no_update", "no update available")))?;
     update
         .download_and_install(|_, _| {}, || {})
         .await

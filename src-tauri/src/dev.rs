@@ -47,7 +47,7 @@ const SEEDS: &[Seed] = &[
 ];
 
 fn invalid(e: impl std::fmt::Display) -> AppError {
-    AppError::Invalid(e.to_string())
+    AppError::Invalid((e.to_string()).into())
 }
 
 fn build(seed: &Seed, to: &Mailbox) -> Result<Vec<u8>> {
@@ -98,7 +98,7 @@ pub async fn seed_inbox(db_path: &Path, email: &str) -> Result<usize> {
         .bind(email)
         .fetch_optional(&pool)
         .await?
-        .ok_or_else(|| AppError::NotFound(format!("compte {email}")))?;
+        .ok_or_else(|| AppError::NotFound((format!("compte {email}")).into()))?;
     let acct = account::get(&pool, &id).await?;
     let cred = account::resolve_credential(&acct).await?;
     let mut session = imap::connect(&acct, &cred).await?;
@@ -358,7 +358,7 @@ pub async fn archive_local_by_subject(data_dir: &Path, subject: &str) -> Result<
     .bind(envelope_core::search::like_contains(subject))
     .fetch_optional(&pool)
     .await?
-    .ok_or_else(|| AppError::NotFound(format!("aucun message « {subject} » dans la boîte de réception")))?;
+    .ok_or_else(|| AppError::NotFound((format!("aucun message « {subject} » dans la boîte de réception")).into()))?;
     let target: i64 =
         sqlx::query_scalar("SELECT id FROM folders WHERE account_id = ? AND name = 'Archives'")
             .bind(account::LOCAL_ID)

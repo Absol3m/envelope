@@ -29,8 +29,10 @@ fn clean_name(name: &str) -> Result<String> {
         || name.chars().any(char::is_control)
         || name.contains('/')
     {
-        return Err(AppError::Invalid(format!(
-            "nom de dossier invalide (1 à {MAX_NAME} caractères, sans « / »)"
+        return Err(AppError::Invalid(msg!(
+            "local.invalid_name",
+            "invalid folder name (1 to {max} characters, without “/”)",
+            max = MAX_NAME
         )));
     }
     Ok(name.to_string())
@@ -43,8 +45,15 @@ async fn ensure_local_folder(pool: &SqlitePool, folder_id: i64) -> Result<()> {
         .await?;
     match account.as_deref() {
         Some(LOCAL_ID) => Ok(()),
-        Some(_) => Err(AppError::Invalid("ce n'est pas un dossier local".into())),
-        None => Err(AppError::NotFound(format!("dossier {folder_id}"))),
+        Some(_) => Err(AppError::Invalid(msg!(
+            "local.not_local",
+            "this is not a local folder"
+        ))),
+        None => Err(AppError::NotFound(msg!(
+            "not_found.folder",
+            "folder not found: {id}",
+            id = folder_id
+        ))),
     }
 }
 
@@ -63,8 +72,10 @@ async fn name_taken(pool: &SqlitePool, name: &str, except: Option<i64>) -> Resul
 pub async fn create_folder(pool: &SqlitePool, name: &str) -> Result<i64> {
     let name = clean_name(name)?;
     if name_taken(pool, &name, None).await? {
-        return Err(AppError::Invalid(format!(
-            "le dossier « {name} » existe déjà"
+        return Err(AppError::Invalid(msg!(
+            "local.folder_exists",
+            "the folder “{name}” already exists",
+            name = name
         )));
     }
     Ok(sqlx::query("INSERT INTO folders (account_id, path, name, role, delimiter) VALUES (?1, ?2, ?2, NULL, '/')")
@@ -110,8 +121,10 @@ pub async fn rename_folder(pool: &SqlitePool, folder_id: i64, name: &str) -> Res
     ensure_local_folder(pool, folder_id).await?;
     let name = clean_name(name)?;
     if name_taken(pool, &name, Some(folder_id)).await? {
-        return Err(AppError::Invalid(format!(
-            "le dossier « {name} » existe déjà"
+        return Err(AppError::Invalid(msg!(
+            "local.folder_exists",
+            "the folder “{name}” already exists",
+            name = name
         )));
     }
     sqlx::query("UPDATE folders SET name = ?1, path = ?1 WHERE id = ?2")
@@ -130,9 +143,10 @@ pub async fn delete_folder(pool: &SqlitePool, folder_id: i64) -> Result<()> {
         .fetch_one(pool)
         .await?;
     if n > 0 {
-        return Err(AppError::Invalid(format!(
-            "ce dossier contient {n} message{} : videz-le d'abord",
-            if n > 1 { "s" } else { "" }
+        return Err(AppError::Invalid(msg!(
+            "local.folder_not_empty",
+            "this folder contains {count} messages: empty it first",
+            count = n
         )));
     }
     sqlx::query("DELETE FROM folders WHERE id = ?")
@@ -192,9 +206,10 @@ async fn fetch_missing_raw(pool: &SqlitePool, raw_dir: &Path, rows: &mut [Source
     }
     // Un message introuvable sur le serveur n'est pas archivable : on s'arrête avant d'écrire.
     if let Some(r) = rows.iter().find(|r| no_raw(r)) {
-        return Err(AppError::NotFound(format!(
-            "message {} introuvable sur le serveur",
-            r.uid
+        return Err(AppError::NotFound(msg!(
+            "not_found.server_message",
+            "message {uid} not found on the server",
+            uid = r.uid
         )));
     }
     Ok(())
@@ -231,21 +246,24 @@ pub async fn copy_to_local(
     .fetch_all(pool)
     .await?;
     if sources.is_empty() {
-        return Err(AppError::NotFound(
-            "conversation introuvable dans ce dossier".into(),
-        ));
+        return Err(AppError::NotFound(msg!(
+            "not_found.thread_in_folder",
+            "conversation not found in this folder"
+        )));
     }
     if sources.iter().any(|s| s.account_id == LOCAL_ID) {
-        return Err(AppError::Invalid(
-            "cette conversation est déjà stockée en local".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "local.already_local",
+            "this conversation is already stored locally"
+        )));
     }
     fetch_missing_raw(pool, raw_dir, &mut sources).await?;
 
     let mut new_threads = HashSet::new();
     for s in &sources {
-        let hash = rawstore::usable(s.raw_hash.as_deref())
-            .ok_or_else(|| AppError::NotFound("message brut indisponible".into()))?;
+        let hash = rawstore::usable(s.raw_hash.as_deref()).ok_or_else(|| {
+            AppError::NotFound(msg!("not_found.raw_unavailable", "raw message unavailable"))
+        })?;
         // Rien à lire ni à analyser si la copie existe déjà (rejeu idempotent).
         if !ingest::has_raw(pool, to_folder, hash).await? {
             let raw = rawstore::get(raw_dir, hash).await?;
@@ -253,8 +271,12 @@ pub async fn copy_to_local(
                 .ok()
                 .map(|d| d.timestamp());
             // Pièces jointes extraites à la demande : inutile de les copier en mémoire.
-            let parsed = ingest::parse_with(&raw, fallback, false)
-                .ok_or_else(|| AppError::Invalid("message illisible : archivage annulé".into()))?;
+            let parsed = ingest::parse_with(&raw, fallback, false).ok_or_else(|| {
+                AppError::Invalid(msg!(
+                    "local.unreadable_cancelled",
+                    "unreadable message: archiving cancelled"
+                ))
+            })?;
             let tid = ingest::store_with(
                 pool,
                 attachments_dir,
@@ -280,9 +302,10 @@ pub async fn copy_to_local(
         // Relecture : la copie est en base et le brut est bien sur le disque (sans le relire en entier).
         if !ingest::has_raw(pool, to_folder, hash).await? || !rawstore::exists(raw_dir, hash).await
         {
-            return Err(AppError::Invalid(
-                "copie locale non vérifiée : archivage annulé".into(),
-            ));
+            return Err(AppError::Invalid(msg!(
+                "local.copy_unverified",
+                "local copy not verified: archiving cancelled"
+            )));
         }
     }
     Ok(Copied {
@@ -332,7 +355,11 @@ pub async fn archive(
             actions::delete_on_server(&mut session, path, uids)
                 .await
                 .map_err(|e| {
-                    AppError::Invalid(format!("copié en local mais pas supprimé du serveur : {e}"))
+                    AppError::Invalid(msg!(
+                        "local.copied_not_deleted",
+                        "copied locally but not deleted from the server: {detail}",
+                        detail = e
+                    ))
                 })?;
         }
         let _ = session.logout().await;
@@ -365,9 +392,10 @@ pub async fn move_within(
     ensure_local_folder(pool, from_folder).await?;
     ensure_local_folder(pool, to_folder).await?;
     if from_folder == to_folder {
-        return Err(AppError::Invalid(
-            "la conversation est déjà dans ce dossier".into(),
-        ));
+        return Err(AppError::Invalid(msg!(
+            "actions.already_in_folder",
+            "the conversation is already in this folder"
+        )));
     }
     let ids: Vec<i64> = sqlx::query_scalar(
         "SELECT id FROM messages WHERE thread_id = ? AND folder_id = ? ORDER BY uid",
@@ -400,9 +428,10 @@ pub async fn delete_messages(pool: &SqlitePool, thread_id: i64, folder_id: i64) 
         .execute(pool)
         .await?;
     if done.rows_affected() == 0 {
-        return Err(AppError::NotFound(
-            "rien à supprimer dans ce dossier".into(),
-        ));
+        return Err(AppError::NotFound(msg!(
+            "local.nothing_to_delete",
+            "nothing to delete in this folder"
+        )));
     }
     ingest::refresh_threads(pool, &HashSet::from([thread_id])).await?;
     ingest::refresh_folder_unread(pool, folder_id).await
@@ -506,11 +535,11 @@ mod tests {
         copy_to_local(&pool, &base.join("att"), &base.join("raw"), t, inbox, id)
             .await
             .unwrap();
-        assert!(delete_folder(&pool, id)
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("videz-le"));
+        let err = delete_folder(&pool, id).await.unwrap_err();
+        assert!(
+            matches!(&err, AppError::Invalid(m) if m.code == "local.folder_not_empty"),
+            "{err}"
+        );
         let local_thread: i64 =
             sqlx::query_scalar("SELECT thread_id FROM messages WHERE folder_id = ?")
                 .bind(id)
