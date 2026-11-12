@@ -1,0 +1,18 @@
+{
+  "google": {
+    "steps": {
+      "1": "Sur console.cloud.google.com, créez un projet (nom libre).",
+      "2": "API et services › Bibliothèque : activez « Gmail API ».",
+      "3": "Écran de consentement OAuth : type « Externe », ajoutez votre adresse comme utilisateur test, puis « Publier l'application » (sinon l'autorisation expire au bout de 7 jours).",
+      "4": "Identifiants › Créer des identifiants › ID client OAuth › « Application de bureau », puis copiez l'ID et le code secret ci-dessous."
+    }
+  },
+  "microsoft": {
+    "steps": {
+      "1": "Sur portal.azure.com › Microsoft Entra ID › Inscriptions d'applications, créez une application (comptes personnels inclus).",
+      "2": "Authentification › Ajouter une plateforme › « Applications mobiles et de bureau », URI de redirection http://127.0.0.1 ; activez « Autoriser les flux clients publics ».",
+      "3": "Autorisations d'API : ajoutez IMAP.AccessAsUser.All, SMTP.Send et offline_access (Office 365 Exchange Online).",
+      "4": "Copiez l'« ID d'application (client) » ci-dessous."
+    }
+  }
+}

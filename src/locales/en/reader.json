@@ -46,5 +46,6 @@
   "selectOne": "Select a conversation",
   "shortcutsHint": "Shortcuts are there if you want them:",
   "reading": "Reading",
-  "selectAll": "Select all"
+  "selectAll": "Select all",
+  "noText": "(message without text)"
 }

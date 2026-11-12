@@ -46,5 +46,6 @@
   "selectOne": "Sélectionnez une conversation",
   "shortcutsHint": "Les raccourcis sont là si vous les voulez :",
   "reading": "Lecture",
-  "selectAll": "Tout sélectionner"
+  "selectAll": "Tout sélectionner",
+  "noText": "(message sans texte)"
 }

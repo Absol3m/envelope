@@ -1,0 +1,18 @@
+{
+  "google": {
+    "steps": {
+      "1": "On console.cloud.google.com, create a project (any name).",
+      "2": "APIs & Services › Library: enable “Gmail API”.",
+      "3": "OAuth consent screen: type “External”, add your address as a test user, then “Publish app” (otherwise the authorization expires after 7 days).",
+      "4": "Credentials › Create credentials › OAuth client ID › “Desktop app”, then copy the ID and the secret below."
+    }
+  },
+  "microsoft": {
+    "steps": {
+      "1": "On portal.azure.com › Microsoft Entra ID › App registrations, create an application (personal accounts included).",
+      "2": "Authentication › Add a platform › “Mobile and desktop applications”, redirect URI http://127.0.0.1; turn on “Allow public client flows”.",
+      "3": "API permissions: add IMAP.AccessAsUser.All, SMTP.Send and offline_access (Office 365 Exchange Online).",
+      "4": "Copy the “Application (client) ID” below."
+    }
+  }
+}

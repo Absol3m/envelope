@@ -1,0 +1,26 @@
+{
+  "sources": {
+    "builtin": "fournisseur connu",
+    "autoconfig": "configuration du fournisseur",
+    "ispdb": "base Mozilla (ISPDB)",
+    "mx": "fournisseur d'hébergement du domaine",
+    "guess": "supposés"
+  },
+  "server": "Serveur {{label}}",
+  "encryption": "Chiffrement {{label}}",
+  "port": "Port {{label}}",
+  "email": "Adresse e-mail",
+  "detecting": "Détection des serveurs…",
+  "notFound": "Serveurs introuvables automatiquement : vérifiez-les ci-dessous.",
+  "detected": "Serveurs détectés ({{source}}) : {{host}}",
+  "createApp": "Une seule fois : créez votre application {{label}}",
+  "noTwoFactor": "Sans double authentification : vous vous connectez dans le navigateur, avec votre mot de passe habituel.",
+  "clientId": "ID client",
+  "clientSecret": "Code secret du client",
+  "signIn": "Se connecter avec {{label}}",
+  "saveAndSignIn": "Enregistrer et se connecter avec {{label}}",
+  "appPassword": "Mot de passe d'application",
+  "changeClient": "Changer l'identifiant client",
+  "passwordOrApp": "Mot de passe (ou mot de passe d'application)",
+  "connect": "Se connecter"
+}

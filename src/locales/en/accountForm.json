@@ -1,0 +1,26 @@
+{
+  "sources": {
+    "builtin": "known provider",
+    "autoconfig": "provider configuration",
+    "ispdb": "Mozilla database (ISPDB)",
+    "mx": "domain's hosting provider",
+    "guess": "guessed"
+  },
+  "server": "{{label}} server",
+  "encryption": "{{label}} encryption",
+  "port": "{{label}} port",
+  "email": "Email address",
+  "detecting": "Detecting servers…",
+  "notFound": "Couldn't find the servers automatically: check them below.",
+  "detected": "Servers detected ({{source}}): {{host}}",
+  "createApp": "Just once: create your {{label}} application",
+  "noTwoFactor": "No two-step verification needed: you sign in in the browser with your usual password.",
+  "clientId": "Client ID",
+  "clientSecret": "Client secret",
+  "signIn": "Sign in with {{label}}",
+  "saveAndSignIn": "Save and sign in with {{label}}",
+  "appPassword": "App password",
+  "changeClient": "Change the client ID",
+  "passwordOrApp": "Password (or app password)",
+  "connect": "Sign in"
+}

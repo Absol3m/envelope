@@ -216,7 +216,7 @@ export function Sidebar() {
               ))}
               <Dropdown.Separator className="my-1 h-px bg-border" />
               <Dropdown.Item onSelect={() => openSettings("accounts")} className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-muted outline-none data-[highlighted]:bg-hover data-[highlighted]:text-fg">
-                <Settings size={14} /> Gérer les comptes…
+                <Settings size={14} /> {t("sidebar:manageAccounts")}
               </Dropdown.Item>
             </Dropdown.Content>
           </Dropdown.Portal>

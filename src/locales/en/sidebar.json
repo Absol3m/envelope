@@ -47,5 +47,6 @@
   "updateAvailable": "Envelope {{version}} is available",
   "installing": "Installing…",
   "install": "Install and restart",
-  "installVersion": "Install Envelope {{version}} and restart"
+  "installVersion": "Install Envelope {{version}} and restart",
+  "manageAccounts": "Manage accounts…"
 }

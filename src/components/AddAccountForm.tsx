@@ -6,14 +6,9 @@ import { OAUTH_INFO } from "@/lib/providers";
 import { useMail } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { btnGhost, btnPrimary, inputCls, Spinner } from "./ui/primitives";
+import { t as tr } from "@/lib/i18n";
 
-const SOURCES: Record<Detected["source"], string> = {
-  builtin: "fournisseur connu",
-  autoconfig: "configuration du fournisseur",
-  ispdb: "base Mozilla (ISPDB)",
-  mx: "fournisseur d'hébergement du domaine",
-  guess: "supposés",
-};
+const sourceLabel = (source: Detected["source"]) => tr(`accountForm:sources.${source}`);
 type Sec = "tls" | "starttls";
 /** Ports usuels selon le chiffrement : TLS implicite (993 / 465) ou STARTTLS (143 / 587). */
 const PORTS = { imap: { tls: 993, starttls: 143 }, smtp: { tls: 465, starttls: 587 } } as const;
@@ -23,12 +18,12 @@ const server = (host: string, port: string, security: Sec): ServerConfig => ({ h
 function ServerRow({ kind, label, value, onChange, field }: { kind: "imap" | "smtp"; label: string; value: { host: string; security: Sec; port: string }; onChange(v: { host: string; security: Sec; port: string }): void; field: string }) {
   return (
     <div className="flex gap-2">
-      <input className={cn(field, "min-w-0 flex-1")} autoComplete="off" spellCheck={false} placeholder={`Serveur ${label}`} value={value.host} onChange={(e) => onChange({ ...value, host: e.target.value })} />
-      <select aria-label={`Chiffrement ${label}`} className={cn(field, "w-[104px] shrink-0 px-2")} value={value.security} onChange={(e) => { const security = e.target.value as Sec; onChange({ ...value, security, port: String(PORTS[kind][security]) }); }}>
+      <input className={cn(field, "min-w-0 flex-1")} autoComplete="off" spellCheck={false} placeholder={tr("accountForm:server", { label })} value={value.host} onChange={(e) => onChange({ ...value, host: e.target.value })} />
+      <select aria-label={tr("accountForm:encryption", { label })} className={cn(field, "w-[104px] shrink-0 px-2")} value={value.security} onChange={(e) => { const security = e.target.value as Sec; onChange({ ...value, security, port: String(PORTS[kind][security]) }); }}>
         <option value="tls">TLS</option>
         <option value="starttls">STARTTLS</option>
       </select>
-      <input aria-label={`Port ${label}`} className={cn(field, "w-[68px] shrink-0 px-2 text-center")} inputMode="numeric" value={value.port} onChange={(e) => onChange({ ...value, port: e.target.value.replace(/\D/g, "").slice(0, 5) })} />
+      <input aria-label={tr("accountForm:port", { label })} className={cn(field, "w-[68px] shrink-0 px-2 text-center")} inputMode="numeric" value={value.port} onChange={(e) => onChange({ ...value, port: e.target.value.replace(/\D/g, "").slice(0, 5) })} />
     </div>
   );
 }
@@ -122,15 +117,15 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
         else void addWithPassword();
       }}
     >
-      <input className={field} type="email" autoFocus={large} autoComplete="off" placeholder="Adresse e-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
+      <input className={field} type="email" autoFocus={large} autoComplete="off" placeholder={tr("accountForm:email")} value={email} onChange={(e) => setEmail(e.target.value)} />
 
-      {detecting && <p className="flex items-center gap-2 text-[12px] text-fg-muted"><Spinner /> Détection des serveurs…</p>}
+      {detecting && <p className="flex items-center gap-2 text-[12px] text-fg-muted"><Spinner /> {tr("accountForm:detecting")}</p>}
 
       {detected && !detecting && (
         <p className="selectable text-[12px] text-fg-muted">
           {guessed
-            ? "Serveurs introuvables automatiquement : vérifie-les ci-dessous."
-            : `Serveurs détectés (${SOURCES[detected.source]}) : ${detected.imap.host}`}
+            ? tr("accountForm:notFound")
+            : tr("accountForm:detected", { source: sourceLabel(detected.source), host: detected.imap.host })}
         </p>
       )}
 
@@ -138,22 +133,22 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
         <>
           {!configured && (
             <div className="space-y-2 rounded-lg bg-black/[0.03] p-3 text-[12.5px] leading-relaxed text-fg-muted dark:bg-white/[0.05]">
-              <p className="font-medium text-fg">Une seule fois : crée ton application {info.label}</p>
-              <p>Sans double authentification : tu te connectes dans le navigateur, avec ton mot de passe habituel.</p>
+              <p className="font-medium text-fg">{tr("accountForm:createApp", { label: info.label })}</p>
+              <p>{tr("accountForm:noTwoFactor")}</p>
               <ol className="selectable list-decimal space-y-1 pl-4">{info.steps.map((s) => <li key={s}>{s}</li>)}</ol>
-              <input className={field} autoComplete="off" spellCheck={false} placeholder="ID client" value={client.id} onChange={(e) => setClient({ ...client, id: e.target.value })} />
-              {info.needsSecret && <input className={field} type="password" autoComplete="off" placeholder="Code secret du client" value={client.secret} onChange={(e) => setClient({ ...client, secret: e.target.value })} />}
+              <input className={field} autoComplete="off" spellCheck={false} placeholder={tr("accountForm:clientId")} value={client.id} onChange={(e) => setClient({ ...client, id: e.target.value })} />
+              {info.needsSecret && <input className={field} type="password" autoComplete="off" placeholder={tr("accountForm:clientSecret")} value={client.secret} onChange={(e) => setClient({ ...client, secret: e.target.value })} />}
             </div>
           )}
           <button className={wide} disabled={busy || (!configured && !client.id.trim())}>
             {busy && <Spinner />}
-            {configured ? `Se connecter avec ${info.label}` : `Enregistrer et se connecter avec ${info.label}`}
+            {configured ? tr("accountForm:signIn", { label: info.label }) : tr("accountForm:saveAndSignIn", { label: info.label })}
           </button>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className={btnGhost} onClick={() => setForcePassword(true)}>Mot de passe d'application</button>
+            <button type="button" className={btnGhost} onClick={() => setForcePassword(true)}>{tr("accountForm:appPassword")}</button>
             {configured && (
               <button type="button" className={btnGhost} disabled={busy} onClick={() => void backend.clearOAuthClient(provider).then(() => setStatus((s) => ({ ...s, [provider]: false })))}>
-                Changer l'identifiant client
+                {tr("accountForm:changeClient")}
               </button>
             )}
           </div>
@@ -166,10 +161,10 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
               <ServerRow kind="smtp" label="SMTP" value={smtpSrv} onChange={setSmtpSrv} field={field} />
             </div>
           )}
-          <input className={field} type="password" autoComplete="off" placeholder="Mot de passe (ou mot de passe d'application)" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input className={field} type="password" autoComplete="off" placeholder={tr("accountForm:passwordOrApp")} value={password} onChange={(e) => setPassword(e.target.value)} />
           <button className={wide} disabled={busy || detecting || !detected || !password || (guessed && (!imapSrv.host.trim() || !smtpSrv.host.trim() || !Number(imapSrv.port) || !Number(smtpSrv.port)))}>
             {busy && <Spinner />}
-            {large ? "Se connecter" : "Ajouter"}
+            {large ? tr("accountForm:connect") : tr("settings:add")}
           </button>
         </>
       )}

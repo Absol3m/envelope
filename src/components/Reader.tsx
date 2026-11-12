@@ -188,7 +188,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
       <button onClick={onToggle} className="press flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-hover" aria-expanded={false}>
         <Avatar name={m.fromName} address={m.fromAddr} size={28} />
         <span className="w-32 shrink-0 truncate text-[13px] font-medium">{sender}</span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{preview || "(message sans texte)"}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{preview || tr("reader:noText")}</span>
         {files.length > 0 && <Paperclip size={13} className="shrink-0 text-faint" />}
         <span className="tnum shrink-0 text-[12px] text-muted">{listDate(m.date)}</span>
       </button>

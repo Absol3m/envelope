@@ -1,0 +1,48 @@
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+/** Vérifie les fichiers de langue : mêmes clés et mêmes variables en `fr` et `en`, et aucune clé utilisée dans le code qui n'existe pas. */
+const ROOT = join(__dirname, "../../locales");
+const SRC = join(__dirname, "../..");
+
+type Tree = { [k: string]: string | Tree };
+const load = (lang: string) => Object.fromEntries(readdirSync(join(ROOT, lang)).filter((f) => f.endsWith(".json")).map((f) => [f.replace(/\.json$/, ""), JSON.parse(readFileSync(join(ROOT, lang, f), "utf8")) as Tree]));
+const flatten = (t: Tree, prefix = ""): Record<string, string> => Object.entries(t).reduce<Record<string, string>>((acc, [k, v]) => (typeof v === "string" ? { ...acc, [prefix + k]: v } : { ...acc, ...flatten(v, `${prefix}${k}.`) }), {});
+const vars = (s: string) => [...s.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((m) => m[1]).sort();
+/** Un pluriel i18next s'écrit `clé_one` / `clé_other` : la clé « logique » est sans le suffixe. */
+const base = (k: string) => k.replace(/_(zero|one|two|few|many|other)$/, "");
+
+const en = load("en");
+const fr = load("fr");
+const flat = (all: Record<string, Tree>) => Object.fromEntries(Object.entries(all).flatMap(([ns, t]) => Object.entries(flatten(t)).map(([k, v]) => [`${ns}:${k}`, v])));
+const enKeys = flat(en);
+const frKeys = flat(fr);
+
+describe("fichiers de langue", () => {
+  it("mêmes espaces de noms et mêmes clés en français et en anglais", () => {
+    expect(Object.keys(fr).sort()).toEqual(Object.keys(en).sort());
+    const logical = (m: Record<string, string>) => [...new Set(Object.keys(m).map(base))].sort();
+    expect(logical(frKeys)).toEqual(logical(enKeys));
+  });
+  it("mêmes variables d'interpolation dans chaque langue", () => {
+    const diffs = Object.keys(frKeys).filter((k) => enKeys[k] !== undefined && vars(frKeys[k]).join() !== vars(enKeys[k]).join());
+    // `count` peut manquer d'un côté d'un pluriel (« une seule conversation ») : on compare hors `count`.
+    const real = diffs.filter((k) => vars(frKeys[k]).filter((v) => v !== "count").join() !== vars(enKeys[k]).filter((v) => v !== "count").join());
+    expect(real).toEqual([]);
+  });
+  it("aucune valeur vide", () => {
+    expect(Object.entries({ ...enKeys, ...frKeys }).filter(([, v]) => v.trim() === "").map(([k]) => k)).toEqual([]);
+  });
+  it("chaque clé écrite en toutes lettres dans le code existe", () => {
+    const files: string[] = [];
+    const walk = (d: string) => readdirSync(d).forEach((n) => { const p = join(d, n); if (n === "__tests__" || n === "locales") return; statSync(p).isDirectory() ? walk(p) : /\.(tsx?|ts)$/.test(n) && files.push(p); });
+    walk(SRC);
+    const known = new Set(Object.keys(enKeys).map(base));
+    const missing: string[] = [];
+    for (const f of files) {
+      for (const m of readFileSync(f, "utf8").matchAll(/\b(?:tr|t)\(\s*["'`]([a-z][A-Za-z]*):([A-Za-z0-9_.-]+)["'`]/g)) if (!known.has(`${m[1]}:${m[2]}`)) missing.push(`${f.replace(SRC, "src")} → ${m[1]}:${m[2]}`);
+    }
+    expect(missing).toEqual([]);
+  });
+});

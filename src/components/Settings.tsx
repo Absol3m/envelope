@@ -71,7 +71,7 @@ function CopyButton({ text, label = "Copier" }: { text: string; label?: string }
       className="press inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-muted hover:bg-active hover:text-fg"
     >
       {done ? <Check size={13} className="text-success" /> : <Copy size={13} />}
-      {done ? "Copié" : label}
+      {done ? tr("settings:copied") : label}
     </button>
   );
 }

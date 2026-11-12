@@ -146,5 +146,6 @@
     "checkNow": "Rechercher maintenant",
     "install": "Installer {{version}} et redémarrer",
     "upToDate": "Envelope est à jour (vérifié {{when}})"
-  }
+  },
+  "copied": "Copié"
 }
