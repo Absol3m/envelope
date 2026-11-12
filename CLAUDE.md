@@ -4,7 +4,7 @@
 - Dev : `pnpm tauri dev` · Front : `pnpm build` (tsc + vite) · Tests front : `pnpm test` (vitest)
 - Aperçu navigateur sans Tauri : `pnpm dev` → boîte de démonstration (`src/lib/mock.ts`) ; en dev, `?theme=dark&thread=2&settings=agent&palette=1` pour des captures reproductibles.
 - Rust (dans src-tauri/) : `cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` · dépendances : `cargo deny check` (src-tauri/) + `pnpm audit --prod`
-- Mesure de la liste (DOM, mémoire JS, défilement) : `pnpm dev --port 5199` puis `node scripts/bench-list.mjs 10000` (Edge ; mode `?bench=N`, voir `src/dev.ts`). Perf du moteur : `cargo run --release --example seed_local -- <db> 20000` (avec `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`).
+- Mesure de la liste (DOM, mémoire JS, défilement) : `pnpm dev --port 5199` puis `node scripts/bench-list.mjs 10000` (Edge ; mode `?bench=N`, voir `src/dev.ts`). Démarrage et mémoire de l'app construite (macOS) : `pnpm tauri build --bundles app` puis `scripts/bench-startup.sh <Envelope.app> <base.db>`. Perf du moteur : `cargo run --release --example seed_local -- <db> 20000` (avec `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`).
 - Serveur MCP : `cargo run -p envelope-mcp -- --db <chemin>` (stdio ; lecture seule)
 
 ## Workflow
