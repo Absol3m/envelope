@@ -1,6 +1,6 @@
 [package]
 name = "envelope"
-version = "0.1.0"
+version.workspace = true
 license = "AGPL-3.0-or-later"
 description = "Client mail desktop ultra-rapide avec serveur MCP intégré"
 edition = "2021"
@@ -9,6 +9,11 @@ rust-version = "1.80"
 [workspace]
 members = [".", "crates/envelope-core", "crates/envelope-mcp", "crates/envelope-appearance"]
 default-members = ["."]
+
+# Version unique des crates ; même valeur que package.json (que tauri.conf.json reprend), vérifié par
+# scripts/check-version.sh.
+[workspace.package]
+version = "0.1.0-alpha.3"
 
 [lib]
 name = "envelope_lib"
@@ -80,6 +85,9 @@ strip = "none"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
+# Mises à jour : `latest.json` des Releases GitHub, archives vérifiées par la clé publique de tauri.conf.json
+# (indépendante des certificats Apple/Microsoft). TLS par défaut = rustls + rustls-platform-verifier (système).
+tauri-plugin-updater = "2.14"
 
 # Secrets (mots de passe / tokens OAuth2) dans le trousseau de l'OS
 [target.'cfg(target_os = "macos")'.dependencies]

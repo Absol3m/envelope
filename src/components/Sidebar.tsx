@@ -9,7 +9,8 @@ import { useMail } from "@/lib/store";
 import { DRAG_TYPE, LOCAL_ACCOUNT, parseDragIds, isDestination, NAV_MAILBOXES, NAV_SMART, sameView, type View, type NavItem as NavItemData } from "@/lib/views";
 import { cn } from "@/lib/utils";
 import { dragRegion, isMac, isWindows, SETTINGS_LABEL } from "@/lib/platform";
-import { IconButton, Spinner, Tip } from "./ui/primitives";
+import { installUpdate, useUpdate } from "@/lib/update";
+import { btnPrimary, IconButton, Spinner, Tip } from "./ui/primitives";
 
 type Icon = NavItemData["icon"];
 
@@ -257,6 +258,8 @@ export function Sidebar() {
         <LocalFolders folders={localFolders} view={view} setView={setView} moveTo={moveTo} />
       </nav>
 
+      <UpdateBanner />
+
       <div className="flex items-center gap-1 border-t border-border px-2.5 py-2 max-[1100px]:flex-col">
         <div className="min-w-0 flex-1 px-1 text-[11px] text-muted max-[1100px]:hidden">
           {backend.demo ? (
@@ -288,5 +291,29 @@ export function Sidebar() {
         </IconButton>
       </div>
     </aside>
+  );
+}
+
+/** Nouvelle version publiée (vérification : lib/update.ts) : installation en un clic, puis redémarrage. */
+function UpdateBanner() {
+  const { available, status, error } = useUpdate(useShallow((s) => ({ available: s.available, status: s.status, error: s.error })));
+  if (!available) return null;
+  const installing = status === "installing";
+  const install = () => void installUpdate();
+  return (
+    <>
+      <div className="mx-2.5 mb-2 rounded-lg bg-accent-soft px-3 py-2 text-[12px] max-[1100px]:hidden">
+        <p className="font-medium text-accent">Envelope {available} est disponible</p>
+        {error && <p className="mt-0.5 text-danger">{error}</p>}
+        <button disabled={installing} onClick={install} className={cn(btnPrimary, "mt-1.5 h-7 gap-1.5 rounded-md px-2.5 text-[12px] shadow-none")}>
+          {installing ? <><Spinner size={11} /> Installation…</> : <><Download size={13} /> Installer et redémarrer</>}
+        </button>
+      </div>
+      <div className="mb-1 hidden justify-center max-[1100px]:flex">
+        <IconButton label={error ?? `Installer Envelope ${available} et redémarrer`} tooltipSide="right" disabled={installing} onClick={install} className="text-accent">
+          {installing ? <Spinner size={13} /> : <Download size={15} />}
+        </IconButton>
+      </div>
+    </>
   );
 }
