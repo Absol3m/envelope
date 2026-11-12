@@ -237,6 +237,20 @@ export interface LockStatus {
 
 export type DiskEncryption = "on" | "off" | "unknown";
 
+export type RuleMove = "archive" | "trash" | "junk";
+/** Règle locale : condition en syntaxe de recherche (`de:`, `objet:`, `pj`…), appliquée aux nouveaux messages reçus. */
+export interface Rule {
+  /** 0 à la création. */
+  id: number;
+  name: string;
+  enabled: boolean;
+  /** `null` : tous les comptes. */
+  accountId: string | null;
+  query: string;
+  markRead: boolean;
+  star: boolean;
+  moveTo: RuleMove | null;
+}
 export interface Template {
   id: number;
   name: string;
@@ -299,6 +313,12 @@ export interface Backend {
   sendScheduledNow(id: number): Promise<void>;
   addIdentity(accountId: string, name: string, email: string): Promise<void>;
   removeIdentity(id: number): Promise<void>;
+  listRules(): Promise<Rule[]>;
+  /** Crée (`id` 0) ou remplace la règle ; rend son identifiant. */
+  saveRule(rule: Rule): Promise<number>;
+  deleteRule(id: number): Promise<void>;
+  /** Applique les règles aux conversations récentes de la boîte de réception ayant du courrier non lu ; rend le nombre de conversations traitées. */
+  runRulesNow(): Promise<number>;
   listTemplates(): Promise<Template[]>;
   /** Un modèle du même nom est remplacé. */
   saveTemplate(template: Omit<Template, "id">): Promise<Template>;
@@ -384,6 +404,10 @@ export const tauriBackend: Backend = {
   sendScheduledNow: (id) => invoke("send_scheduled_now", { id }),
   addIdentity: (accountId, name, email) => invoke("add_identity", { accountId, name, email }),
   removeIdentity: (id) => invoke("remove_identity", { id }),
+  listRules: () => invoke("list_rules"),
+  saveRule: (rule) => invoke("save_rule", { rule }),
+  deleteRule: (id) => invoke("delete_rule", { id }),
+  runRulesNow: () => invoke("run_rules_now"),
   listTemplates: () => invoke("list_templates"),
   saveTemplate: (template) => invoke("save_template", { template }),
   deleteTemplate: (id) => invoke("delete_template", { id }),

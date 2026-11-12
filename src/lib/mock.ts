@@ -1,4 +1,4 @@
-import type { Account, Backend, ReminderKind, Detected, SendReport, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, ReminderKind, Rule, Detected, SendReport, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
@@ -33,6 +33,8 @@ interface MockThread {
   attachments: DetailAttachment[];
   reminder?: { kind: ReminderKind; due: number; fired?: number };
 }
+
+const RULES: Rule[] = [{ id: 1, name: "Newsletters", enabled: true, accountId: null, query: "de:newsletter", markRead: true, star: false, moveTo: "archive" }];
 
 let nextMsg = 1;
 let nextAtt = 1;
@@ -329,6 +331,20 @@ export const demoBackend: Backend = {
     for (const a of ACCOUNTS) a.identities = a.identities.filter((i) => i.id !== id);
     return delay(undefined, 40);
   },
+  listRules: () => delay(structuredClone(RULES), 40),
+  saveRule: (r) => {
+    if (!r.name.trim() || !r.query.trim()) return Promise.reject(new Error("nom et condition requis"));
+    const id = r.id || Math.max(0, ...RULES.map((x) => x.id)) + 1;
+    const i = RULES.findIndex((x) => x.id === id);
+    if (i >= 0) RULES[i] = { ...r, id }; else RULES.push({ ...r, id });
+    return delay(id, 60);
+  },
+  deleteRule: (id) => {
+    const i = RULES.findIndex((x) => x.id === id);
+    if (i >= 0) RULES.splice(i, 1);
+    return delay(undefined, 40);
+  },
+  runRulesNow: () => delay(0, 200),
   listTemplates: () => delay([...TEMPLATES].sort((a, b) => a.name.localeCompare(b.name)), 40),
   saveTemplate: (t) => {
     const i = TEMPLATES.findIndex((x) => x.name.toLowerCase() === t.name.trim().toLowerCase());

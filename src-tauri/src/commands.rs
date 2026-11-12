@@ -19,6 +19,7 @@ use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
 use crate::reminders;
+use crate::rules;
 use crate::scheduled;
 use crate::templates::{self, Template};
 use crate::AppState;
@@ -488,6 +489,28 @@ pub async fn schedule_send(
     let acct = account::get(&state.db, &account_id).await?;
     smtp::build_message(&acct, &message)?;
     scheduled::add(&state.db, &account_id, send_at, &message).await
+}
+
+#[tauri::command]
+pub async fn list_rules(state: State<'_, AppState>) -> Result<Vec<rules::Rule>> {
+    rules::list(&state.db).await
+}
+
+#[tauri::command]
+pub async fn save_rule(state: State<'_, AppState>, rule: rules::Rule) -> Result<i64> {
+    rules::save(&state.db, &rule).await
+}
+
+#[tauri::command]
+pub async fn delete_rule(state: State<'_, AppState>, id: i64) -> Result<()> {
+    rules::delete(&state.db, id).await
+}
+
+/// Applique les règles aux conversations récentes de la boîte de réception ayant du courrier non lu ; rend le nombre
+/// de conversations traitées.
+#[tauri::command]
+pub async fn run_rules_now(state: State<'_, AppState>) -> Result<usize> {
+    rules::run_recent(&state.db, &state.actions).await
 }
 
 #[tauri::command]

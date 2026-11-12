@@ -1,5 +1,5 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Bot, Check, Copy, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
+import { Bot, Check, Filter, Copy, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { type Account, type LockMethod, type McpInfo } from "@/lib/api";
 import { senderLabel } from "@/lib/compose";
@@ -13,11 +13,13 @@ import type { ColorsPref, ThemePref } from "@/lib/theme";
 import { cn, errText } from "@/lib/utils";
 import { ShortcutList } from "./Shortcuts";
 import { AddAccountForm } from "./AddAccountForm";
+import { RulesPanel } from "./RulesPanel";
 import { isMac, isWindows, SETTINGS_LABEL } from "@/lib/platform";
 import { Avatar, btnPrimary, IconButton, inputCls } from "./ui/primitives";
 
 const TABS: { id: SettingsTab; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { id: "accounts", label: "Comptes", icon: UserRound },
+  { id: "rules", label: "Règles", icon: Filter },
   { id: "security", label: "Sécurité", icon: ShieldCheck },
   { id: "agent", label: "Agent IA (MCP)", icon: Bot },
   { id: "appearance", label: "Apparence", icon: Palette },
@@ -499,6 +501,7 @@ export function Settings() {
             <Dialog.Close asChild><IconButton label="Fermer" className="absolute right-3 top-3"><X size={16} /></IconButton></Dialog.Close>
             <h2 className="mb-5 text-[18px] font-semibold tracking-tight">{TABS.find((t) => t.id === settingsTab)?.label}</h2>
             {settingsTab === "accounts" && <AccountsPanel />}
+            {settingsTab === "rules" && <RulesPanel />}
             {settingsTab === "security" && <LockSection />}
             {settingsTab === "agent" && <AgentPanel />}
             {settingsTab === "appearance" && <AppearancePanel />}

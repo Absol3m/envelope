@@ -78,6 +78,9 @@ struct SyncedEvent {
 struct FreshMail {
     from: String,
     subject: String,
+    /// Conversation du message (non transmise à l'interface) : sert aux règles.
+    #[serde(skip)]
+    thread_id: i64,
 }
 
 /// Nombre maximal d'aperçus joints à un événement de synchro.
@@ -223,6 +226,20 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
             .await?;
         }
         ingest::refresh_threads(&ctx.pool, &touched).await?;
+        // Règles locales sur les nouveaux messages ; ceux qu'une règle a traités ne sont pas notifiés.
+        if !fresh.is_empty() {
+            let ids: Vec<i64> = fresh
+                .iter()
+                .map(|f| f.thread_id)
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
+            let state = ctx.app.state::<crate::AppState>();
+            match crate::rules::apply(&ctx.pool, &state.actions, &ctx.account_id, &ids).await {
+                Ok(handled) => fresh.retain(|f| !handled.contains(&f.thread_id)),
+                Err(e) => tracing::warn!("règles : {e}"),
+            }
+        }
         if full {
             last_full = Instant::now();
         }
@@ -512,6 +529,7 @@ async fn sync_folder(
                 fresh.push(FreshMail {
                     from: stored.from,
                     subject: stored.subject,
+                    thread_id: stored.thread_id,
                 });
             }
             let tid = stored.thread_id;

@@ -16,6 +16,7 @@ mod mcp;
 mod picks;
 mod private;
 mod reminders;
+mod rules;
 mod scheduled;
 mod templates;
 mod tls;
@@ -182,6 +183,10 @@ pub fn run() {
             commands::remove_account,
             commands::set_account_signature,
             commands::schedule_send,
+            commands::list_rules,
+            commands::save_rule,
+            commands::delete_rule,
+            commands::run_rules_now,
             commands::set_reminder,
             commands::clear_reminder,
             commands::list_scheduled,
