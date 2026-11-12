@@ -5,6 +5,7 @@
 //! trousseau de l'OS). Repli pour le développement : variables d'environnement
 //!   `ENVELOPE_GOOGLE_CLIENT_ID` (+ `ENVELOPE_GOOGLE_CLIENT_SECRET`) et `ENVELOPE_MICROSOFT_CLIENT_ID`.
 
+use std::borrow::Cow;
 use std::time::Duration;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -24,8 +25,8 @@ pub enum OAuthProvider {
 }
 
 struct ProviderConfig {
-    auth_url: &'static str,
-    token_url: &'static str,
+    auth_url: Cow<'static, str>,
+    token_url: Cow<'static, str>,
     scope: &'static str,
     extra_auth_params: &'static [(&'static str, &'static str)],
     client_id_env: &'static str,
@@ -50,17 +51,17 @@ impl OAuthProvider {
     fn config(self) -> ProviderConfig {
         match self {
             Self::Google => ProviderConfig {
-                auth_url: "https://accounts.google.com/o/oauth2/v2/auth",
-                token_url: "https://oauth2.googleapis.com/token",
-                scope: "https://mail.google.com/",
+                auth_url: "https://accounts.google.com/o/oauth2/v2/auth".into(),
+                token_url: "https://oauth2.googleapis.com/token".into(),
+                scope: "https://mail.google.com/ openid email",
                 extra_auth_params: &[("access_type", "offline"), ("prompt", "consent")],
                 client_id_env: "ENVELOPE_GOOGLE_CLIENT_ID",
                 client_secret_env: Some("ENVELOPE_GOOGLE_CLIENT_SECRET"),
             },
             Self::Microsoft => ProviderConfig {
-                auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-                token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-                scope: "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access",
+                auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize".into(),
+                token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token".into(),
+                scope: "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access openid email profile",
                 extra_auth_params: &[("prompt", "select_account")],
                 client_id_env: "ENVELOPE_MICROSOFT_CLIENT_ID",
                 client_secret_env: None,
@@ -126,6 +127,36 @@ struct TokenResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: Option<i64>,
+    id_token: Option<String>,
+}
+
+/// Adresse du compte autorisé d'après l'`id_token` (OIDC) : reçu directement du point de terminaison de jetons
+/// par TLS, sa signature n'a pas à être vérifiée (OIDC Core §3.1.3.7) et on n'en tire qu'une comparaison, jamais
+/// une autorisation. `None` si le fournisseur n'en renvoie pas.
+fn id_token_email(id_token: &str) -> Option<String> {
+    let payload = URL_SAFE_NO_PAD.decode(id_token.split('.').nth(1)?).ok()?;
+    let claims: serde_json::Value = serde_json::from_slice(&payload).ok()?;
+    ["email", "preferred_username"]
+        .iter()
+        .find_map(|k| claims.get(k)?.as_str())
+        .filter(|e| e.contains('@'))
+        .map(str::to_owned)
+}
+
+/// Refuse un compte autorisé dans le navigateur qui n'est pas celui saisi (sans effet si le fournisseur ne dit rien).
+pub fn check_authorized_email(authorized: Option<&str>, expected: &str) -> Result<()> {
+    match authorized {
+        Some(a) if !a.eq_ignore_ascii_case(expected) => Err(AppError::Auth(format!(
+            "le compte autorisé dans le navigateur est {a}, pas {expected} : recommencez en choisissant le bon compte"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// Résultat d'une autorisation : jetons et, si le fournisseur l'indique, l'adresse du compte autorisé.
+pub struct Authorized {
+    pub tokens: OAuthTokens,
+    pub email: Option<String>,
 }
 
 fn now() -> i64 {
@@ -144,9 +175,17 @@ fn random_token() -> String {
 pub async fn authorize(
     provider: OAuthProvider,
     open_browser: impl FnOnce(&str) -> Result<()>,
-) -> Result<OAuthTokens> {
-    let cfg = provider.config();
+) -> Result<Authorized> {
     let client = account::blocking_keychain(move || provider.client()).await?;
+    authorize_with(&provider.config(), &client, open_browser).await
+}
+
+/// Le flux lui-même, indépendant du fournisseur (les points de terminaison viennent de `cfg`).
+async fn authorize_with(
+    cfg: &ProviderConfig,
+    client: &ClientCreds,
+    open_browser: impl FnOnce(&str) -> Result<()>,
+) -> Result<Authorized> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let redirect_uri = format!("http://127.0.0.1:{}", listener.local_addr()?.port());
 
@@ -164,7 +203,7 @@ pub async fn authorize(
         ("code_challenge_method", "S256"),
     ];
     params.extend_from_slice(cfg.extra_auth_params);
-    let url = reqwest::Url::parse_with_params(cfg.auth_url, &params)
+    let url = reqwest::Url::parse_with_params(&cfg.auth_url, &params)
         .map_err(|e| AppError::Auth(e.to_string()))?;
     open_browser(url.as_str())?;
 
@@ -184,11 +223,14 @@ pub async fn authorize(
         ("code_verifier", verifier),
     ];
     form.extend(client.form_fields());
-    let resp = token_request(cfg.token_url, &form).await?;
-    Ok(OAuthTokens {
-        access_token: resp.access_token,
-        refresh_token: resp.refresh_token,
-        expires_at: now() + resp.expires_in.unwrap_or(3600),
+    let resp = token_request(&cfg.token_url, &form).await?;
+    Ok(Authorized {
+        email: resp.id_token.as_deref().and_then(id_token_email),
+        tokens: OAuthTokens {
+            access_token: resp.access_token,
+            refresh_token: resp.refresh_token,
+            expires_at: now() + resp.expires_in.unwrap_or(3600),
+        },
     })
 }
 
@@ -291,6 +333,18 @@ fn explain_refresh_error(e: AppError) -> AppError {
     }
 }
 
+/// Corps de la demande de rafraîchissement. Pas de `scope` : il vaut par défaut celui accordé à l'origine
+/// (RFC 6749 §6) ; en renvoyer un plus large que celui d'un compte connecté avant l'ajout d'`openid` ferait
+/// refuser le rafraîchissement (`invalid_scope`).
+fn refresh_form(refresh_token: &str, client: &ClientCreds) -> Vec<(&'static str, String)> {
+    let mut form = vec![
+        ("grant_type", "refresh_token".to_string()),
+        ("refresh_token", refresh_token.to_string()),
+    ];
+    form.extend(client.form_fields());
+    form
+}
+
 /// Jeton d'accès valide pour un compte : rafraîchit et persiste s'il expire dans < 60 s.
 pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Result<String> {
     let _guard = refresh_lock().lock().await; // évite deux rafraîchissements concurrents
@@ -302,20 +356,13 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
     let refresh = tokens
         .refresh_token
         .ok_or_else(|| AppError::Auth("pas de refresh_token : reconnectez le compte".into()))?;
-    let cfg = provider.config();
-    let mut form = vec![
-        ("grant_type", "refresh_token".to_string()),
-        ("refresh_token", refresh.clone()),
-        ("scope", cfg.scope.to_string()),
-    ];
-    form.extend(
-        account::blocking_keychain(move || provider.client())
-            .await?
-            .form_fields(),
-    );
-    let resp = token_request(cfg.token_url, &form)
-        .await
-        .map_err(explain_refresh_error)?;
+    let client = account::blocking_keychain(move || provider.client()).await?;
+    let resp = token_request(
+        &provider.config().token_url,
+        &refresh_form(&refresh, &client),
+    )
+    .await
+    .map_err(explain_refresh_error)?;
     let new = OAuthTokens {
         access_token: resp.access_token,
         refresh_token: resp.refresh_token.or(Some(refresh)), // Google ne renvoie pas toujours le refresh_token
@@ -324,6 +371,158 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
     let (id, saved) = (account_id.to_string(), new.clone());
     account::blocking_keychain(move || account::store_oauth(&id, &saved)).await?;
     Ok(new.access_token)
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    fn token(claims: &str) -> String {
+        format!("e30.{}.sig", URL_SAFE_NO_PAD.encode(claims))
+    }
+
+    #[test]
+    fn adresse_lue_dans_l_id_token() {
+        assert_eq!(
+            id_token_email(&token(r#"{"email":"a@b.fr"}"#)).as_deref(),
+            Some("a@b.fr")
+        );
+        assert_eq!(
+            id_token_email(&token(r#"{"preferred_username":"c@d.fr"}"#)).as_deref(),
+            Some("c@d.fr")
+        );
+        assert_eq!(
+            id_token_email(&token(r#"{"preferred_username":"pas-une-adresse"}"#)),
+            None
+        );
+        assert_eq!(id_token_email("illisible"), None);
+    }
+
+    #[test]
+    fn mauvais_compte_refuse_absence_tolérée() {
+        assert!(check_authorized_email(Some("A@B.fr"), "a@b.fr").is_ok());
+        assert!(check_authorized_email(None, "a@b.fr").is_ok());
+        assert!(check_authorized_email(Some("x@y.fr"), "a@b.fr").is_err());
+    }
+}
+
+/// Flux complet contre un faux fournisseur local : navigateur simulé (ouvre l'URL d'autorisation puis suit la redirection)
+/// et point de terminaison de jetons qui renvoie un `id_token`.
+#[cfg(test)]
+mod flow_tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::TcpStream;
+
+    /// Sert une seule réponse de jetons et renvoie le corps de la requête reçue.
+    async fn fake_token_endpoint(id_token: String) -> (u16, tokio::task::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut data = Vec::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = sock.read(&mut buf).await.unwrap();
+                data.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&data).into_owned();
+                if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                    let len = head
+                        .lines()
+                        .find_map(|l| {
+                            l.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    if body.len() >= len {
+                        let json = format!(
+                            r#"{{"access_token":"at","refresh_token":"rt","expires_in":3600,"id_token":"{id_token}"}}"#
+                        );
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{json}",
+                            json.len()
+                        );
+                        sock.write_all(resp.as_bytes()).await.unwrap();
+                        return body.to_string();
+                    }
+                }
+            }
+        });
+        (port, handle)
+    }
+
+    async fn run_flow(claims: &str) -> (Authorized, String, String) {
+        let id_token = format!("e30.{}.sig", URL_SAFE_NO_PAD.encode(claims));
+        let (port, token_request_body) = fake_token_endpoint(id_token).await;
+        let cfg = ProviderConfig {
+            auth_url: "http://127.0.0.1:1/auth".into(),
+            token_url: format!("http://127.0.0.1:{port}/token").into(),
+            scope: "mail openid email",
+            extra_auth_params: &[],
+            client_id_env: "",
+            client_secret_env: None,
+        };
+        let client = ClientCreds {
+            client_id: "mon-client".into(),
+            client_secret: None,
+        };
+        let seen_url = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let seen = seen_url.clone();
+        let auth = authorize_with(&cfg, &client, move |url| {
+            *seen.lock().unwrap() = url.to_string();
+            let url = reqwest::Url::parse(url).unwrap();
+            let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+            let redirect = reqwest::Url::parse(&q["redirect_uri"]).unwrap();
+            let (redirect_port, state) = (redirect.port().unwrap(), q["state"].clone());
+            tokio::spawn(async move {
+                let mut c = TcpStream::connect(("127.0.0.1", redirect_port))
+                    .await
+                    .unwrap();
+                let req = format!("GET /?code=le-code&state={state} HTTP/1.1\r\n\r\n");
+                c.write_all(req.as_bytes()).await.unwrap();
+                let mut sink = Vec::new();
+                let _ = c.read_to_end(&mut sink).await;
+            });
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let url = seen_url.lock().unwrap().clone();
+        (auth, url, token_request_body.await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn le_flux_complet_renvoie_jetons_et_adresse_autorisee() {
+        let (auth, url, token_body) = run_flow(r#"{"email":"moi@exemple.fr"}"#).await;
+        assert_eq!(auth.tokens.access_token, "at");
+        assert_eq!(auth.tokens.refresh_token.as_deref(), Some("rt"));
+        assert_eq!(auth.email.as_deref(), Some("moi@exemple.fr"));
+        assert!(check_authorized_email(auth.email.as_deref(), "MOI@exemple.fr").is_ok());
+        assert!(check_authorized_email(auth.email.as_deref(), "autre@exemple.fr").is_err());
+        assert!(
+            url.contains("code_challenge_method=S256") && url.contains("scope=mail+openid+email")
+        );
+        assert!(
+            token_body.contains("code=le-code")
+                && token_body.contains("code_verifier=")
+                && token_body.contains("client_id=mon-client")
+        );
+    }
+
+    #[test]
+    fn le_rafraichissement_n_envoie_pas_de_scope() {
+        let client = ClientCreds {
+            client_id: "c".into(),
+            client_secret: Some("s".into()),
+        };
+        let form = refresh_form("rt", &client);
+        let keys: Vec<_> = form.iter().map(|(k, _)| *k).collect();
+        assert_eq!(
+            keys,
+            ["grant_type", "refresh_token", "client_id", "client_secret"]
+        );
+    }
 }
 
 #[cfg(test)]

@@ -179,6 +179,7 @@ pub fn run() {
             commands::list_accounts,
             commands::add_account,
             commands::add_oauth_account,
+            commands::reconnect_oauth_account,
             commands::detect_servers,
             commands::oauth_status,
             commands::set_oauth_client,

@@ -193,6 +193,39 @@ pub async fn add_account(state: State<'_, AppState>, input: NewAccount) -> Resul
     }
 }
 
+/// Autorise dans le navigateur système et vérifie que le compte choisi est bien `email`.
+async fn authorize_in_browser(
+    app: &AppHandle,
+    provider: OAuthProvider,
+    email: &str,
+) -> Result<oauth::OAuthTokens> {
+    let auth = oauth::authorize(provider, |url| {
+        app.opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| AppError::Auth(e.to_string()))
+    })
+    .await?;
+    oauth::check_authorized_email(auth.email.as_deref(), email)?;
+    Ok(auth.tokens)
+}
+
+/// Renouvelle l'autorisation d'un compte OAuth2 dont le jeton a expiré ou été révoqué.
+#[tauri::command]
+pub async fn reconnect_oauth_account(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<()> {
+    let acc = account::get(&state.db, &id).await?;
+    let provider = OAuthProvider::parse(&acc.provider)
+        .ok_or_else(|| AppError::Invalid("ce compte n'utilise pas OAuth2".into()))?;
+    let tokens = authorize_in_browser(&app, provider, &acc.email).await?;
+    let secret_id = id.clone();
+    account::blocking_keychain(move || account::store_oauth(&secret_id, &tokens)).await?;
+    state.sync.trigger(&id);
+    Ok(())
+}
+
 /// Ajoute un compte Gmail / Outlook via OAuth2 (ouvre le navigateur système).
 #[tauri::command]
 pub async fn add_oauth_account(
@@ -203,12 +236,7 @@ pub async fn add_oauth_account(
     display_name: Option<String>,
 ) -> Result<Account> {
     let email = email.trim().to_string();
-    let tokens = oauth::authorize(provider, |url| {
-        app.opener()
-            .open_url(url, None::<&str>)
-            .map_err(|e| AppError::Auth(e.to_string()))
-    })
-    .await?;
+    let tokens = authorize_in_browser(&app, provider, &email).await?;
 
     // Serveurs fixes du fournisseur choisi (le domaine de l'e-mail peut être personnalisé).
     let (imap_cfg, smtp_cfg) = account::oauth_servers(provider)?;

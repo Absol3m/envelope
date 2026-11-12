@@ -289,6 +289,8 @@ export interface Backend {
   syncNow(accountId: string): Promise<void>;
   addAccount(input: NewAccount): Promise<Account>;
   addOAuthAccount(provider: OAuthProviderId, email: string): Promise<Account>;
+  /** Renouvelle l'autorisation d'un compte OAuth2 (jeton expiré ou révoqué). */
+  reconnectOAuthAccount(accountId: string): Promise<void>;
   detectServers(email: string): Promise<Detected>;
   oauthStatus(): Promise<OAuthStatus>;
   setOAuthClient(provider: OAuthProviderId, clientId: string, clientSecret?: string): Promise<void>;
@@ -384,6 +386,7 @@ export const tauriBackend: Backend = {
   syncNow: (accountId) => invoke("sync_now", { accountId }),
   addAccount: (input) => invoke("add_account", { input }),
   addOAuthAccount: (provider, email) => invoke("add_oauth_account", { provider, email }),
+  reconnectOAuthAccount: (id) => invoke("reconnect_oauth_account", { id }),
   detectServers: (email) => invoke("detect_servers", { email }),
   oauthStatus: () => invoke("oauth_status"),
   setOAuthClient: (provider, clientId, clientSecret) => invoke("set_oauth_client", { provider, clientId, clientSecret }),

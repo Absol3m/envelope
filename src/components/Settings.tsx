@@ -193,6 +193,9 @@ function AccountsPanel() {
                   {a.syncStatus === "error" ? a.syncError ?? "Erreur de synchronisation" : a.syncStatus === "syncing" ? "Synchronisation…" : `Synchronisé ${relativeTime(a.lastSyncAt)}`}
                 </p>
               </div>
+              {a.authKind === "oauth2" && a.syncStatus === "error" && (
+                <button className={btnGhost} disabled={backend.demo} onClick={() => void backend.reconnectOAuthAccount(a.id).then(() => toast({ message: "Compte reconnecté" })).catch((e) => toast({ message: String(e) }))}>Reconnecter</button>
+              )}
               <IconButton label="Synchroniser" onClick={() => void backend.syncNow(a.id).then(() => toast({ message: "Synchronisation lancée" }))}><RefreshCw size={15} /></IconButton>
               <IconButton label="Supprimer le compte" disabled={backend.demo || removing !== null} onClick={() => void remove(a.id, a.email)}><Trash2 size={15} /></IconButton>
             </li>

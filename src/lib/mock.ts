@@ -267,6 +267,7 @@ export const demoBackend: Backend = {
   syncNow: () => delay(undefined, 600),
   addAccount: () => Promise.reject(new Error("Mode démo : l'ajout de compte est désactivé.")),
   addOAuthAccount: () => Promise.reject(new Error("Mode démo : l'ajout de compte est désactivé.")),
+  reconnectOAuthAccount: () => Promise.reject(new Error("Mode démo : la reconnexion est désactivée.")),
   detectServers: (email) => {
     const domain = email.split("@")[1]?.toLowerCase() ?? "";
     const tls = (host: string, port: number) => ({ host, port, security: "tls" as const });

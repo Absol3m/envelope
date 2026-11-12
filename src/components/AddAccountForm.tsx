@@ -88,11 +88,21 @@ export function AddAccountForm({ large = false }: { large?: boolean }) {
   };
 
   const connect = (p: OAuthProviderId) => run(async () => {
-    if (!status[p]) {
+    const stored = !status[p];
+    if (stored) {
       await backend.setOAuthClient(p, client.id, client.secret || undefined);
       setStatus((s) => ({ ...s, [p]: true }));
     }
-    await backend.addOAuthAccount(p, addr);
+    try {
+      await backend.addOAuthAccount(p, addr);
+    } catch (e) {
+      // Un identifiant client saisi pour cette tentative n'est pas gardé si elle échoue (le formulaire garde la saisie).
+      if (stored) {
+        await backend.clearOAuthClient(p).catch(() => {});
+        setStatus((s) => ({ ...s, [p]: false }));
+      }
+      throw e;
+    }
   });
 
   const addWithPassword = () => run(() => backend.addAccount({
