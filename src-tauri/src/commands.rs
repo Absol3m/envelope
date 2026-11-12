@@ -87,7 +87,7 @@ pub async fn reset_app(
     lock.reset(&state.db).await?;
     for dir in [&state.raw_dir, &state.attachments_dir] {
         let _ = tokio::fs::remove_dir_all(dir).await;
-        let _ = tokio::fs::create_dir_all(dir).await;
+        let _ = crate::private::create_dir_all(dir).await;
     }
     Ok(())
 }

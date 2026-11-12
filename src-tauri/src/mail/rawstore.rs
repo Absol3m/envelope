@@ -35,9 +35,9 @@ pub async fn put(dir: &Path, raw: &[u8]) -> Result<String> {
         return Ok(hash);
     }
     let parent = path.parent().unwrap_or(dir);
-    tokio::fs::create_dir_all(parent).await?;
+    crate::private::create_dir_all(parent).await?;
     let tmp = parent.join(format!(".{hash}.{}.tmp", uuid::Uuid::new_v4()));
-    tokio::fs::write(&tmp, raw).await?;
+    crate::private::write(&tmp, raw).await?;
     tokio::fs::rename(&tmp, &path).await?;
     Ok(hash)
 }
@@ -66,6 +66,20 @@ mod tests {
 
     fn tmp() -> PathBuf {
         std::env::temp_dir().join(format!("envelope-raw-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn message_brut_range_a_l_utilisateur_seul() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tmp();
+        let hash = put(&dir, b"From: a@b.fr\r\n\r\ncorps").await.unwrap();
+        let file = path_of(&dir, &hash).unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            (mode(&file), mode(file.parent().unwrap()), mode(&dir)),
+            (0o600, 0o700, 0o700)
+        );
     }
 
     #[tokio::test]

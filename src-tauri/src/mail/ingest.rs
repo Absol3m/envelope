@@ -434,7 +434,7 @@ pub async fn store_with(
             .join(account_id)
             .join(message_row.to_string());
         if !opts.lazy_attachments && m.attachments.iter().any(|a| !a.data.is_empty()) {
-            tokio::fs::create_dir_all(&dir).await?;
+            crate::private::create_dir_all(&dir).await?;
         }
         for (i, a) in m.attachments.iter().enumerate() {
             // Chemin NULL tant que le contenu n'est pas extrait (voir `materialize_attachment`).
@@ -443,7 +443,7 @@ pub async fn store_with(
             } else {
                 let fname = safe_filename(a.filename.as_deref().unwrap_or("attachment"));
                 let path = dir.join(format!("{i}_{fname}"));
-                tokio::fs::write(&path, &a.data).await?;
+                crate::private::write(&path, &a.data).await?;
                 Some(path.to_string_lossy().into_owned())
             };
             sqlx::query(
@@ -508,12 +508,12 @@ pub async fn materialize_attachment(
     let dir = attachments_dir
         .join(&account_id)
         .join(message_id.to_string());
-    tokio::fs::create_dir_all(&dir).await?;
+    crate::private::create_dir_all(&dir).await?;
     let path = dir.join(format!(
         "{rank}_{}",
         safe_filename(filename.as_deref().unwrap_or("attachment"))
     ));
-    tokio::fs::write(&path, &data).await?;
+    crate::private::write(&path, &data).await?;
     sqlx::query("UPDATE attachments SET storage_path = ? WHERE id = ?")
         .bind(path.to_string_lossy().as_ref())
         .bind(attachment_id)

@@ -14,6 +14,7 @@ mod lock;
 mod mail;
 mod mcp;
 mod picks;
+mod private;
 mod scheduled;
 mod templates;
 mod tls;
