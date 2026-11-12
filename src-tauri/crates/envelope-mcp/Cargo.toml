@@ -1,6 +1,6 @@
 [package]
 name = "envelope-mcp"
-version = "0.1.0"
+version.workspace = true
 license = "AGPL-3.0-or-later"
 edition = "2021"
 description = "Serveur MCP d'Envelope : SDK officiel rmcp, stdio, lecture seule de la base locale"

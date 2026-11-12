@@ -20,6 +20,8 @@ mod rules;
 mod scheduled;
 mod templates;
 mod tls;
+#[cfg(desktop)]
+mod update;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -123,7 +125,8 @@ pub fn run() {
             }
         }))
         // Taille, position et état (agrandie…) de la fenêtre retrouvés d'une session à l'autre.
-        .plugin(tauri_plugin_window_state::Builder::default().build());
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build());
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -225,6 +228,10 @@ pub fn run() {
             commands::open_attachment,
             commands::inline_images,
             commands::mcp_info,
+            #[cfg(desktop)]
+            update::check_update,
+            #[cfg(desktop)]
+            update::install_update,
         ]))
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

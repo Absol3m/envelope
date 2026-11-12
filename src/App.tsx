@@ -11,6 +11,7 @@ import { isTauri } from "@/lib/api";
 import { useAutoLock } from "@/lib/autolock";
 import { useComposer } from "@/lib/composer";
 import { notifyNewMail, type SyncedPayload } from "@/lib/notify";
+import { startUpdateChecks } from "@/lib/update";
 import { useMail } from "@/lib/store";
 import { dragRegion } from "@/lib/platform";
 
@@ -59,6 +60,7 @@ export default function App() {
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));
   }, []);
 
+  useEffect(startUpdateChecks, []);
   useAutoLock(autoLockSecs, lockEnabled && !locked);
 
   if (!ready) return <div className="h-full bg-bg" {...dragRegion} />;

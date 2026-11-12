@@ -24,3 +24,6 @@ Penser à chiffrer les sauvegardes du dossier de données. Le chiffrement de la 
 
 ## Chaîne d'approvisionnement
 Dépendances surveillées par Dependabot et par `cargo deny` (RustSec, licences, sources) / `pnpm audit` dans la CI ; actions GitHub de publication épinglées par empreinte ; fichiers de version accompagnés de `SHA256SUMS` et d'une attestation de provenance (`gh attestation verify <fichier> --repo Absol3m/envelope`).
+
+## Mises à jour automatiques
+Plugin officiel `tauri-plugin-updater`. L'application lit `latest.json` sur la Release « updater » du dépôt (HTTPS, certificats vérifiés par le système), puis n'installe une archive qu'après vérification de sa signature par la clé publique de `tauri.conf.json`. La clé privée reste au mainteneur ; en CI, seul le job de signature la reçoit (il n'exécute pas le build). Chaque signature porte la version signée (`requireSignedVersion`) : une ancienne version ne peut pas être resservie sous un numéro plus récent. Les binaires ne sont pas signés par Apple ni Microsoft pour l'instant : cette signature-là est indépendante. La vérification automatique (au démarrage puis chaque jour) contacte GitHub, qui voit l'adresse IP et la version ; elle se désactive dans Réglages → À propos.

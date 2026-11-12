@@ -9,7 +9,7 @@ import { DESTINATIONS, isEmptiableView, isInboxView, isPurgeView, LOCAL_ACCOUNT,
 
 export type { View };
 
-export type SettingsTab = "accounts" | "rules" | "security" | "agent" | "appearance" | "shortcuts";
+export type SettingsTab = "accounts" | "rules" | "security" | "agent" | "appearance" | "shortcuts" | "about";
 export type Density = "comfortable" | "compact";
 
 export interface Toast {

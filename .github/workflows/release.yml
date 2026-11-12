@@ -1,5 +1,6 @@
 # Publication : une étiquette `v*` (ex. v0.1.0-alpha.1) construit l'application pour Windows,
-# macOS (Apple Silicon) et Linux (AppImage), puis attache les fichiers à une Release GitHub.
+# macOS (Apple Silicon) et Linux (AppImage), puis attache les fichiers à une Release GitHub et
+# met à jour le canal des mises à jour automatiques (Release « updater », fichier latest.json).
 # Même méthode que AtlasIP : actions épinglées par empreinte, jeton en lecture seule pour les
 # builds (ils exécutent du code tiers : npm, cargo), écriture réservée au job de publication.
 name: Build & Release Envelope
@@ -45,14 +46,16 @@ jobs:
             os: windows-latest
             artifact: envelope-windows
             tauri_args: ''
-            paths: |
-              src-tauri/target/release/bundle/nsis/*.exe
-              src-tauri/target/release/bundle/msi/*.msi
+            # Installeur NSIS seulement (tauri.windows.conf.json) : WiX (MSI) refuse une pré-version non numérique
+            # (0.1.0-alpha.3). C'est aussi le fichier que la mise à jour automatique installe.
+            paths: src-tauri/target/release/bundle/nsis/*.exe
           - name: macOS (Apple Silicon)
             os: macos-latest
             artifact: envelope-macos-arm64
             tauri_args: ''
-            paths: src-tauri/target/release/bundle/dmg/*.dmg
+            paths: |
+              src-tauri/target/release/bundle/dmg/*.dmg
+              src-tauri/target/release/bundle/macos/*.app.tar.gz
           - name: Linux (AppImage)
             os: ubuntu-24.04
             artifact: envelope-linux
@@ -99,6 +102,14 @@ jobs:
           # Les outils d'empaquetage AppImage tournent sans FUSE (absent des runners récents).
           APPIMAGE_EXTRACT_AND_RUN: 1
 
+      # Archive que la mise à jour automatique déploie sous macOS (format de tauri-plugin-updater : le .app à la
+      # racine). Faite ici sans signature : la clé n'est confiée qu'au job « sign », qui n'exécute pas le build.
+      - name: Archive de mise à jour (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd src-tauri/target/release/bundle/macos
+          tar -czf Envelope_aarch64.app.tar.gz Envelope.app
+
       - name: Fichiers
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -106,10 +117,60 @@ jobs:
           path: ${{ matrix.paths }}
           if-no-files-found: error
 
+  # Signe les fichiers de mise à jour avec la clé du mainteneur (secret TAURI_SIGNING_PRIVATE_KEY, indépendante des
+  # certificats Apple/Microsoft) et prépare `latest.json`. Seul job à voir la clé : il n'exécute ni le build ni les
+  # dépendances du projet, seulement la CLI officielle de Tauri (version fixée), avec un jeton en lecture seule.
+  sign:
+    name: Signer les mises à jour
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout (script du manifeste)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Récupérer les fichiers
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: envelope-*
+          path: ./dist
+
+      - name: Signer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || { echo "secret TAURI_SIGNING_PRIVATE_KEY absent" >&2; exit 1; }
+          # La signature porte la version (requireSignedVersion) : une ancienne archive ne peut pas être resservie
+          # sous un numéro plus récent.
+          npm install --global --no-fund --no-audit @tauri-apps/cli@2.12.4
+          find dist -type f \( -name '*-setup.exe' -o -name '*.app.tar.gz' -o -name '*.AppImage' \) -print0 |
+            while IFS= read -r -d '' f; do
+              tauri signer sign --app-version "${GITHUB_REF_NAME#v}" "$f"
+            done
+          mkdir -p signatures updater
+          find dist -name '*.sig' -exec cp {} signatures/ \;
+          node scripts/latest-json.mjs "$GITHUB_REF_NAME" dist > updater/latest.json
+          cat updater/latest.json
+
+      - name: Signatures
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: envelope-signatures
+          path: signatures/*.sig
+          if-no-files-found: error
+
+      - name: Manifeste de mise à jour
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: updater-channel
+          path: updater/latest.json
+          if-no-files-found: error
+
   # Attache les fichiers à la Release (étiquettes seulement, pas pour un lancement manuel).
   publish:
     name: Publier la Release
-    needs: build
+    needs: [build, sign]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     permissions:
@@ -123,7 +184,14 @@ jobs:
       - name: Récupérer les fichiers
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          pattern: envelope-*
           path: ./dist
+
+      - name: Récupérer le manifeste de mise à jour
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: updater-channel
+          path: ./updater
 
       - name: Lister les fichiers
         run: find ./dist -type f | sort
@@ -150,3 +218,17 @@ jobs:
           generate_release_notes: true
           body_path: .github/release-notes.md
           files: ./dist/**
+
+      # Canal lu par les installations (plugins.updater.endpoints de tauri.conf.json) : une Release fixe dont
+      # `latest.json` est remplacé à chaque publication. L'adresse « latest » de GitHub ne convient pas : elle ignore
+      # les pré-versions. Publié en dernier, une fois la Release de la version complète.
+      - name: Canal de mise à jour
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: updater
+          name: Canal de mise à jour (ne pas supprimer)
+          body: Fichier lu par Envelope pour proposer les mises à jour. Les installeurs sont dans les Releases des versions.
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: ./updater/latest.json

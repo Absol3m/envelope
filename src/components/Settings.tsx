@@ -1,12 +1,13 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Bot, Check, Filter, Copy, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
+import { Bot, Check, Download, Filter, Copy, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { type Account, type LockMethod, type McpInfo } from "@/lib/api";
+import { isTauri, type Account, type LockMethod, type McpInfo } from "@/lib/api";
 import { senderLabel } from "@/lib/compose";
 import { relativeTime } from "@/lib/format";
 import { serverDraftsEnabled, setServerDrafts } from "@/lib/composer";
 import { customName, FREE_FONTS, type FontPref } from "@/lib/font";
 import { notificationsEnabled, sendNative, setNotificationsEnabled } from "@/lib/notify";
+import { autoUpdateEnabled, checkForUpdate, installUpdate, setAutoUpdateEnabled, useUpdate } from "@/lib/update";
 import { useShallow } from "zustand/react/shallow";
 import { useMail, type SettingsTab } from "@/lib/store";
 import type { ColorsPref, ThemePref } from "@/lib/theme";
@@ -15,7 +16,7 @@ import { ShortcutList } from "./Shortcuts";
 import { AddAccountForm } from "./AddAccountForm";
 import { RulesPanel } from "./RulesPanel";
 import { isMac, isWindows, SETTINGS_LABEL } from "@/lib/platform";
-import { Avatar, btnPrimary, IconButton, inputCls } from "./ui/primitives";
+import { Avatar, btnGhost, btnPrimary, IconButton, inputCls, Spinner } from "./ui/primitives";
 
 const TABS: { id: SettingsTab; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { id: "accounts", label: "Comptes", icon: UserRound },
@@ -24,6 +25,7 @@ const TABS: { id: SettingsTab; label: string; icon: ComponentType<{ size?: numbe
   { id: "agent", label: "Agent IA (MCP)", icon: Bot },
   { id: "appearance", label: "Apparence", icon: Palette },
   { id: "shortcuts", label: "Raccourcis", icon: Keyboard },
+  { id: "about", label: "À propos", icon: Info },
 ];
 
 
@@ -475,6 +477,41 @@ function AppearancePanel() {
   );
 }
 
+function AboutPanel() {
+  const [version, setVersion] = useState<string | null>(null);
+  const [auto, setAuto] = useState(autoUpdateEnabled);
+  const { available, status, checkedAt, error } = useUpdate();
+  useEffect(() => {
+    if (isTauri()) void import("@tauri-apps/api/app").then(({ getVersion }) => getVersion()).then(setVersion);
+  }, []);
+  return (
+    <>
+      <Section title="Version">
+        <p className="text-[13px]">{version ? `Envelope ${version}` : "Aperçu navigateur (pas de version installée)"}</p>
+      </Section>
+      <Section title="Mises à jour" hint="Envelope consulte les versions publiées sur GitHub, qui voit alors votre adresse IP et votre version. Une mise à jour n'est installée qu'après vérification de la signature du projet.">
+        <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
+          <span className="flex-1">Rechercher les mises à jour automatiquement</span>
+          <Switch checked={auto} onChange={(v) => { setAuto(v); setAutoUpdateEnabled(v); }} label="Rechercher les mises à jour automatiquement" />
+        </label>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button className={cn(btnGhost, "h-8 gap-1.5 px-3 text-[12.5px]")} disabled={!isTauri() || status !== "idle"} onClick={() => void checkForUpdate()}>
+            {status === "checking" ? <Spinner size={12} /> : <RefreshCw size={13} />} Rechercher maintenant
+          </button>
+          {available ? (
+            <button className={cn(btnPrimary, "h-8 text-[12.5px]")} disabled={status !== "idle"} onClick={() => void installUpdate()}>
+              {status === "installing" ? <Spinner size={12} /> : <Download size={13} />} Installer {available} et redémarrer
+            </button>
+          ) : (
+            checkedAt && !error && <span className="text-[12.5px] text-muted">Envelope est à jour (vérifié {relativeTime(checkedAt)})</span>
+          )}
+        </div>
+        {error && <p className="mt-2 text-[12.5px] text-danger">{error}</p>}
+      </Section>
+    </>
+  );
+}
+
 // ───────────── Fenêtre ─────────────
 
 export function Settings() {
@@ -506,6 +543,7 @@ export function Settings() {
             {settingsTab === "agent" && <AgentPanel />}
             {settingsTab === "appearance" && <AppearancePanel />}
             {settingsTab === "shortcuts" && <ShortcutList />}
+            {settingsTab === "about" && <AboutPanel />}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
