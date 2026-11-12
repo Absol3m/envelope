@@ -1,0 +1,55 @@
+{
+  "views": {
+    "inbox": "Inbox",
+    "starred": "Starred",
+    "drafts": "Drafts",
+    "sent": "Sent",
+    "archive": "Archive",
+    "junk": "Spam",
+    "trash": "Trash",
+    "unread": "Unread",
+    "attachments": "With attachments",
+    "reminders": "Reminders"
+  },
+  "moves": {
+    "inbox": {
+      "label": "Move back to the inbox",
+      "done": "Conversation moved back to the inbox",
+      "doneMany": "{{count}} conversations moved back to the inbox",
+      "already": "This conversation is already in the inbox.",
+      "failed": "Couldn't move the conversation"
+    },
+    "archive": {
+      "label": "Archive",
+      "done": "Conversation archived",
+      "doneMany": "{{count}} conversations archived",
+      "already": "This conversation is already archived.",
+      "failed": "Couldn't archive the conversation"
+    },
+    "trash": {
+      "label": "Move to trash",
+      "done": "Conversation moved to trash",
+      "doneMany": "{{count}} conversations moved to trash",
+      "already": "This conversation is already in the trash.",
+      "failed": "Couldn't delete the conversation"
+    },
+    "local": {
+      "label": "Archive on this computer",
+      "done": "Conversation archived on this computer",
+      "doneMany": "{{count}} conversations archived on this computer",
+      "already": "This conversation is already stored on this computer.",
+      "failed": "Couldn't archive on this computer"
+    },
+    "junk": {
+      "label": "Report as spam",
+      "done": "Conversation reported as spam",
+      "doneMany": "{{count}} conversations reported as spam",
+      "already": "This conversation is already in spam.",
+      "failed": "Couldn't report as spam"
+    }
+  },
+  "settings": {
+    "mac": "Settings",
+    "pc": "Settings"
+  }
+}

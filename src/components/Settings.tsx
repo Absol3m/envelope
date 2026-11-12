@@ -18,7 +18,7 @@ import { cn, errText } from "@/lib/utils";
 import { ShortcutList } from "./Shortcuts";
 import { AddAccountForm } from "./AddAccountForm";
 import { RulesPanel } from "./RulesPanel";
-import { isMac, isWindows, SETTINGS_LABEL } from "@/lib/platform";
+import { isMac, isWindows, settingsLabel } from "@/lib/platform";
 import { Avatar, btnGhost, btnPrimary, IconButton, inputCls, Spinner } from "./ui/primitives";
 
 const TABS: { id: SettingsTab; label: string; icon: ComponentType<{ size?: number }> }[] = [
@@ -544,8 +544,8 @@ export function Settings() {
           className="fixed left-1/2 top-1/2 z-[91] flex h-[min(640px,88vh)] w-[min(900px,94vw)] overflow-hidden rounded-2xl bg-elevated shadow-pop"
           style={{ animation: "dialog-in 0.22s cubic-bezier(0.16,1,0.3,1) both" }}
         >
-          <nav className="w-[196px] shrink-0 border-r border-border bg-sidebar p-3" aria-label={SETTINGS_LABEL}>
-            <Dialog.Title className="px-2.5 pb-3 pt-1 text-[15px] font-semibold tracking-tight">{SETTINGS_LABEL}</Dialog.Title>
+          <nav className="w-[196px] shrink-0 border-r border-border bg-sidebar p-3" aria-label={settingsLabel()}>
+            <Dialog.Title className="px-2.5 pb-3 pt-1 text-[15px] font-semibold tracking-tight">{settingsLabel()}</Dialog.Title>
             {TABS.map((t) => (
               <button key={t.id} onClick={() => openSettings(t.id)} aria-current={settingsTab === t.id} className={cn("press flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium", settingsTab === t.id ? "bg-active text-fg" : "text-muted hover:bg-hover hover:text-fg")}>
                 <t.icon size={15} /> {t.label}

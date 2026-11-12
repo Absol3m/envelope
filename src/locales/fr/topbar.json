@@ -1,0 +1,18 @@
+{
+  "reply": "Répondre",
+  "replyAll": "Répondre à tous",
+  "forward": "Transférer",
+  "deleteForever": "Supprimer définitivement",
+  "star": "Suivre",
+  "unstar": "Ne plus suivre",
+  "remind": "Reporter ou me relancer",
+  "editReminder": "Modifier le rappel",
+  "snoozeUntil": "Reporter jusqu'à… — l'application doit être ouverte à l'échéance",
+  "followUp": "Me relancer si personne ne répond",
+  "cancelReminder": "Annuler le rappel",
+  "markRead": "Marquer comme lu",
+  "markUnread": "Marquer comme non lu",
+  "position": "{{index}} sur {{total}}",
+  "previous": "Précédente",
+  "next": "Suivante"
+}

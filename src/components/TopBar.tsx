@@ -9,6 +9,7 @@ import { actionView, useMail, visibleThreads } from "@/lib/store";
 import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
 import { SearchBox } from "./SearchBox";
 import { IconButton } from "./ui/primitives";
+import { t } from "@/lib/i18n";
 
 const ITEM = "cursor-default rounded-lg px-2.5 py-1.5 outline-none data-[highlighted]:bg-hover";
 
@@ -28,44 +29,44 @@ export function TopBar() {
     <div {...dragRegion} className="col-span-2 col-start-2 flex h-[46px] shrink-0 items-center gap-0.5 border-b border-border bg-bg/80 px-3 backdrop-blur-md">
       {summary && (
         <>
-          <IconButton label="Répondre" kbd="R" onClick={() => useComposer.getState().respond("reply")}><Reply size={16} /></IconButton>
-          <IconButton label="Répondre à tous" kbd="A" onClick={() => useComposer.getState().respond("replyAll")}><ReplyAll size={16} /></IconButton>
-          <IconButton label="Transférer" kbd="F" onClick={() => useComposer.getState().respond("forward")}><Forward size={16} /></IconButton>
+          <IconButton label={t("topbar:reply")} kbd="R" onClick={() => useComposer.getState().respond("reply")}><Reply size={16} /></IconButton>
+          <IconButton label={t("topbar:replyAll")} kbd="A" onClick={() => useComposer.getState().respond("replyAll")}><ReplyAll size={16} /></IconButton>
+          <IconButton label={t("topbar:forward")} kbd="F" onClick={() => useComposer.getState().respond("forward")}><Forward size={16} /></IconButton>
           {destinationsFor(place).map((d) => {
             const { label, icon: Icon, key } = DESTINATIONS[d];
             return <IconButton key={d} label={label} kbd={key} onClick={() => moveTo(summary.id, d)}><Icon size={16} /></IconButton>;
           })}
-          {isPurgeView(place) && <IconButton label="Supprimer définitivement" kbd="⌫" onClick={() => void deleteForever(summary.id)}><Trash2 size={16} className="text-danger" /></IconButton>}
-          <IconButton label={summary.isStarred ? "Ne plus suivre" : "Suivre"} kbd="S" onClick={() => toggleStar(summary.id)}><Star size={16} className={summary.isStarred ? "fill-star text-star" : ""} /></IconButton>
+          {isPurgeView(place) && <IconButton label={t("topbar:deleteForever")} kbd="⌫" onClick={() => void deleteForever(summary.id)}><Trash2 size={16} className="text-danger" /></IconButton>}
+          <IconButton label={summary.isStarred ? t("topbar:unstar") : t("topbar:star")} kbd="S" onClick={() => toggleStar(summary.id)}><Star size={16} className={summary.isStarred ? "fill-star text-star" : ""} /></IconButton>
           <Dropdown.Root>
             <Dropdown.Trigger asChild>
-              <IconButton label={summary.reminderKind ? "Modifier le rappel" : "Reporter ou me relancer"}><AlarmClock size={16} className={summary.reminderKind ? "text-accent" : ""} /></IconButton>
+              <IconButton label={summary.reminderKind ? t("topbar:editReminder") : t("topbar:remind")}><AlarmClock size={16} className={summary.reminderKind ? "text-accent" : ""} /></IconButton>
             </Dropdown.Trigger>
             <Dropdown.Portal>
               <Dropdown.Content align="start" sideOffset={8} className="anim-fade-in z-[70] min-w-[260px] rounded-xl border border-border bg-elevated p-1 text-[13px] shadow-pop">
-                <div className="px-2.5 py-1 text-[11px] text-faint">Reporter jusqu'à… — l'application doit être ouverte à l'échéance</div>
+                <div className="px-2.5 py-1 text-[11px] text-faint">{t("topbar:snoozeUntil")}</div>
                 {scheduleOptions(new Date()).map((o) => <Dropdown.Item key={o.label} onSelect={() => remind(summary.id, "snooze", o.at.getTime())} className={ITEM}>{o.label}</Dropdown.Item>)}
                 <Dropdown.Separator className="my-1 h-px bg-border" />
-                <div className="px-2.5 py-1 text-[11px] text-faint">Me relancer si personne ne répond</div>
+                <div className="px-2.5 py-1 text-[11px] text-faint">{t("topbar:followUp")}</div>
                 {followupOptions(new Date()).map((o) => <Dropdown.Item key={o.label} onSelect={() => remind(summary.id, "followup", o.at.getTime())} className={ITEM}>{o.label}</Dropdown.Item>)}
                 {summary.reminderKind && (
                   <>
                     <Dropdown.Separator className="my-1 h-px bg-border" />
-                    <Dropdown.Item onSelect={() => clearReminder(summary.id)} className={ITEM}>Annuler le rappel</Dropdown.Item>
+                    <Dropdown.Item onSelect={() => clearReminder(summary.id)} className={ITEM}>{t("topbar:cancelReminder")}</Dropdown.Item>
                   </>
                 )}
               </Dropdown.Content>
             </Dropdown.Portal>
           </Dropdown.Root>
-          <IconButton label={unread ? "Marquer comme lu" : "Marquer comme non lu"} kbd="U" onClick={() => toggleRead(summary.id)}>{unread ? <MailOpen size={16} /> : <Mail size={16} />}</IconButton>
+          <IconButton label={unread ? t("topbar:markRead") : t("topbar:markUnread")} kbd="U" onClick={() => toggleRead(summary.id)}>{unread ? <MailOpen size={16} /> : <Mail size={16} />}</IconButton>
         </>
       )}
       <span {...dragRegion} className="min-w-3 flex-1 self-stretch" />
-      {summary && index >= 0 && <span className="tnum mr-1 hidden text-[12px] text-muted min-[1280px]:inline">{index + 1} sur {list.length}</span>}
+      {summary && index >= 0 && <span className="tnum mr-1 hidden text-[12px] text-muted min-[1280px]:inline">{t("topbar:position", { index: index + 1, total: list.length })}</span>}
       {summary && (
         <>
-          <IconButton label="Précédente" kbd="K" disabled={index <= 0} onClick={() => move(-1)}><ChevronUp size={16} /></IconButton>
-          <IconButton label="Suivante" kbd="J" disabled={index < 0 || index >= list.length - 1} onClick={() => move(1)}><ChevronDown size={16} /></IconButton>
+          <IconButton label={t("topbar:previous")} kbd="K" disabled={index <= 0} onClick={() => move(-1)}><ChevronUp size={16} /></IconButton>
+          <IconButton label={t("topbar:next")} kbd="J" disabled={index < 0 || index >= list.length - 1} onClick={() => move(1)}><ChevronDown size={16} /></IconButton>
         </>
       )}
       {/* Le champ s'élargit au focus : de la place pour les opérateurs et leurs valeurs. */}

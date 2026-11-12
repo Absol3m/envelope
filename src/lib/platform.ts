@@ -1,17 +1,19 @@
+import { t } from "./i18n";
+
 /** Conventions propres à chaque système : macOS d'un côté, Windows et Linux de l'autre. */
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 export const isWindows = typeof navigator !== "undefined" && /Windows/.test(navigator.userAgent);
 
 /** Nom de la fenêtre de réglages selon l'usage du système. */
-export const SETTINGS_LABEL = isMac ? "Réglages" : "Paramètres";
+export const settingsLabel = () => t(isMac ? "nav:settings.mac" : "nav:settings.pc");
 
 const MAC_KEYS: Record<string, string> = { mod: "⌘", shift: "⇧", enter: "↵" };
-const PC_KEYS: Record<string, string> = { mod: "Ctrl", shift: "Maj", enter: "Entrée" };
+const pcKeys = (): Record<string, string> => ({ mod: "Ctrl", shift: t("common:keys.shift"), enter: t("common:keys.enter") });
 
 /** Touches d'un raccourci, écrit dans l'ordre d'affichage (`"shift+mod+z"` sur macOS,
  *  `"mod+shift+z"` ailleurs) : `mod` vaut ⌘ sur macOS et Ctrl ailleurs. */
 export function keys(combo: string, mac = isMac): string[] {
-  const names = mac ? MAC_KEYS : PC_KEYS;
+  const names = mac ? MAC_KEYS : pcKeys();
   return combo.split("+").map((k) => names[k.toLowerCase()] ?? (k.length === 1 ? k.toUpperCase() : k));
 }
 

@@ -6,7 +6,7 @@ import { useComposer } from "@/lib/composer";
 import { actionView, selectionIds, useMail } from "@/lib/store";
 import { DESTINATIONS, destinationsFor, isPurgeView, NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
 import { Kbd } from "./ui/primitives";
-import { keys, SETTINGS_LABEL } from "@/lib/platform";
+import { keys, settingsLabel } from "@/lib/platform";
 
 type Icon = ComponentType<{ size?: number }>;
 
@@ -84,7 +84,7 @@ export function Palette() {
           <Item icon={RefreshCw} onSelect={run(() => s.accounts.forEach((a) => void s.backend.syncNow(a.id)))}>Synchroniser maintenant</Item>
           <Item icon={Download} onSelect={run(() => s.setImportOpen(true))}>Importer des dossiers locaux (Thunderbird…)</Item>
           <Item icon={Bot} onSelect={run(() => s.openSettings("agent"))}>Agent IA (serveur MCP)</Item>
-          <Item icon={Settings} hint={keys("mod+,")} onSelect={run(() => s.openSettings("accounts"))}>{SETTINGS_LABEL}</Item>
+          <Item icon={Settings} hint={keys("mod+,")} onSelect={run(() => s.openSettings("accounts"))}>{settingsLabel()}</Item>
           <Item icon={Keyboard} hint={["?"]} onSelect={run(() => s.setHelp(true))}>Raccourcis clavier</Item>
         </Command.Group>
       </Command.List>

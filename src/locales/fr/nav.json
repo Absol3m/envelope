@@ -1,0 +1,55 @@
+{
+  "views": {
+    "inbox": "Boîte de réception",
+    "starred": "Suivis",
+    "drafts": "Brouillons",
+    "sent": "Envoyés",
+    "archive": "Archives",
+    "junk": "Spam",
+    "trash": "Corbeille",
+    "unread": "Non lus",
+    "attachments": "Avec pièces jointes",
+    "reminders": "Rappels"
+  },
+  "moves": {
+    "inbox": {
+      "label": "Remettre dans la boîte de réception",
+      "done": "Conversation remise dans la boîte de réception",
+      "doneMany": "{{count}} conversations remises dans la boîte de réception",
+      "already": "Cette conversation est déjà dans la boîte de réception.",
+      "failed": "Déplacement impossible"
+    },
+    "archive": {
+      "label": "Archiver",
+      "done": "Conversation archivée",
+      "doneMany": "{{count}} conversations archivées",
+      "already": "Cette conversation est déjà archivée.",
+      "failed": "Archivage impossible"
+    },
+    "trash": {
+      "label": "Mettre à la corbeille",
+      "done": "Conversation mise à la corbeille",
+      "doneMany": "{{count}} conversations mises à la corbeille",
+      "already": "Cette conversation est déjà à la corbeille.",
+      "failed": "Suppression impossible"
+    },
+    "local": {
+      "label": "Archiver sur cet ordinateur",
+      "done": "Conversation archivée sur cet ordinateur",
+      "doneMany": "{{count}} conversations archivées sur cet ordinateur",
+      "already": "Cette conversation est déjà stockée sur cet ordinateur.",
+      "failed": "Archivage local impossible"
+    },
+    "junk": {
+      "label": "Signaler comme spam",
+      "done": "Conversation signalée comme spam",
+      "doneMany": "{{count}} conversations signalées comme spam",
+      "already": "Cette conversation est déjà dans le spam.",
+      "failed": "Signalement impossible"
+    }
+  },
+  "settings": {
+    "mac": "Réglages",
+    "pc": "Paramètres"
+  }
+}

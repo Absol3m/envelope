@@ -1,6 +1,7 @@
 import { AlarmClock, Archive, FileText, HardDrive, Inbox, Mail, Paperclip, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { FolderRow } from "./api";
+import { t } from "./i18n";
 
 export const ROLES = ["inbox", "sent", "drafts", "archive", "junk", "trash"] as const;
 export type Role = (typeof ROLES)[number];
@@ -32,21 +33,31 @@ export interface NavItem {
 
 const role = (r: Role): View => ({ kind: "role", role: r });
 
+/** Entrée de navigation : le libellé est lu à l'affichage (langue active), jamais figé à l'import. */
+const nav = (view: View, key: string, icon: NavItem["icon"], go?: string): NavItem => ({
+  view,
+  icon,
+  go,
+  get label() {
+    return t(`nav:views.${key}`);
+  },
+});
+
 /** Source unique des vues : barre latérale, palette, titres, raccourcis G+lettre et aide en dérivent. */
 export const NAV_MAILBOXES: NavItem[] = [
-  { view: role("inbox"), label: "Boîte de réception", icon: Inbox, go: "i" },
-  { view: { kind: "starred" }, label: "Suivis", icon: Star, go: "s" },
-  { view: role("drafts"), label: "Brouillons", icon: FileText, go: "d" },
-  { view: role("sent"), label: "Envoyés", icon: Send, go: "t" },
-  { view: role("archive"), label: "Archives", icon: Archive, go: "a" },
-  { view: role("junk"), label: "Spam", icon: ShieldAlert },
-  { view: role("trash"), label: "Corbeille", icon: Trash2 },
+  nav(role("inbox"), "inbox", Inbox, "i"),
+  nav({ kind: "starred" }, "starred", Star, "s"),
+  nav(role("drafts"), "drafts", FileText, "d"),
+  nav(role("sent"), "sent", Send, "t"),
+  nav(role("archive"), "archive", Archive, "a"),
+  nav(role("junk"), "junk", ShieldAlert),
+  nav(role("trash"), "trash", Trash2),
 ];
 
 export const NAV_SMART: NavItem[] = [
-  { view: { kind: "unread" }, label: "Non lus", icon: Mail, go: "u" },
-  { view: { kind: "attachments" }, label: "Avec pièces jointes", icon: Paperclip },
-  { view: { kind: "reminders" }, label: "Rappels", icon: AlarmClock },
+  nav({ kind: "unread" }, "unread", Mail, "u"),
+  nav({ kind: "attachments" }, "attachments", Paperclip),
+  nav({ kind: "reminders" }, "reminders", AlarmClock),
 ];
 
 const ALL = [...NAV_MAILBOXES, ...NAV_SMART];
@@ -64,13 +75,34 @@ export const viewTitle = (v: View): string => (v.kind === "folder" ? v.name : AL
 
 export const GO_VIEWS: Record<string, View> = Object.fromEntries(ALL.filter((i) => i.go).map((i) => [i.go as string, i.view]));
 
+/** Textes d'un déplacement, lus à l'affichage (langue active). */
+interface DestinationInfo {
+  icon: NavItem["icon"];
+  key: string;
+  readonly label: string;
+  readonly done: string;
+  readonly already: string;
+  readonly failed: string;
+  /** « 3 conversations archivées » (`count` ≥ 2). */
+  doneMany(count: number): string;
+}
+const dest = (id: Destination, icon: NavItem["icon"], key: string): DestinationInfo => ({
+  icon,
+  key,
+  get label() { return t(`nav:moves.${id}.label`); },
+  get done() { return t(`nav:moves.${id}.done`); },
+  get already() { return t(`nav:moves.${id}.already`); },
+  get failed() { return t(`nav:moves.${id}.failed`); },
+  doneMany: (count) => t(`nav:moves.${id}.doneMany`, { count }),
+});
+
 /** Source unique des déplacements : boutons, palette, raccourcis, aide et messages en dérivent. */
-export const DESTINATIONS: Record<Destination, { label: string; icon: NavItem["icon"]; key: string; done: string; doneMany: string; already: string; failed: string }> = {
-  inbox: { label: "Remettre dans la boîte de réception", icon: Inbox, key: "I", done: "Conversation remise dans la boîte de réception", doneMany: "remises dans la boîte de réception", already: "Cette conversation est déjà dans la boîte de réception.", failed: "Déplacement impossible" },
-  archive: { label: "Archiver", icon: Archive, key: "E", done: "Conversation archivée", doneMany: "archivées", already: "Cette conversation est déjà archivée.", failed: "Archivage impossible" },
-  trash: { label: "Mettre à la corbeille", icon: Trash2, key: "#", done: "Conversation mise à la corbeille", doneMany: "mises à la corbeille", already: "Cette conversation est déjà à la corbeille.", failed: "Suppression impossible" },
-  local: { label: "Archiver sur cet ordinateur", icon: HardDrive, key: "L", done: "Conversation archivée sur cet ordinateur", doneMany: "archivées sur cet ordinateur", already: "Cette conversation est déjà stockée sur cet ordinateur.", failed: "Archivage local impossible" },
-  junk: { label: "Signaler comme spam", icon: ShieldAlert, key: "!", done: "Conversation signalée comme spam", doneMany: "signalées comme spam", already: "Cette conversation est déjà dans le spam.", failed: "Signalement impossible" },
+export const DESTINATIONS: Record<Destination, DestinationInfo> = {
+  inbox: dest("inbox", Inbox, "I"),
+  archive: dest("archive", Archive, "E"),
+  trash: dest("trash", Trash2, "#"),
+  local: dest("local", HardDrive, "L"),
+  junk: dest("junk", ShieldAlert, "!"),
 };
 export const isDestination = (role: string): role is Destination => Object.hasOwn(DESTINATIONS, role);
 export const DESTINATION_IDS = Object.keys(DESTINATIONS) as Destination[];

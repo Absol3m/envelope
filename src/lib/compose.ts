@@ -1,4 +1,4 @@
-import { locale } from "./i18n";
+import { locale, t } from "./i18n";
 import { sanitizeFragment } from "./sanitize";
 import type { Account, Addr, DetailMessage, DraftData, OutgoingMessage, ThreadDetail } from "./api";
 
@@ -260,9 +260,9 @@ const toRecipient = (a: Addr): Recipient => ({ address: a.address, name: a.name 
 export function scheduleOptions(now: Date): { label: string; at: Date }[] {
   const at = (days: number, hour: number) => { const d = new Date(now); d.setDate(d.getDate() + days); d.setHours(hour, 0, 0, 0); return d; };
   const fmt = (d: Date) => d.toLocaleString(locale(), { weekday: "long", hour: "numeric", minute: "2-digit" });
-  const out = [{ label: "Dans 1 heure", at: new Date(now.getTime() + 3600_000) }, { label: `Demain matin — ${fmt(at(1, 8))}`, at: at(1, 8) }];
+  const out = [{ label: t("composer:inOneHour"), at: new Date(now.getTime() + 3600_000) }, { label: t("composer:tomorrowMorning", { when: fmt(at(1, 8)) }), at: at(1, 8) }];
   const toMonday = (8 - now.getDay()) % 7 || 7;
-  if (toMonday > 1) out.push({ label: `Lundi matin — ${fmt(at(toMonday, 8))}`, at: at(toMonday, 8) });
+  if (toMonday > 1) out.push({ label: t("composer:mondayMorning", { when: fmt(at(toMonday, 8)) }), at: at(toMonday, 8) });
   return out;
 }
 
@@ -272,7 +272,7 @@ export function followupOptions(now: Date): { label: string; at: Date }[] {
     const at = new Date(now);
     at.setDate(at.getDate() + days);
     at.setHours(8, 0, 0, 0);
-    return { label: days === 7 ? "Dans 1 semaine" : `Dans ${days} jours`, at };
+    return { label: days === 7 ? t("composer:inOneWeek") : t("composer:inDays", { count: days }), at };
   });
 }
 

@@ -12,5 +12,9 @@
     "bytes": "{{n}} B",
     "kilobytes": "{{n}} KB",
     "megabytes": "{{n}} MB"
+  },
+  "keys": {
+    "shift": "Shift",
+    "enter": "Enter"
   }
 }

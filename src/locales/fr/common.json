@@ -12,5 +12,9 @@
     "bytes": "{{n}} o",
     "kilobytes": "{{n}} Ko",
     "megabytes": "{{n}} Mo"
+  },
+  "keys": {
+    "shift": "Maj",
+    "enter": "Entrée"
   }
 }

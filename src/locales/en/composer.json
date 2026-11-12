@@ -1,0 +1,8 @@
+{
+  "inOneHour": "In 1 hour",
+  "tomorrowMorning": "Tomorrow morning — {{when}}",
+  "mondayMorning": "Monday morning — {{when}}",
+  "inOneWeek": "In 1 week",
+  "inDays_one": "In {{count}} day",
+  "inDays_other": "In {{count}} days"
+}

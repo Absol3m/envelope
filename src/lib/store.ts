@@ -515,7 +515,7 @@ export const useMail = create<State>((set, get) => {
         setHidden(failed.map((m) => m.id), false);
         if (done.length > 0) {
           dropThreads(done.map((m) => m.id));
-          get().toast({ message: done.length === 1 ? dest.done : `${done.length} conversations ${dest.doneMany}` });
+          get().toast({ message: done.length === 1 ? dest.done : dest.doneMany(done.length) });
         }
         if (failed.length > 0) fail(dest.failed, reason);
       });
