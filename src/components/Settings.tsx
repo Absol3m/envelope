@@ -1,7 +1,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Bot, Check, Download, Filter, Copy, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { LANGUAGES, parseLangPref, setLanguage, type LangPref } from "@/lib/i18n";
 import { pref } from "@/lib/pref";
 import { isTauri, type Account, type LockMethod, type McpInfo } from "@/lib/api";
@@ -20,16 +20,10 @@ import { AddAccountForm } from "./AddAccountForm";
 import { RulesPanel } from "./RulesPanel";
 import { isMac, isWindows, settingsLabel } from "@/lib/platform";
 import { Avatar, btnGhost, btnPrimary, IconButton, inputCls, Spinner } from "./ui/primitives";
+import { t as tr } from "@/lib/i18n";
 
-const TABS: { id: SettingsTab; label: string; icon: ComponentType<{ size?: number }> }[] = [
-  { id: "accounts", label: "Comptes", icon: UserRound },
-  { id: "rules", label: "Règles", icon: Filter },
-  { id: "security", label: "Sécurité", icon: ShieldCheck },
-  { id: "agent", label: "Agent IA (MCP)", icon: Bot },
-  { id: "appearance", label: "Apparence", icon: Palette },
-  { id: "shortcuts", label: "Raccourcis", icon: Keyboard },
-  { id: "about", label: "À propos", icon: Info },
-];
+const tab = (id: SettingsTab, icon: ComponentType<{ size?: number }>) => ({ id, icon, get label() { return tr(`settings:tabs.${id}`); } });
+const TABS = [tab("accounts", UserRound), tab("rules", Filter), tab("security", ShieldCheck), tab("agent", Bot), tab("appearance", Palette), tab("shortcuts", Keyboard), tab("about", Info)];
 
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
@@ -107,7 +101,7 @@ function SignatureField({ id, email, value }: { id: string; email: string; value
       await backend.setAccountSignature(id, text);
       await refreshAccounts();
     } catch (e) {
-      toast({ message: `Signature non enregistrée — ${String(e)}`, tone: "error" });
+      toast({ message: tr("settings:signatureFailed", { error: String(e) }), tone: "error" });
     }
   };
   return (
@@ -119,7 +113,7 @@ function SignatureField({ id, email, value }: { id: string; email: string; value
         onBlur={() => void save()}
         rows={3}
         maxLength={2000}
-        placeholder="Aucune signature"
+        placeholder={tr("settings:noSignature")}
         className={cn(inputCls, "h-auto resize-y py-2")}
       />
     </label>
@@ -139,7 +133,7 @@ function IdentitiesField({ account }: { account: Account }) {
         {account.identities.map((i) => (
           <li key={i.id} className="flex items-center gap-2 rounded-lg bg-hover px-2.5 py-1 text-[13px]">
             <span className="min-w-0 flex-1 truncate">{senderLabel(i.name, i.email)}</span>
-            <button type="button" aria-label={`Retirer ${i.email}`} onClick={() => void run(backend.removeIdentity(i.id), "Suppression impossible")} className="press rounded p-0.5 text-muted hover:bg-active hover:text-danger"><X size={13} /></button>
+            <button type="button" aria-label={tr("composer:remove", { name: i.email })} onClick={() => void run(backend.removeIdentity(i.id), tr("errors:delete"))} className="press rounded p-0.5 text-muted hover:bg-active hover:text-danger"><X size={13} /></button>
           </li>
         ))}
       </ul>
@@ -148,12 +142,12 @@ function IdentitiesField({ account }: { account: Account }) {
         onSubmit={(e) => {
           e.preventDefault();
           if (!email.trim()) return;
-          void run(backend.addIdentity(account.id, name, email), "Ajout impossible").then(() => { setEmail(""); setName(""); });
+          void run(backend.addIdentity(account.id, name, email), tr("settings:addFailed")).then(() => { setEmail(""); setName(""); });
         }}
       >
-        <input aria-label="Adresse de l'alias" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="alias@exemple.fr" className={cn(inputCls, "min-w-0 flex-[2]")} />
-        <input aria-label="Nom affiché" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="Nom affiché (facultatif)" className={cn(inputCls, "min-w-0 flex-1")} />
-        <button type="submit" className={btnPrimary}>Ajouter</button>
+        <input aria-label={tr("settings:aliasAddress")} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={tr("settings:aliasPlaceholder")} className={cn(inputCls, "min-w-0 flex-[2]")} />
+        <input aria-label={tr("settings:displayName")} value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder={tr("settings:displayNameOptional")} className={cn(inputCls, "min-w-0 flex-1")} />
+        <button type="submit" className={btnPrimary}>{tr("settings:add")}</button>
       </form>
     </div>
   );
@@ -164,13 +158,13 @@ function AccountsPanel() {
   const [removing, setRemoving] = useState<string | null>(null);
 
   const remove = async (id: string, email: string) => {
-    if (!confirm(`Supprimer ${email} d'Envelope ? Les e-mails restent sur le serveur.`)) return;
+    if (!confirm(tr("settings:removeConfirm", { email }))) return;
     setRemoving(id);
     try {
       await backend.removeAccount(id);
       await reload();
     } catch (e) {
-      toast({ message: `Suppression impossible — ${String(e)}`, tone: "error" });
+      toast({ message: tr("settings:removeFailed", { error: String(e) }), tone: "error" });
     } finally {
       setRemoving(null);
     }
@@ -180,35 +174,35 @@ function AccountsPanel() {
     <>
       {backend.demo && (
         <div className="mb-6 flex items-center gap-3 rounded-xl bg-accent-soft px-4 py-3 text-[13px]">
-          <span className="flex-1">Vous explorez la boîte de démonstration. Connectez un vrai compte pour utiliser Envelope.</span>
-          <button className={btnPrimary} onClick={() => void init()}>Quitter la démo</button>
+          <span className="flex-1">{tr("settings:demoNotice")}</span>
+          <button className={btnPrimary} onClick={() => void init()}>{tr("settings:leaveDemo")}</button>
         </div>
       )}
-      <Section title="Comptes connectés">
+      <Section title={tr("settings:connectedAccounts")}>
         <ul className="divide-y divide-border rounded-xl border border-border">
           {accounts.map((a) => (
             <li key={a.id} className="flex items-center gap-3 px-3.5 py-3">
               <Avatar name={a.displayName} address={a.email} size={34} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-medium">{a.displayName ?? a.email}</p>
-                <p className="truncate text-[12px] text-muted">{a.email} · {a.authKind === "oauth2" ? "OAuth2" : "mot de passe"}</p>
+                <p className="truncate text-[12px] text-muted">{a.email} · {a.authKind === "oauth2" ? "OAuth2" : tr("settings:password")}</p>
                 <p className={cn("text-[11.5px]", a.syncStatus === "error" ? "text-danger" : "text-faint")}>
-                  {a.syncStatus === "error" ? a.syncError ?? "Erreur de synchronisation" : a.syncStatus === "syncing" ? "Synchronisation…" : `Synchronisé ${relativeTime(a.lastSyncAt)}`}
+                  {a.syncStatus === "error" ? a.syncError ?? tr("settings:syncError") : a.syncStatus === "syncing" ? tr("sidebar:syncing") : tr("sidebar:synced", { when: relativeTime(a.lastSyncAt) })}
                 </p>
               </div>
               {a.authKind === "oauth2" && a.syncStatus === "error" && (
-                <button className={btnGhost} disabled={backend.demo} onClick={() => void backend.reconnectOAuthAccount(a.id).then(() => toast({ message: "Compte reconnecté" })).catch((e) => toast({ message: String(e) }))}>Reconnecter</button>
+                <button className={btnGhost} disabled={backend.demo} onClick={() => void backend.reconnectOAuthAccount(a.id).then(() => toast({ message: tr("settings:reconnected") })).catch((e) => toast({ message: String(e) }))}>{tr("settings:reconnect")}</button>
               )}
-              <IconButton label="Synchroniser" onClick={() => void backend.syncNow(a.id).then(() => toast({ message: "Synchronisation lancée" }))}><RefreshCw size={15} /></IconButton>
-              <IconButton label="Supprimer le compte" disabled={backend.demo || removing !== null} onClick={() => void remove(a.id, a.email)}><Trash2 size={15} /></IconButton>
+              <IconButton label={tr("settings:sync")} onClick={() => void backend.syncNow(a.id).then(() => toast({ message: tr("settings:syncStarted") }))}><RefreshCw size={15} /></IconButton>
+              <IconButton label={tr("settings:removeAccount")} disabled={backend.demo || removing !== null} onClick={() => void remove(a.id, a.email)}><Trash2 size={15} /></IconButton>
             </li>
           ))}
-          {accounts.length === 0 && <li className="px-3.5 py-6 text-center text-[13px] text-muted">Aucun compte pour l'instant.</li>}
+          {accounts.length === 0 && <li className="px-3.5 py-6 text-center text-[13px] text-muted">{tr("settings:noAccounts")}</li>}
         </ul>
       </Section>
 
       {accounts.length > 0 && (
-        <Section title="Signatures" hint="Ajoutée aux nouveaux messages et aux réponses, précédée de « -- ». Texte brut.">
+        <Section title={tr("settings:signatures")} hint={tr("settings:signaturesHint")}>
           <div className="space-y-3">
             {accounts.map((a) => <SignatureField key={a.id} id={a.id} email={a.email} value={a.signature} />)}
           </div>
@@ -216,7 +210,7 @@ function AccountsPanel() {
       )}
 
       {accounts.length > 0 && (
-        <Section title="Adresses d'envoi" hint="Alias de vos comptes : le serveur doit les autoriser. Choisissez l'adresse dans le champ « De » du message ; une réponse part de l'alias auquel le message a été envoyé.">
+        <Section title={tr("settings:sendAddresses")} hint={tr("settings:sendAddressesHint")}>
           <div className="space-y-4">
             {accounts.map((a) => <IdentitiesField key={a.id} account={a} />)}
           </div>
@@ -224,7 +218,7 @@ function AccountsPanel() {
       )}
 
       {!backend.demo && (
-        <Section title="Ajouter un compte" hint="Gmail, iCloud, Yahoo… : utilisez un mot de passe d'application, pas votre mot de passe habituel. Il est stocké dans le trousseau du système.">
+        <Section title={tr("settings:addAccount")} hint={tr("settings:addAccountHint")}>
           <AddAccountForm />
         </Section>
       )}
@@ -234,64 +228,53 @@ function AccountsPanel() {
 
 // ───────────── Agent IA (MCP) ─────────────
 
-const TOOLS: [string, string][] = [
-  ["list_accounts", "Comptes configurés"],
-  ["list_folders", "Dossiers et compteurs de non lus"],
-  ["search_emails", "Recherche plein texte, extraits courts"],
-  ["get_thread", "Lire une conversation (corps bornés)"],
-  ["summarize_thread", "Transcription condensée, sans citations"],
-];
+const TOOLS = ["list_accounts", "list_folders", "search_emails", "get_thread", "summarize_thread"];
 
 function AgentPanel() {
   const backend = useMail((s) => s.backend);
   const [info, setInfo] = useState<McpInfo | null>(null);
   useEffect(() => { backend.mcpInfo().then(setInfo, () => undefined); }, [backend]);
-  const bin = info?.binaryPath ?? "/chemin/vers/envelope-mcp";
+  const bin = info?.binaryPath ?? tr("settings:agent.pathPlaceholder");
   const json = (extra = "") => JSON.stringify({ mcpServers: { envelope: { command: bin, ...(extra ? { args: [extra] } : {}) } } }, null, 2);
 
   return (
     <>
-      <p className="mb-5 rounded-lg bg-warn/10 px-3 py-2 text-[12.5px]">Le serveur MCP lit la base directement, sans passer par Envelope : il ne respecte pas le verrouillage et refuse de démarrer tant qu'il est actif (option <code>--allow-locked</code> pour passer outre, en connaissance de cause).</p>
+      <p className="mb-5 rounded-lg bg-warn/10 px-3 py-2 text-[12.5px]"><Trans i18nKey="settings:agent.lockWarning" components={{ code: <code /> }} /></p>
       <div className="mb-7 flex items-center gap-4 rounded-2xl bg-gradient-to-br from-accent/12 to-[#8b5cf6]/10 p-5">
         <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-bg text-accent shadow-card"><Bot size={24} strokeWidth={1.6} /></span>
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-semibold tracking-tight">Laissez un agent IA lire votre boîte</p>
-          <p className="mt-0.5 text-[12.5px] text-muted">Claude, Cursor ou tout client MCP peut chercher et résumer vos e-mails — en lecture seule, en local.</p>
+          <p className="text-[15px] font-semibold tracking-tight">{tr("settings:agent.headline")}</p>
+          <p className="mt-0.5 text-[12.5px] text-muted">{tr("settings:agent.subline")}</p>
         </div>
         <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold", info?.binaryPath ? "bg-success/12 text-success" : "bg-warn/15 text-warn")}>
-          {info?.binaryPath ? "Serveur prêt" : "Binaire introuvable"}
+          {info?.binaryPath ? tr("settings:agent.ready") : tr("settings:agent.missing")}
         </span>
       </div>
 
-      <Section title="Connecter un agent" hint={info?.binaryPath ? undefined : "Compilez d'abord le serveur : cargo build --release -p envelope-mcp (dans src-tauri/)."}>
+      <Section title={tr("settings:agent.connect")} hint={info?.binaryPath ? undefined : tr("settings:agent.buildFirst")}>
         <div className="space-y-3">
           <Code title="Claude Code" text={`claude mcp add envelope -- ${bin}`} />
           <Code title="Claude Desktop / Cursor (mcpServers)" text={json()} />
-          {info && <p className="selectable text-[12px] text-muted">Base lue : <span className="font-mono">{info.dbPath}</span> (option <span className="font-mono">--db</span> ou variable <span className="font-mono">ENVELOPE_DB</span> pour en changer).</p>}
+          {info && <p className="selectable text-[12px] text-muted"><Trans i18nKey="settings:agent.dbPath" values={{ path: info.dbPath }} components={{ mono: <span className="font-mono" /> }} /></p>}
         </div>
       </Section>
 
-      <Section title="Ce que l'agent peut faire">
+      <Section title={tr("settings:agent.canDo")}>
         <ul className="divide-y divide-border rounded-xl border border-border">
-          {TOOLS.map(([name, desc]) => (
+          {TOOLS.map((name) => (
             <li key={name} className="flex items-center gap-3 px-3.5 py-2.5">
               <code className="rounded-md bg-hover px-1.5 py-0.5 font-mono text-[12px]">{name}</code>
-              <span className="flex-1 text-[12.5px] text-muted">{desc}</span>
-              <span className="rounded-full bg-success/12 px-2 py-0.5 text-[11px] font-semibold text-success">Lecture seule</span>
+              <span className="flex-1 text-[12.5px] text-muted">{tr(`settings:agent.tools.${name}`)}</span>
+              <span className="rounded-full bg-success/12 px-2 py-0.5 text-[11px] font-semibold text-success">{tr("settings:agent.readOnlyBadge")}</span>
             </li>
           ))}
         </ul>
       </Section>
 
-      <Section title="Garanties">
+      <Section title={tr("settings:agent.guaranteesTitle")}>
         <ul className="space-y-2 text-[13px]">
-          {[
-            "Aucune écriture : l'agent ne peut ni archiver, ni envoyer, ni supprimer.",
-            "Le contenu des e-mails est signalé comme non fiable : un message piégé ne peut pas donner d'ordres à l'agent.",
-            "Les pièces jointes ne sont jamais exposées — seulement leur nom, leur type et leur taille.",
-            "Tout reste sur votre machine : le serveur parle à l'agent par stdio, sans réseau.",
-          ].map((t) => (
-            <li key={t} className="flex gap-2.5"><ShieldCheck size={16} className="mt-px shrink-0 text-success" />{t}</li>
+          {["readOnly", "untrusted", "attachments", "local"].map((k) => (
+            <li key={k} className="flex gap-2.5"><ShieldCheck size={16} className="mt-px shrink-0 text-success" />{tr(`settings:agent.guarantees.${k}`)}</li>
           ))}
         </ul>
       </Section>
@@ -310,10 +293,10 @@ function FontSection() {
   const selected = isCustom ? "custom" : font;
   const note = FREE_FONTS.find((f) => f.id === font)?.note;
   return (
-    <Section title="Police" hint="Par défaut, la police de votre système. Les polices libres (licence OFL) ne sont téléchargées que si vous les choisissez ; vous pouvez aussi saisir le nom d'une police installée sur cet ordinateur.">
+    <Section title={tr("settings:font.title")} hint={tr("settings:font.hint")}>
       <div className="flex max-w-[420px] flex-col gap-2.5">
         <select
-          aria-label="Police de l'interface"
+          aria-label={tr("settings:font.label")}
           value={selected}
           onChange={(e) => {
             const v = e.target.value;
@@ -323,28 +306,28 @@ function FontSection() {
           }}
           className={cn(inputCls, "px-2")}
         >
-          <option value="system">Police du système (par défaut)</option>
+          <option value="system">{tr("settings:font.system")}</option>
           {FREE_FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-          <option value="custom">Une police installée…</option>
+          <option value="custom">{tr("settings:font.installed")}</option>
         </select>
         {(selected === "custom" || isCustom) && (
           <div className="flex gap-2">
             <input
-              aria-label="Nom de la police installée"
+              aria-label={tr("settings:font.installedName")}
               className={cn(inputCls, "min-w-0 flex-1")}
               autoComplete="off"
               spellCheck={false}
-              placeholder="Nom exact, ex. Helvetica Neue"
+              placeholder={tr("settings:font.installedPlaceholder")}
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && valid) setFont(`custom:${customName(typed)!}`); }}
             />
-            <button className={btnPrimary} disabled={!valid} onClick={() => setFont(`custom:${customName(typed)!}`)}>Appliquer</button>
+            <button className={btnPrimary} disabled={!valid} onClick={() => setFont(`custom:${customName(typed)!}`)}>{tr("editor:apply")}</button>
           </div>
         )}
         {note && <p className="text-[12px] text-muted">{note}</p>}
         <p className="rounded-lg bg-bg-subtle px-3 py-2.5 text-[13px] leading-relaxed">
-          Aa Bb Cc — Le vif zéphyr jubile sur les kumquats du clown gracieux. 0123456789
+          {tr("settings:font.sample")}
         </p>
       </div>
     </Section>
@@ -355,17 +338,17 @@ function FontSection() {
 function DraftsSection() {
   const [on, setOn] = useState(serverDraftsEnabled);
   return (
-    <Section title="Brouillons" hint="Un brouillon est enregistré dans le dossier Brouillons du serveur quelques secondes après la dernière modification, et supprimé une fois le message envoyé. Désactivé, il reste sur cet ordinateur seulement.">
+    <Section title={tr("settings:drafts.title")} hint={tr("settings:drafts.hint")}>
       <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
-        <span className="flex-1">Enregistrer les brouillons sur le serveur</span>
-        <Switch checked={on} onChange={(v) => { setOn(v); setServerDrafts(v); }} label="Enregistrer les brouillons sur le serveur" />
+        <span className="flex-1">{tr("settings:drafts.save")}</span>
+        <Switch checked={on} onChange={(v) => { setOn(v); setServerDrafts(v); }} label={tr("settings:drafts.save")} />
       </label>
     </Section>
   );
 }
 
-const SYSTEM_LOCK_LABEL = isMac ? "Touch ID ou mot de passe du Mac" : isWindows ? "Windows Hello (visage, empreinte, code PIN)" : "Authentification du système";
-const AUTO_LOCK: [number, string][] = [[0, "Jamais"], [60, "1 minute"], [300, "5 minutes"], [900, "15 minutes"], [1800, "30 minutes"], [3600, "1 heure"]];
+const systemLockLabel = () => tr(isMac ? "settings:lock.systemMac" : isWindows ? "settings:lock.systemWindows" : "settings:lock.systemOther");
+const AUTO_LOCK = [0, 60, 300, 900, 1800, 3600];
 
 /** Verrouillage de l'application : désactivé, par le système (Touch ID, Windows Hello) ou par un mot de passe. */
 function LockSection() {
@@ -380,7 +363,7 @@ function LockSection() {
   const active = lock.method;
   const changed = method !== active || timeout !== lock.timeoutSecs || (method === "password" && password !== "");
   const passwordProblem = method === "password" && (password !== "" || active !== "password")
-    ? password.length < 8 ? "Au moins 8 caractères." : password !== confirmation ? "Les deux saisies diffèrent." : null
+    ? password.length < 8 ? tr("settings:lock.min8") : password !== confirmation ? tr("settings:lock.differ") : null
     : null;
 
   const save = async () => {
@@ -389,49 +372,49 @@ function LockSection() {
       const next = await backend.setLock(method, timeout, method === "password" && password ? password : undefined, active === "password" ? current : undefined);
       setLockStatus(next);
       setPassword(""); setConfirmation(""); setCurrent("");
-      toast({ message: method === "off" ? "Verrouillage désactivé" : "Verrouillage enregistré" });
+      toast({ message: method === "off" ? tr("settings:lock.disabled") : tr("settings:lock.saved") });
     } catch (e) {
-      toast({ message: `Enregistrement impossible — ${errText(e)}`, tone: "error", duration: 6000 });
+      toast({ message: tr("settings:lock.saveFailed", { error: errText(e) }), tone: "error", duration: 6000 });
     } finally {
       setBusy(false);
     }
   };
 
-  const options: [LockMethod, string][] = [["off", "Désactivé"], ...(lock.systemAvailable ? [["system", SYSTEM_LOCK_LABEL] as [LockMethod, string]] : []), ["password", "Mot de passe d'Envelope"]];
+  const options: [LockMethod, string][] = [["off", tr("settings:lock.off")], ...(lock.systemAvailable ? [["system", systemLockLabel()] as [LockMethod, string]] : []), ["password", tr("settings:lock.password")]];
   return (
-    <Section title="Verrouillage" hint="Demande de s'authentifier à l'ouverture d'Envelope et après un temps d'inactivité. Tant qu'il est verrouillé, l'application ne donne accès à aucun message. Ce n'est pas un chiffrement : un programme qui lit directement les fichiers, une sauvegarde ou le serveur MCP (qui refuse de démarrer tant que le verrouillage est actif) ne sont pas arrêtés. Pour protéger le disque lui-même, activez le chiffrement du système.">
+    <Section title={tr("settings:lock.title")} hint={tr("settings:lock.hint")}>
       <fieldset className="flex max-w-[460px] flex-col gap-2">
-        <legend className="sr-only">Méthode de verrouillage</legend>
+        <legend className="sr-only">{tr("settings:lock.method")}</legend>
         {options.map(([id, label]) => (
           <label key={id} className="flex cursor-default items-center gap-2.5 text-[13px]">
             <input type="radio" name="lock-method" checked={method === id} onChange={() => setMethod(id)} className="accent-[var(--accent)]" />
             {label}
           </label>
         ))}
-        {!lock.systemAvailable && <p className="text-[12px] text-muted">Pas d'authentification native sur ce système : utilisez un mot de passe.</p>}
+        {!lock.systemAvailable && <p className="text-[12px] text-muted">{tr("settings:lock.noNative")}</p>}
       </fieldset>
       {method !== "off" && (
         <div className="mt-3 flex max-w-[460px] flex-col gap-2.5">
           <label className="flex items-center gap-2.5 text-[13px]">
-            <span className="w-44 shrink-0 text-muted">Verrouiller après</span>
-            <select aria-label="Délai d'inactivité" value={timeout} onChange={(e) => setTimeoutSecs(Number(e.target.value))} className={cn(inputCls, "px-2")}>
-              {AUTO_LOCK.map(([secs, label]) => <option key={secs} value={secs}>{secs === 0 ? "Jamais (au lancement seulement)" : label}</option>)}
+            <span className="w-44 shrink-0 text-muted">{tr("settings:lock.after")}</span>
+            <select aria-label={tr("settings:lock.idle")} value={timeout} onChange={(e) => setTimeoutSecs(Number(e.target.value))} className={cn(inputCls, "px-2")}>
+              {AUTO_LOCK.map((secs) => <option key={secs} value={secs}>{tr(`settings:lock.after_${secs}`)}</option>)}
             </select>
           </label>
           {method === "password" && (
             <>
-              <input type="password" aria-label="Nouveau mot de passe" autoComplete="new-password" placeholder={active === "password" ? "Nouveau mot de passe (laisser vide pour le garder)" : "Mot de passe (8 caractères au moins)"} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
-              {(password !== "" || active !== "password") && <input type="password" aria-label="Confirmer le mot de passe" autoComplete="new-password" placeholder="Confirmer le mot de passe" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} className={inputCls} />}
+              <input type="password" aria-label={tr("settings:lock.newPassword")} autoComplete="new-password" placeholder={active === "password" ? tr("settings:lock.newPasswordKeep") : tr("settings:lock.passwordMin")} value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
+              {(password !== "" || active !== "password") && <input type="password" aria-label={tr("settings:lock.confirm")} autoComplete="new-password" placeholder={tr("settings:lock.confirm")} value={confirmation} onChange={(e) => setConfirmation(e.target.value)} className={inputCls} />}
               {passwordProblem && password !== "" && <p className="text-[12px] text-danger">{passwordProblem}</p>}
             </>
           )}
         </div>
       )}
       {active === "password" && changed && (
-        <input type="password" aria-label="Mot de passe actuel" autoComplete="current-password" placeholder="Mot de passe actuel (pour confirmer le changement)" value={current} onChange={(e) => setCurrent(e.target.value)} className={cn(inputCls, "mt-3 max-w-[460px]")} />
+        <input type="password" aria-label={tr("settings:lock.current")} autoComplete="current-password" placeholder={tr("settings:lock.currentConfirm")} value={current} onChange={(e) => setCurrent(e.target.value)} className={cn(inputCls, "mt-3 max-w-[460px]")} />
       )}
-      {active === "system" && changed && <p className="mt-3 text-[12px] text-muted">Le système vous demandera de vous authentifier pour confirmer le changement.</p>}
-      <button type="button" disabled={!changed || busy || passwordProblem !== null || (active === "password" && !current)} onClick={() => void save()} className={cn(btnPrimary, "mt-4")}>Enregistrer</button>
+      {active === "system" && changed && <p className="mt-3 text-[12px] text-muted">{tr("settings:lock.systemWillAsk")}</p>}
+      <button type="button" disabled={!changed || busy || passwordProblem !== null || (active === "password" && !current)} onClick={() => void save()} className={cn(btnPrimary, "mt-4")}>{tr("settings:save")}</button>
     </Section>
   );
 }
@@ -441,18 +424,18 @@ function NotificationsSection() {
   const toast = useMail((s) => s.toast);
   const test = async () => {
     try {
-      await sendNative({ title: "Envelope", body: "Les notifications fonctionnent." });
+      await sendNative({ title: "Envelope", body: tr("settings:notifications.works") });
     } catch (e) {
-      toast({ message: `Notification impossible — ${String(e)}`, tone: "error", duration: 6000 });
+      toast({ message: tr("settings:notifications.failed", { error: String(e) }), tone: "error", duration: 6000 });
     }
   };
   return (
-    <Section title="Notifications" hint="Une notification du système à l'arrivée d'un message dans la boîte de réception, quand Envelope n'est pas au premier plan.">
+    <Section title={tr("settings:notifications.title")} hint={tr("settings:notifications.hint")}>
       <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
-        <span className="flex-1">Notifier les nouveaux messages</span>
-        <Switch checked={on} onChange={(v) => { setOn(v); setNotificationsEnabled(v); }} label="Notifier les nouveaux messages" />
+        <span className="flex-1">{tr("settings:notifications.notify")}</span>
+        <Switch checked={on} onChange={(v) => { setOn(v); setNotificationsEnabled(v); }} label={tr("settings:notifications.notify")} />
       </label>
-      <button className="press mt-3 h-8 rounded-lg border border-border bg-bg px-3 text-[12.5px] font-medium hover:bg-hover" onClick={() => void test()}>Envoyer une notification de test</button>
+      <button className="press mt-3 h-8 rounded-lg border border-border bg-bg px-3 text-[12.5px] font-medium hover:bg-hover" onClick={() => void test()}>{tr("settings:notifications.test")}</button>
     </Section>
   );
 }
@@ -473,22 +456,22 @@ function AppearancePanel() {
   return (
     <>
       <LanguageSection />
-      <Section title="Thème">
-        <Segmented<ThemePref> value={s.theme} onChange={s.setTheme} options={[{ value: "system", label: "Système", icon: Monitor }, { value: "light", label: "Clair", icon: Sun }, { value: "dark", label: "Sombre", icon: Moon }]} />
+      <Section title={tr("settings:appearance.theme")}>
+        <Segmented<ThemePref> value={s.theme} onChange={s.setTheme} options={[{ value: "system", label: tr("language:system"), icon: Monitor }, { value: "light", label: tr("settings:appearance.light"), icon: Sun }, { value: "dark", label: tr("settings:appearance.dark"), icon: Moon }]} />
       </Section>
-      <Section title="Couleurs" hint="« Système » reprend les couleurs et la couleur d'accent de votre système (et de votre bureau sous Linux).">
-        <Segmented<ColorsPref> value={s.colors} onChange={s.setColors} options={[{ value: "system", label: "Système", icon: Monitor }, { value: "envelope", label: "Envelope", icon: Palette }]} />
+      <Section title={tr("settings:appearance.colors")} hint={tr("settings:appearance.colorsHint")}>
+        <Segmented<ColorsPref> value={s.colors} onChange={s.setColors} options={[{ value: "system", label: tr("language:system"), icon: Monitor }, { value: "envelope", label: "Envelope", icon: Palette }]} />
       </Section>
-      <Section title="Densité de la liste">
-        <Segmented value={s.density} onChange={s.setDensity} options={[{ value: "comfortable", label: "Confortable" }, { value: "compact", label: "Compacte" }]} />
+      <Section title={tr("settings:appearance.density")}>
+        <Segmented value={s.density} onChange={s.setDensity} options={[{ value: "comfortable", label: tr("settings:appearance.comfortable") }, { value: "compact", label: tr("settings:appearance.compact") }]} />
       </Section>
       <FontSection />
       <DraftsSection />
       <NotificationsSection />
-      <Section title="Aperçus">
+      <Section title={tr("settings:appearance.previews")}>
         <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
-          <span className="flex-1">Afficher un extrait du message sous l'objet</span>
-          <Switch checked={s.previews} onChange={s.setPreviews} label="Afficher les aperçus" />
+          <span className="flex-1">{tr("settings:appearance.previewsLabel")}</span>
+          <Switch checked={s.previews} onChange={s.setPreviews} label={tr("settings:appearance.previewsSwitch")} />
         </label>
       </Section>
     </>
@@ -504,24 +487,24 @@ function AboutPanel() {
   }, []);
   return (
     <>
-      <Section title="Version">
-        <p className="text-[13px]">{version ? `Envelope ${version}` : "Aperçu navigateur (pas de version installée)"}</p>
+      <Section title={tr("settings:about.version")}>
+        <p className="text-[13px]">{version ? `Envelope ${version}` : tr("settings:about.browserPreview")}</p>
       </Section>
-      <Section title="Mises à jour" hint="Envelope consulte les versions publiées sur GitHub, qui voit alors votre adresse IP et votre version. Une mise à jour n'est installée qu'après vérification de la signature du projet.">
+      <Section title={tr("settings:about.updates")} hint={tr("settings:about.updatesHint")}>
         <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
-          <span className="flex-1">Rechercher les mises à jour automatiquement</span>
-          <Switch checked={auto} onChange={(v) => { setAuto(v); setAutoUpdateEnabled(v); }} label="Rechercher les mises à jour automatiquement" />
+          <span className="flex-1">{tr("settings:about.autoCheck")}</span>
+          <Switch checked={auto} onChange={(v) => { setAuto(v); setAutoUpdateEnabled(v); }} label={tr("settings:about.autoCheck")} />
         </label>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button className={cn(btnGhost, "h-8 gap-1.5 px-3 text-[12.5px]")} disabled={!isTauri() || status !== "idle"} onClick={() => void checkForUpdate()}>
-            {status === "checking" ? <Spinner size={12} /> : <RefreshCw size={13} />} Rechercher maintenant
+            {status === "checking" ? <Spinner size={12} /> : <RefreshCw size={13} />} {tr("settings:about.checkNow")}
           </button>
           {available ? (
             <button className={cn(btnPrimary, "h-8 text-[12.5px]")} disabled={status !== "idle"} onClick={() => void installUpdate()}>
-              {status === "installing" ? <Spinner size={12} /> : <Download size={13} />} Installer {available} et redémarrer
+              {status === "installing" ? <Spinner size={12} /> : <Download size={13} />} {tr("settings:about.install", { version: available })}
             </button>
           ) : (
-            checkedAt && !error && <span className="text-[12.5px] text-muted">Envelope est à jour (vérifié {relativeTime(checkedAt)})</span>
+            checkedAt && !error && <span className="text-[12.5px] text-muted">{tr("settings:about.upToDate", { when: relativeTime(checkedAt) })}</span>
           )}
         </div>
         {error && <p className="mt-2 text-[12.5px] text-danger">{error}</p>}
@@ -553,7 +536,7 @@ export function Settings() {
             ))}
           </nav>
           <div className="relative min-w-0 flex-1 overflow-y-auto p-7">
-            <Dialog.Close asChild><IconButton label="Fermer" className="absolute right-3 top-3"><X size={16} /></IconButton></Dialog.Close>
+            <Dialog.Close asChild><IconButton label={tr("common:close")} className="absolute right-3 top-3"><X size={16} /></IconButton></Dialog.Close>
             <h2 className="mb-5 text-[18px] font-semibold tracking-tight">{TABS.find((t) => t.id === settingsTab)?.label}</h2>
             {settingsTab === "accounts" && <AccountsPanel />}
             {settingsTab === "rules" && <RulesPanel />}

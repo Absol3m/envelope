@@ -1,4 +1,5 @@
 import { pref } from "./pref";
+import { t } from "./i18n";
 
 /** Police de l'interface : celle du système par défaut, ou une police libre (OFL) chargée à la demande,
  *  ou le nom d'une police installée sur la machine. */
@@ -22,11 +23,11 @@ interface FreeFont {
 
 /** Polices libres proposées (licence SIL OFL 1.1), embarquées sous forme de paquets Fontsource. */
 export const FREE_FONTS: readonly FreeFont[] = [
-  { id: "inter", label: "Inter", family: '"Inter Variable"', note: "Neutre, très lisible à petite taille", load: () => import("@fontsource-variable/inter"), features: '"cv11", "ss03"' },
-  { id: "source-sans", label: "Source Sans 3", family: '"Source Sans 3 Variable"', note: "Sobre, d'Adobe", load: () => import("@fontsource-variable/source-sans-3") },
-  { id: "plex-sans", label: "IBM Plex Sans", family: '"IBM Plex Sans Variable"', note: "Plus technique, d'IBM", load: () => import("@fontsource-variable/ibm-plex-sans") },
-  { id: "atkinson", label: "Atkinson Hyperlegible Next", family: '"Atkinson Hyperlegible Next Variable"', note: "Conçue pour la lisibilité (basse vision)", load: () => import("@fontsource-variable/atkinson-hyperlegible-next") },
-  { id: "noto-sans", label: "Noto Sans", family: '"Noto Sans Variable"', note: "Large couverture des écritures", load: () => import("@fontsource-variable/noto-sans") },
+  { id: "inter", label: "Inter", family: '"Inter Variable"', get note() { return t("settings:font.notes.inter"); }, load: () => import("@fontsource-variable/inter"), features: '"cv11", "ss03"' },
+  { id: "source-sans", label: "Source Sans 3", family: '"Source Sans 3 Variable"', get note() { return t("settings:font.notes.source-sans"); }, load: () => import("@fontsource-variable/source-sans-3") },
+  { id: "plex-sans", label: "IBM Plex Sans", family: '"IBM Plex Sans Variable"', get note() { return t("settings:font.notes.plex-sans"); }, load: () => import("@fontsource-variable/ibm-plex-sans") },
+  { id: "atkinson", label: "Atkinson Hyperlegible Next", family: '"Atkinson Hyperlegible Next Variable"', get note() { return t("settings:font.notes.atkinson"); }, load: () => import("@fontsource-variable/atkinson-hyperlegible-next") },
+  { id: "noto-sans", label: "Noto Sans", family: '"Noto Sans Variable"', get note() { return t("settings:font.notes.noto-sans"); }, load: () => import("@fontsource-variable/noto-sans") },
 ];
 
 const MAX_CUSTOM = 60;
