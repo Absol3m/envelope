@@ -12,6 +12,13 @@
 - Tout ce qui est mis de côté (suggestion de revue non appliquée, refactor reporté, limite connue, piste non vérifiée) fait l'objet d'une issue GitHub (`gh issue create`), regroupée par thème. Ne jamais écarter quelque chose sans trace : créer l'issue avant de conclure (sans attendre un rappel), y inclure les remarques mineures écartées, et citer son numéro dans la réponse.
 - Fermer les issues **à mesure** : dès que l'objet d'une issue est livré, la fermer (`gh issue close N --comment`) avec un commentaire qui cite le(s) commit(s) ; cocher les cases d'une feuille de route au fil de l'eau. Un reste ou une suite se note en commentaire de la même issue (ou une nouvelle issue seulement pour un autre thème), pas en laissant l'issue ouverte sans rien dire.
 
+## Textes de l'interface (i18n)
+- Aucun texte en dur dans le front : tout passe par `t("espace:clé")` (`src/lib/i18n.ts`, i18next) avec la traduction **`fr` et `en`** dans la même PR (`src/locales/<langue>/<espace>.json`, un fichier par écran). Clés en anglais, texte source en anglais. `pnpm test` vérifie la cohérence (mêmes clés et variables, clés du code existantes).
+- Pluriels : `clé_one` / `clé_other` + `{{count}}`. Dates, nombres, temps relatif : `Intl` via `src/lib/format.ts`, jamais `fr-FR` en dur.
+- Une constante de module qui contient du texte (libellés, listes) se lit **à l'affichage** (getter ou fonction), pas à l'import : le changement de langue remonte l'interface (`main.tsx`).
+- Dans un fichier où `t` désigne autre chose (une conversation, un onglet…), importer `t as tr`.
+- Essai : `pnpm dev` puis `?lang=en` ou `?lang=fr`.
+
 ## Architecture
 - `src-tauri/` : application (workspace Cargo). `crates/envelope-core` : requêtes de lecture partagées (recherche, threads). `crates/envelope-mcp` : serveur MCP séparé, lecture seule sur la base ; les actions IMAP (archiver, étiqueter) passeront par l'application (temps 2).
 - Contenu des e-mails = entrée non fiable (prompt injection) : toujours signalé comme tel dans les sorties MCP.
