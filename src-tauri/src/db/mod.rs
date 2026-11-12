@@ -47,8 +47,6 @@ pub async fn init_memory() -> Result<SqlitePool> {
 
 #[cfg(test)]
 mod tests {
-    use super::init;
-
     /// Le serveur MCP retrouve la base grâce à cet identifiant : il doit suivre `tauri.conf.json`.
     #[test]
     fn app_id_matches_tauri_conf() {
@@ -62,6 +60,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn base_et_dossier_a_l_utilisateur_seul_meme_apres_une_installation_ouverte() {
+        use super::init;
         use std::os::unix::fs::PermissionsExt;
         let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         let dir = std::env::temp_dir().join(format!("envelope-db-{}", uuid::Uuid::new_v4()));
