@@ -2,6 +2,7 @@ import type { DragEvent } from "react";
 import { avatarBackground, displayName, initials } from "./format";
 import { DRAG_TYPE } from "./views";
 import type { ThreadSummary } from "./api";
+import { t as tr } from "./i18n";
 
 /**
  * Glisser d'une conversation : le navigateur photographierait la ligne entière (à pleine largeur,
@@ -28,7 +29,7 @@ export function startThreadDrag(e: DragEvent<HTMLElement>, t: ThreadSummary, ids
   avatar.style.background = avatarBackground(t.fromName, t.fromAddr);
   const subject = document.createElement("span");
   subject.className = "drag-chip-subject";
-  subject.textContent = ids.length > 1 ? `${ids.length} conversations` : t.subject || "(sans objet)";
+  subject.textContent = ids.length > 1 ? tr("list:selectedCount", { count: ids.length }) : t.subject || tr("list:noSubject");
   chip.append(avatar, subject);
   if (ids.length === 1 && t.messageCount > 1) {
     const count = document.createElement("span");

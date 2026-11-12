@@ -6,6 +6,7 @@ import { demoBackend } from "./mock";
 import { isTauri, tauriBackend, type Account, type Backend, type FolderRow, type LockStatus, type ReminderKind, type ScheduledSend, type ThreadDetail, type ThreadQuery, type ThreadSummary } from "./api";
 import { categorize, type Category } from "./categories";
 import { DESTINATIONS, isEmptiableView, isInboxView, isPurgeView, LOCAL_ACCOUNT, placeOf, type Destination, type View } from "./views";
+import { t as tr } from "./i18n";
 
 export type { View };
 
@@ -255,7 +256,7 @@ export const useMail = create<State>((set, get) => {
     } catch (e) {
       if (seq !== loadSeq) return;
       set({ threadsLoading: false });
-      fail("Chargement impossible", e);
+      fail(tr("errors:load"), e);
     }
   }
 
@@ -275,7 +276,7 @@ export const useMail = create<State>((set, get) => {
   };
 
   /** Affichage optimiste : l'état est déjà modifié ; si le serveur refuse, `revert` le rétablit et l'erreur s'affiche. */
-  const optimistic = (call: Promise<unknown>, revert: () => void, label = "Action impossible", onOk?: () => void) =>
+  const optimistic = (call: Promise<unknown>, revert: () => void, label = tr("errors:action"), onOk?: () => void) =>
     call.then(() => { onOk?.(); scheduleFolders(); }, (e) => { revert(); fail(label, e); });
 
   return {
@@ -323,7 +324,7 @@ export const useMail = create<State>((set, get) => {
         }
       } catch (e) {
         set({ ready: true, threadsLoading: false });
-        fail("Démarrage impossible", e);
+        fail(tr("errors:start"), e);
       }
     },
 
@@ -402,7 +403,7 @@ export const useMail = create<State>((set, get) => {
       if (!s.details[id]) {
         s.backend.getThread(id).then(
           (d) => set((cur) => ({ details: { ...cur.details, [id]: d } })),
-          (e) => fail("Conversation illisible", e),
+          (e) => fail(tr("errors:unreadable"), e),
         );
       }
       // Lue après un court instant d'affichage : parcourir la liste (J/K) ne marque rien comme lu.
@@ -467,7 +468,7 @@ export const useMail = create<State>((set, get) => {
       // Un report fait sortir la conversation des listes (sauf « Rappels », où elle reste).
       if (kind === "snooze" && get().view.kind !== "reminders") dropThreads([id]);
       else patchThread(id, { reminderKind: kind, reminderDue: due, reminderFired: null });
-      void optimistic(get().backend.setReminder(id, kind, due), () => void get().reload({ silent: true }), "Rappel impossible");
+      void optimistic(get().backend.setReminder(id, kind, due), () => void get().reload({ silent: true }), tr("errors:reminder"));
     },
 
     clearReminder(id) {
@@ -475,7 +476,7 @@ export const useMail = create<State>((set, get) => {
       if (!t?.reminderKind) return;
       if (get().view.kind === "reminders") dropThreads([id]);
       else patchThread(id, { reminderKind: null, reminderDue: null, reminderFired: null });
-      void optimistic(get().backend.clearReminder(id), () => void get().reload({ silent: true }), "Rappel impossible");
+      void optimistic(get().backend.clearReminder(id), () => void get().reload({ silent: true }), tr("errors:reminder"));
     },
 
     toggleStar(ids) {
@@ -484,7 +485,7 @@ export const useMail = create<State>((set, get) => {
       for (const t of list.filter((t) => t.isStarred !== starred)) {
         patchThread(t.id, { isStarred: starred });
         patchDetail(t.id, (d) => ({ ...d, isStarred: starred }));
-        void optimistic(get().backend.setStarred(t.id, starred), () => patchThread(t.id, { isStarred: !starred }), "Action impossible", () => {
+        void optimistic(get().backend.setStarred(t.id, starred), () => patchThread(t.id, { isStarred: !starred }), tr("errors:action"), () => {
           // Dans la vue « Suivis », retirer l'étoile fait sortir la conversation de la liste.
           if (!starred && get().view.kind === "starred") get().select(visibleThreads(get()).find((x) => x.id !== t.id && x.isStarred)?.id ?? null);
         });
@@ -526,10 +527,10 @@ export const useMail = create<State>((set, get) => {
       const count = (list: readonly number[]) => list.filter((id) => get().threads.some((t) => t.id === id)).length;
       const n = count(toIds(ids));
       if (n === 0) return;
-      const what = n === 1 ? "cette conversation" : `ces ${n} conversations`;
+      const what = tr("store:thisConversation", { count: n });
       const local = get().threads.some((t) => toIds(ids).includes(t.id) && t.accountId === LOCAL_ACCOUNT);
-      const warning = local ? "Elle n'existe que sur cet ordinateur : il n'y a pas de copie sur un serveur. Cette action est irréversible." : "Cette action est irréversible.";
-      if (!(await get().backend.confirm(`Supprimer définitivement ${what} ? ${warning}`, "Supprimer"))) return;
+      const warning = local ? tr("store:irreversibleLocal") : tr("store:irreversible");
+      if (!(await get().backend.confirm(tr("store:deleteConfirm", { what, warning }), tr("store:delete")))) return;
       // L'état a pu changer pendant la boîte de dialogue : on repart de l'état courant.
       const s = get();
       const deletes = toIds(ids).flatMap((id) => {
@@ -543,9 +544,9 @@ export const useMail = create<State>((set, get) => {
       setHidden(failed.map((d) => d.id), false);
       if (done.length > 0) {
         dropThreads(done.map((d) => d.id));
-        get().toast({ message: done.length === 1 ? "Conversation supprimée définitivement" : `${done.length} conversations supprimées définitivement` });
+        get().toast({ message: tr("store:deleted", { count: done.length }) });
       }
-      if (failed.length > 0) fail("Suppression impossible", reason);
+      if (failed.length > 0) fail(tr("errors:delete"), reason);
     },
 
     async emptyView() {
@@ -553,13 +554,13 @@ export const useMail = create<State>((set, get) => {
       const view = s.view;
       if (!isEmptiableView(view)) return;
       const folders = s.folders.filter((f) => f.role === view.role && (!s.accountFilter || f.accountId === s.accountFilter));
-      const what = view.role === "trash" ? "la corbeille" : "le spam";
-      if (folders.length === 0 || !(await s.backend.confirm(`Vider ${what} ? Les conversations seront supprimées définitivement.`, "Vider"))) return;
+      const what = view.role === "trash" ? tr("store:theTrash") : tr("store:theSpam");
+      if (folders.length === 0 || !(await s.backend.confirm(tr("store:emptyConfirm", { what }), tr("store:empty")))) return;
       try {
         for (const f of folders) await s.backend.emptyFolder(f.id);
-        get().toast({ message: view.role === "trash" ? "Corbeille vidée" : "Spam vidé" });
+        get().toast({ message: view.role === "trash" ? tr("store:trashEmptied") : tr("store:spamEmptied") });
       } catch (e) {
-        fail("Impossible de vider", e);
+        fail(tr("errors:empty"), e);
       } finally {
         void get().reload({ silent: true }); // même en cas d'échec : des dossiers ont pu être vidés avant l'erreur
       }

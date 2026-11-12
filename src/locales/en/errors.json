@@ -1,0 +1,9 @@
+{
+  "load": "Couldn't load",
+  "action": "Action failed",
+  "start": "Couldn't start",
+  "reminder": "Couldn't set the reminder",
+  "unreadable": "Conversation can't be read",
+  "delete": "Couldn't delete",
+  "empty": "Couldn't empty"
+}

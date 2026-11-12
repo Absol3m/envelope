@@ -26,5 +26,7 @@
     "priority": "Priority",
     "newsletters": "Newsletters",
     "notifications": "Notifications"
-  }
+  },
+  "selectedCount_one": "{{count}} conversation",
+  "selectedCount_other": "{{count}} conversations"
 }

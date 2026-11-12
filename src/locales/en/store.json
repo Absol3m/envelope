@@ -1,0 +1,16 @@
+{
+  "thisConversation_one": "this conversation",
+  "thisConversation_other": "these {{count}} conversations",
+  "irreversibleLocal": "It only exists on this computer: there's no copy on a server. This can't be undone.",
+  "irreversible": "This can't be undone.",
+  "deleteConfirm": "Permanently delete {{what}}? {{warning}}",
+  "delete": "Delete",
+  "deleted_one": "Conversation permanently deleted",
+  "deleted_other": "{{count}} conversations permanently deleted",
+  "theTrash": "the trash",
+  "theSpam": "spam",
+  "emptyConfirm": "Empty {{what}}? The conversations will be permanently deleted.",
+  "empty": "Empty",
+  "trashEmptied": "Trash emptied",
+  "spamEmptied": "Spam emptied"
+}

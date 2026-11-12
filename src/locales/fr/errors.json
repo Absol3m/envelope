@@ -1,0 +1,9 @@
+{
+  "load": "Chargement impossible",
+  "action": "Action impossible",
+  "start": "Démarrage impossible",
+  "reminder": "Rappel impossible",
+  "unreadable": "Conversation illisible",
+  "delete": "Suppression impossible",
+  "empty": "Impossible de vider"
+}

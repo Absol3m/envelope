@@ -1,0 +1,7 @@
+{
+  "newMessages_one": "New message",
+  "newMessages_other": "{{count}} new messages",
+  "denied": "permission denied by the system",
+  "withOthers_one": "{{names}} and {{count}} other",
+  "withOthers_other": "{{names}} and {{count}} others"
+}

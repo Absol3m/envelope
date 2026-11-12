@@ -1,5 +1,6 @@
 import { useMail } from "./store";
 import { openExternal } from "./utils";
+import { t } from "./i18n";
 
 /* Liens des e-mails : détection des destinations trompeuses (hameçonnage), avant ouverture dans le navigateur.
    Analyse d'URL par le moteur (`URL`), pas d'expression maison ; seul le texte affiché est repéré par un motif simple. */
@@ -35,17 +36,17 @@ export function linkRisk(href: string, text: string): string | null {
   try {
     u = new URL(href);
   } catch {
-    return "Ce lien n'est pas une adresse web ordinaire.";
+    return t("links:notWeb");
   }
   if (u.protocol === "mailto:") return null;
-  if (u.protocol !== "http:" && u.protocol !== "https:") return "Ce lien n'est pas une adresse web ordinaire.";
+  if (u.protocol !== "http:" && u.protocol !== "https:") return t("links:notWeb");
   const host = u.hostname.toLowerCase();
-  if (u.username || u.password) return `Ce lien contient un identifiant avant le nom du site ; il mène en réalité à « ${host} ».`;
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith("[")) return `Ce lien mène à une adresse numérique (« ${host} »), pas à un nom de site.`;
+  if (u.username || u.password) return t("links:credentials", { host });
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith("[")) return t("links:numeric", { host });
   // Les IDN s'écrivent « xn-- » une fois normalisés : domaine pouvant imiter un autre par des lettres d'autres alphabets.
-  if (host.split(".").some((l) => l.startsWith("xn--"))) return `Le site « ${host} » utilise un nom en caractères non latins qui peut imiter un autre site.`;
+  if (host.split(".").some((l) => l.startsWith("xn--"))) return t("links:idn", { host });
   const shown = shownHost(text);
-  return shown && !sameSite(shown, host) ? `Le texte du lien annonce « ${shown} », mais il mène à « ${host} ».` : null;
+  return shown && !sameSite(shown, host) ? t("links:mismatch", { shown, host }) : null;
 }
 
 /** Ouvre un lien dans le navigateur système ; si sa destination est douteuse, demande d'abord confirmation
@@ -54,7 +55,7 @@ export async function openLink(href: string, text: string): Promise<void> {
   const risk = linkRisk(href, text);
   if (risk) {
     const shown = href.length > 160 ? `${href.slice(0, 160)}…` : href;
-    const ok = await useMail.getState().backend.confirm(`${risk}\n\n${shown}\n\nCe peut être une tentative d'hameçonnage. L'ouvrir quand même ?`, "Ouvrir quand même");
+    const ok = await useMail.getState().backend.confirm(`${risk}\n\n${shown}\n\n${t("links:phishing")}`, t("links:openAnyway"));
     if (!ok) return;
   }
   await openExternal(href);

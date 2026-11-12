@@ -1,0 +1,9 @@
+{
+  "notWeb": "This link isn't an ordinary web address.",
+  "credentials": "This link has a username before the site name; it actually goes to “{{host}}”.",
+  "numeric": "This link goes to a numeric address (“{{host}}”), not a site name.",
+  "idn": "The site “{{host}}” uses a name with non-Latin characters that can imitate another site.",
+  "mismatch": "The link text says “{{shown}}”, but it goes to “{{host}}”.",
+  "phishing": "This could be a phishing attempt. Open it anyway?",
+  "openAnyway": "Open anyway"
+}
