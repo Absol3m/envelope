@@ -393,4 +393,29 @@ mod tests {
             .await
             .is_err());
     }
+
+    #[tokio::test]
+    async fn la_liste_des_comptes_compte_les_copies_en_attente() {
+        let db = crate::db::init_memory().await.unwrap();
+        sqlx::query("INSERT INTO accounts (id,email,username,imap_host,smtp_host) VALUES ('a','a@x.fr','a','i','s'),('b','b@x.fr','b','i','s')")
+            .execute(&db)
+            .await
+            .unwrap();
+        let dir = std::env::temp_dir().join(format!("envelope-sentcopy-{}", uuid::Uuid::new_v4()));
+        let first = enqueue(&db, &dir, "a", b"Subject: 1\r\n\r\nx")
+            .await
+            .unwrap();
+        enqueue(&db, &dir, "a", b"Subject: 2\r\n\r\ny")
+            .await
+            .unwrap();
+        let p = &due(&db, "a", now()).await.unwrap()[0];
+        assert_eq!(p.id, first);
+        reschedule(&db, p, 60, false, "boom").await.unwrap();
+        let accounts = crate::mail::account::list(&db).await.unwrap();
+        let get = |id: &str| accounts.iter().find(|a| a.id == id).unwrap();
+        assert_eq!(get("a").pending_copies, 2);
+        assert_eq!(get("a").pending_copy_error.as_deref(), Some("boom"));
+        assert_eq!(get("b").pending_copies, 0);
+        assert_eq!(get("b").pending_copy_error, None);
+    }
 }

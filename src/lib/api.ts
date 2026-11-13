@@ -28,6 +28,9 @@ export interface Account {
   signature: string;
   /** Une copie des messages envoyés est déposée dans « Envoyés » (toujours faux de fait pour Gmail, qui la range lui-même). */
   copySent: boolean;
+  /** Copies d'envoyés pas encore déposées sur le serveur (reprise automatique) et dernière erreur (codée). */
+  pendingCopies: number;
+  pendingCopyError: string | null;
   identities: Identity[];
 }
 /** Dossier trouvé dans une source d'import (profil Thunderbird, dossier de boîtes mbox ou Maildir). */

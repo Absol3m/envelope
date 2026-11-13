@@ -17,8 +17,8 @@ const FR_TEMPLATE_BODY = "<p>Bonjour,</p><p>Nous avons bien reçu votre message 
 const TEMPLATES: Template[] = [{ id: 1, name: "Accusé de réception", subject: "Re : votre demande", bodyHtml: FR_TEMPLATE_BODY }];
 
 const ACCOUNTS: Account[] = [
-  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", copySent: true, identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr" }] },
-  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "", copySent: true, identities: [] },
+  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr" }] },
+  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [] },
 ];
 
 const ROLES = ["inbox", "drafts", "sent", "archive", "junk", "trash"] as const;

@@ -600,6 +600,8 @@
  "settings:font.installedName": "5493b9f3",
  "settings:font.installedPlaceholder": "96b5566a",
  "settings:font.sample": "88b83ef0",
+ "settings:pendingCopies_one": "261ce6dc",
+ "settings:pendingCopies_other": "4f2cceba",
  "settings:copySent.title": "b70fd952",
  "settings:copySent.hint": "9a808726",
  "settings:copySent.label": "2a3fbd75",

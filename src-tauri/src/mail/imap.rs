@@ -349,6 +349,8 @@ mod starttls_tests {
             sync_error: None,
             signature: String::new(),
             copy_sent: true,
+            pending_copies: 0,
+            pending_copy_error: None,
             identities: vec![],
         }
     }

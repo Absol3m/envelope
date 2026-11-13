@@ -203,6 +203,7 @@ function AccountsPanel() {
                 <p className={cn("text-[11.5px]", a.syncStatus === "error" ? "text-danger" : "text-faint")}>
                   {a.syncStatus === "error" ? describeStored(a.syncError) ?? tr("settings:syncError") : a.syncStatus === "syncing" ? tr("sidebar:syncing") : tr("sidebar:synced", { when: relativeTime(a.lastSyncAt) })}
                 </p>
+                {a.pendingCopies > 0 && <p className="text-[11.5px] text-warn" title={describeStored(a.pendingCopyError) ?? undefined}>{tr("settings:pendingCopies", { count: a.pendingCopies })}</p>}
               </div>
               {a.authKind === "oauth2" && a.syncStatus === "error" && (
                 <button className={btnGhost} disabled={backend.demo} onClick={() => void backend.reconnectOAuthAccount(a.id).then(() => toast({ message: tr("settings:reconnected") })).catch((e) => toast({ message: String(e) }))}>{tr("settings:reconnect")}</button>

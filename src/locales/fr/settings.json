@@ -79,6 +79,8 @@
     "installedPlaceholder": "Nom exact, ex. Helvetica Neue",
     "sample": "Aa Bb Cc — Le vif zéphyr jubile sur les kumquats du clown gracieux. 0123456789"
   },
+  "pendingCopies_one": "1 message envoyé pas encore copié dans Envoyés — nouvel essai automatique",
+  "pendingCopies_other": "{{count}} messages envoyés pas encore copiés dans Envoyés — nouvel essai automatique",
   "copySent": {
     "title": "Copie des messages envoyés",
     "hint": "Une copie de chaque message envoyé est déposée dans le dossier « Envoyés » du compte. Si le serveur la refuse, elle est gardée dans un dossier local.",

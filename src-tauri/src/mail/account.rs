@@ -79,6 +79,12 @@ pub struct Account {
     pub signature: String,
     /// Déposer une copie des messages envoyés dans « Envoyés » (réglage du compte ; voir `keeps_sent_copy`).
     pub copy_sent: bool,
+    /// Copies d'envoyés en attente de dépôt sur le serveur (file `pending_append`), remplies par `list`.
+    #[sqlx(skip)]
+    pub pending_copies: i64,
+    /// Dernière erreur d'une copie en attente (codée, voir `AppError::to_wire`).
+    #[sqlx(skip)]
+    pub pending_copy_error: Option<String>,
     /// Alias d'envoi (table `identities`), remplis par `list` et `get`.
     #[sqlx(skip)]
     pub identities: Vec<Identity>,
@@ -446,6 +452,18 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>> {
     for (account_id, id, name, email) in identities {
         if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
             a.identities.push(Identity { id, name, email });
+        }
+    }
+    let pending: Vec<(String, i64, Option<String>)> = sqlx::query_as(
+        "SELECT account_id, COUNT(*), (SELECT last_error FROM pending_append q WHERE q.account_id = p.account_id \
+         AND q.last_error IS NOT NULL ORDER BY q.id DESC LIMIT 1) FROM pending_append p GROUP BY account_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    for (account_id, count, error) in pending {
+        if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
+            a.pending_copies = count;
+            a.pending_copy_error = error;
         }
     }
     Ok(accounts)

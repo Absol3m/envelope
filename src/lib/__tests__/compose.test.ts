@@ -196,7 +196,7 @@ describe("réponse depuis un alias", () => {
 });
 
 describe("expéditeurs", () => {
-  const acct = (identities: { id: number; name: string; email: string }[]) => ({ id: "a", email: "me@x.fr", displayName: "Moi", provider: "imap", authKind: "password" as const, syncStatus: "idle" as const, syncError: null, lastSyncAt: null, signature: "", copySent: true, identities });
+  const acct = (identities: { id: number; name: string; email: string }[]) => ({ id: "a", email: "me@x.fr", displayName: "Moi", provider: "imap", authKind: "password" as const, syncStatus: "idle" as const, syncError: null, lastSyncAt: null, signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities });
   it("liste chaque compte puis ses alias", () => {
     const o = senderOptions([acct([{ id: 1, name: "Pro", email: "contact@x.fr" }])]);
     expect(o.map((x) => [x.alias, x.label])).toEqual([["", "Moi <me@x.fr>"], ["contact@x.fr", "Pro <contact@x.fr>"]]);

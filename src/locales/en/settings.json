@@ -79,6 +79,8 @@
     "installedPlaceholder": "Exact name, e.g. Helvetica Neue",
     "sample": "Aa Bb Cc — The quick brown fox jumps over the lazy dog. 0123456789"
   },
+  "pendingCopies_one": "1 sent message not yet copied to Sent — retrying automatically",
+  "pendingCopies_other": "{{count}} sent messages not yet copied to Sent — retrying automatically",
   "copySent": {
     "title": "Copy of sent messages",
     "hint": "A copy of each message you send is saved in the account's Sent folder. If the server refuses it, the copy is kept in a local folder.",
