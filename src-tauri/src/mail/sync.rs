@@ -207,8 +207,7 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
         sentcopy::drain(
             &ctx.app,
             &ctx.pool,
-            &ctx.attachments_dir,
-            &ctx.raw_dir,
+            (&ctx.attachments_dir, &ctx.raw_dir),
             &acct,
             &mut session,
         )

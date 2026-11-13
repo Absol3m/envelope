@@ -86,7 +86,7 @@ pub async fn enqueue(
 ) -> Result<i64> {
     let hash = rawstore::put(raw_dir, raw).await?;
     let message_id = mail_parser::MessageParser::default()
-        .parse(raw)
+        .parse_headers(raw)
         .and_then(|m| m.message_id().map(str::to_string));
     let at = now();
     Ok(sqlx::query_scalar(
@@ -140,26 +140,35 @@ async fn reschedule(
     Ok(())
 }
 
-/// Dépose une copie sur le serveur, sauf si elle y est déjà (Message-ID trouvé dans « Envoyés »).
+/// Dépose une copie sur le serveur, sauf si elle y est déjà (Message-ID trouvé dans « Envoyés »). `sent` : chemin du
+/// dossier, résolu une seule fois pour toute la passe.
 async fn append(
     pool: &SqlitePool,
     raw_dir: &Path,
     account_id: &str,
     session: &mut imap::ImapSession,
+    sent: &mut Option<String>,
     p: &Pending,
 ) -> Result<()> {
-    let known: Option<String> =
-        sqlx::query_scalar("SELECT path FROM folders WHERE account_id = ? AND role = 'sent'")
+    let path = match sent {
+        Some(path) => path,
+        None => {
+            let known: Option<String> = sqlx::query_scalar(
+                "SELECT path FROM folders WHERE account_id = ? AND role = 'sent'",
+            )
             .bind(account_id)
             .fetch_optional(pool)
             .await?;
-    let path = match known {
-        Some(p) => p,
-        None => imap::find_or_create(session, "sent", "Sent").await?,
+            let path = match known {
+                Some(path) => path,
+                None => imap::find_or_create(session, "sent", "Sent").await?,
+            };
+            sent.insert(path)
+        }
     };
     if let Some(criteria) = p.message_id.as_deref().and_then(search_criteria) {
         // Un dossier qu'on ne peut pas ouvrir ne bloque pas : l'APPEND dira ce qu'il en est.
-        if session.select(&path).await.is_ok()
+        if session.select(&*path).await.is_ok()
             && session
                 .uid_search(criteria)
                 .await
@@ -169,7 +178,7 @@ async fn append(
         }
     }
     let raw = rawstore::get(raw_dir, &p.raw_hash).await?;
-    session.append(&path, Some("(\\Seen)"), None, &raw).await?;
+    session.append(&*path, Some("(\\Seen)"), None, &raw).await?;
     Ok(())
 }
 
@@ -213,13 +222,42 @@ async fn save_locally(
     Ok(())
 }
 
+/// Après un échec : réessayer plus tard, ou ranger en local (et prévenir) ; sans issue, la ligne reste en file.
+async fn on_failure(
+    app: &AppHandle,
+    pool: &SqlitePool,
+    dirs: (&Path, &Path),
+    acct: &Account,
+    p: &Pending,
+    e: &AppError,
+) {
+    let (attachments_dir, raw_dir) = dirs;
+    let wire = e.to_wire();
+    let next = after_failure(is_refusal(e), p.attempts, p.refusals, now() - p.created_at);
+    let (delay, refused) = match next {
+        Next::Retry { delay, refused } => (delay, refused),
+        Next::Local => match save_locally(pool, attachments_dir, raw_dir, acct, p).await {
+            Ok(()) => {
+                let _ = done(pool, p.id).await;
+                let _ = app.emit("sent-copy:local", &wire);
+                return;
+            }
+            // Même le dossier local échoue : on garde la ligne et on réessaie plus tard.
+            Err(local_err) => {
+                tracing::error!("copie locale impossible : {local_err}");
+                (MAX_DELAY_SECS, false)
+            }
+        },
+    };
+    let _ = reschedule(pool, p, delay, refused, &wire).await;
+}
+
 /// Traite les copies en attente d'un compte (appelé en début de synchro, avec sa session). Ne fait jamais échouer la
 /// synchro : une copie en échec reste en file, ou est rangée en local.
 pub async fn drain(
     app: &AppHandle,
     pool: &SqlitePool,
-    attachments_dir: &Path,
-    raw_dir: &Path,
+    dirs: (&Path, &Path), // (pièces jointes, messages bruts)
     acct: &Account,
     session: &mut imap::ImapSession,
 ) {
@@ -230,33 +268,15 @@ pub async fn drain(
         Ok(p) => p,
         Err(e) => return tracing::warn!(account = %acct.id, "copies à déposer : {e}"),
     };
+    let mut sent = None;
     for p in pending {
-        match append(pool, raw_dir, &acct.id, session, &p).await {
+        match append(pool, dirs.1, &acct.id, session, &mut sent, &p).await {
             Ok(()) => {
                 let _ = done(pool, p.id).await;
             }
             Err(e) => {
                 tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
-                let age = now() - p.created_at;
-                match after_failure(is_refusal(&e), p.attempts, p.refusals, age) {
-                    Next::Retry { delay, refused } => {
-                        let _ = reschedule(pool, &p, delay, refused, &e.to_wire()).await;
-                    }
-                    Next::Local => {
-                        match save_locally(pool, attachments_dir, raw_dir, acct, &p).await {
-                            Ok(()) => {
-                                let _ = done(pool, p.id).await;
-                                let _ = app.emit("sent-copy:local", e.to_wire());
-                            }
-                            // Même le dossier local échoue : on garde la ligne et on réessaie plus tard.
-                            Err(local_err) => {
-                                tracing::error!("copie locale impossible : {local_err}");
-                                let _ =
-                                    reschedule(pool, &p, MAX_DELAY_SECS, false, &e.to_wire()).await;
-                            }
-                        }
-                    }
-                }
+                on_failure(app, pool, dirs, acct, &p, &e).await;
             }
         }
     }
