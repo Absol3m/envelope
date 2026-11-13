@@ -32,10 +32,14 @@ export function LockScreen() {
   };
   const unlockSystem = () => void attempt(() => backend.unlockSystem());
 
-  // Par le système : l'invite s'ouvre d'elle-même à l'affichage de l'écran ; par mot de passe : le champ prend le focus.
+  // Par mot de passe : le champ prend le focus. Par le système : l'invite s'ouvre d'elle-même, mais seulement quand
+  // Envelope est au premier plan. Verrouillée en arrière-plan (inactivité), l'app attend qu'on y revienne : l'invite du
+  // système passe par-dessus toutes les fenêtres et surgirait au milieu d'une autre application.
   useEffect(() => {
-    if (method === "system") void attempt(() => backend.unlockSystem());
-    else field.current?.focus();
+    if (method !== "system") return void field.current?.focus();
+    if (document.hasFocus()) return unlockSystem();
+    window.addEventListener("focus", unlockSystem, { once: true });
+    return () => window.removeEventListener("focus", unlockSystem);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method]);
 
