@@ -205,9 +205,34 @@ pub async fn find_or_create(
         names.iter().map(|n| (n.name(), n.delimiter())),
         default_name,
     );
-    session.create(&path).await?;
+    // Boîte neuve (que INBOX) sur un serveur dont l'espace de noms personnel est `INBOX.` : rien à déduire de LIST,
+    // la création à la racine est refusée, on réessaie sous INBOX (plutôt que de lire NAMESPACE, que ni async-imap ni
+    // imap-proto n'exposent : un analyseur maison de réponses serveur serait une surface d'attaque).
+    let path = match session.create(&path).await {
+        Ok(()) => path,
+        Err(first) => {
+            let Some(under) = inbox_child(names.iter().map(|n| (n.name(), n.delimiter())), &path)
+            else {
+                return Err(first.into());
+            };
+            session.create(&under).await.map_err(|_| first)?;
+            under
+        }
+    };
     let _ = session.subscribe(&path).await; // non bloquant : certains serveurs l'abonnent d'office
     Ok(path)
+}
+
+/// `INBOX<délimiteur>name` d'après le délimiteur annoncé pour INBOX (None s'il n'y en a pas ou si `path` est déjà dessous).
+fn inbox_child<'a>(
+    mut names: impl Iterator<Item = (&'a str, Option<&'a str>)>,
+    path: &str,
+) -> Option<String> {
+    let delim = names
+        .find(|(n, _)| n.eq_ignore_ascii_case("INBOX"))?
+        .1
+        .filter(|d| !d.is_empty())?;
+    (!path.to_ascii_uppercase().starts_with("INBOX")).then(|| format!("INBOX{delim}{path}"))
 }
 
 /// Chemin sous lequel créer `name`. Un serveur dont l'espace de noms personnel est `INBOX.` (Courier, Dovecot en
@@ -252,6 +277,23 @@ pub async fn append_sent(session: &mut ImapSession, known: Option<&str>, raw: &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repli_sous_inbox_apres_refus_a_la_racine() {
+        let l = |v: Vec<&'static str>| v.into_iter().map(|p| (p, Some(".")));
+        assert_eq!(
+            inbox_child(l(vec!["INBOX"]), "Sent").as_deref(),
+            Some("INBOX.Sent")
+        );
+        assert_eq!(
+            inbox_child(l(vec!["inbox"]), "Sent").as_deref(),
+            Some("INBOX.Sent")
+        );
+        assert_eq!(inbox_child(l(vec!["INBOX"]), "INBOX.Sent"), None); // déjà dessous
+        assert_eq!(inbox_child(l(vec!["Autre"]), "Sent"), None); // pas d'INBOX connue
+        assert_eq!(inbox_child(std::iter::once(("INBOX", None)), "Sent"), None);
+        // pas de délimiteur
+    }
 
     #[test]
     fn dossier_cree_sous_inbox_si_le_serveur_l_exige() {
