@@ -315,6 +315,8 @@ pub struct StoreOpts<'a> {
     pub lazy_attachments: bool,
 }
 
+/// Sans options : utilisé par les essais et les outils de développement (le moteur appelle `store_with`).
+#[cfg(any(test, debug_assertions))]
 pub async fn store(
     pool: &SqlitePool,
     attachments_dir: &Path,
