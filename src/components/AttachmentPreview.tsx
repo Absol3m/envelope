@@ -10,7 +10,7 @@ const useSrc = (id: number) => {
   return useMemo(() => backend.attachmentSrc(id), [backend, id]);
 };
 
-/** Aperçu d'une image jointe, avec enregistrement et ouverture dans l'application du système. */
+/** Aperçu d'une image ou d'un PDF joint, avec enregistrement et ouverture dans l'application du système. */
 export function AttachmentPreview({ item, onClose, onSave, onOpen }: { item: DetailAttachment; onClose(): void; onSave(): void; onOpen(): void }) {
   const src = useSrc(item.id);
   const name = item.filename ?? tr("reader:attachment");
@@ -27,8 +27,11 @@ export function AttachmentPreview({ item, onClose, onSave, onOpen }: { item: Det
             <Dialog.Close aria-label={tr("common:close")} className="press rounded-md p-1 text-muted hover:bg-hover hover:text-fg"><X size={16} /></Dialog.Close>
           </div>
           <div className="mt-3 flex min-h-[160px] flex-1 items-center justify-center overflow-auto rounded-xl bg-bg">
-            {/* illisible : on laisse le système l'ouvrir */}
-            <img src={src} alt={name} onError={() => { onClose(); onOpen(); }} className="max-h-[78vh] max-w-full object-contain" />
+            {item.mimeType.toLowerCase() === "application/pdf"
+              // lecteur PDF natif de la webview (pas de bibliothèque embarquée) ; sans lecteur, « Ouvrir avec » reste là
+              ? <iframe src={src} title={name} className="h-[78vh] w-full border-0" />
+              /* illisible : on laisse le système l'ouvrir */
+              : <img src={src} alt={name} onError={() => { onClose(); onOpen(); }} className="max-h-[78vh] max-w-full object-contain" />}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

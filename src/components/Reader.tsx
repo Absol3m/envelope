@@ -150,7 +150,7 @@ function Attachments({ items }: { items: DetailAttachment[] }) {
   const [unshown, setUnshown] = useState<ReadonlySet<number>>(new Set()); // images trop grosses ou illisibles : gardées en pièce jointe
   if (items.length === 0) return null;
   // Les images s'affichent dans le fil, sous le message (celles déjà dans le corps, `cid:`, n'y sont pas répétées).
-  const isShown = (a: DetailAttachment) => a.previewable && !a.isInline && !unshown.has(a.id);
+  const isShown = (a: DetailAttachment) => a.previewable && a.mimeType.startsWith("image/") && !a.isInline && !unshown.has(a.id);
   const shown = items.filter(isShown);
   const chips = items.filter((a) => !isShown(a));
   const fail = (key: "reader:openFailed" | "reader:saveFailed") => (e: unknown) => toast({ message: tr(key, { error: String(e) }), tone: "error" });

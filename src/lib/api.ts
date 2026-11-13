@@ -131,7 +131,7 @@ export interface DetailAttachment {
   size: number;
   contentId: string | null;
   isInline: boolean;
-  /** Image de taille raisonnable : affichée par l'application (règle du moteur). */
+  /** Image ou PDF de taille raisonnable : affiché par l'application (règle du moteur). */
   previewable: boolean;
 }
 export interface ThreadDetail {
@@ -330,7 +330,7 @@ export interface Backend {
   /** Désabonne de la liste d'un message (POST en un clic ou message mailto). */
   unsubscribe(messageId: number): Promise<void>;
   openAttachment(id: number): Promise<void>;
-  /** URL d'une image jointe affichable (`previewable`) pour un `<img>` : le moteur la sert en flux, sans base64. */
+  /** URL d'une pièce jointe affichable (`previewable`) pour un `<img>` ou un `<iframe>` (PDF) : le moteur la sert en flux, sans base64. */
   attachmentSrc(id: number): string;
   /** Sélecteur natif (« Enregistrer sous », ou un dossier s'il y en a plusieurs) ; rend le nombre enregistré, 0 si annulé. */
   saveAttachments(ids: number[]): Promise<number>;

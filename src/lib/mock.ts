@@ -73,7 +73,7 @@ function msg(p: { from: [string | null, string]; to?: [string | null, string][];
   };
 }
 const att = (messageId: number, filename: string, mimeType: string, size: number): DetailAttachment => ({
-  id: nextAtt++, messageId, filename, mimeType, size, contentId: null, isInline: false, previewable: /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)$/.test(mimeType) && size <= 15 * 1024 * 1024, // reflète `envelope_core::attachment::previewable`
+  id: nextAtt++, messageId, filename, mimeType, size, contentId: null, isInline: false, previewable: /^(image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)|application\/pdf)$/.test(mimeType) && size <= 15 * 1024 * 1024, // reflète `envelope_core::attachment::previewable`
 });
 
 const svg = (a: string, b: string, label = "") =>

@@ -11,13 +11,25 @@ const PREVIEW_TYPES: &[&str] = &[
     "image/svg+xml",
 ];
 
+/// PDF : rendu par le lecteur natif de la webview (aperçu seulement, pas dans le fil).
+const PDF_TYPE: &str = "application/pdf";
+
+/// Image rendue par `<img>` (affichable dans le fil comme dans l'aperçu).
+pub fn is_image(mime: &str) -> bool {
+    PREVIEW_TYPES.iter().any(|t| t.eq_ignore_ascii_case(mime))
+}
+
+pub fn is_pdf(mime: &str) -> bool {
+    mime.eq_ignore_ascii_case(PDF_TYPE)
+}
+
 /// Au-delà, le fichier s'ouvre dans l'application du système.
 const PREVIEW_MAX: u64 = 15 * 1024 * 1024;
 
 /// Faut-il afficher cette pièce jointe dans l'application (une seule règle, pour l'interface et pour le protocole
 /// `attachment://` qui sert les octets) ?
 pub fn previewable(mime: &str, size: u64) -> bool {
-    size <= PREVIEW_MAX && PREVIEW_TYPES.iter().any(|t| t.eq_ignore_ascii_case(mime))
+    size <= PREVIEW_MAX && (is_image(mime) || is_pdf(mime))
 }
 
 #[cfg(test)]
@@ -30,7 +42,9 @@ mod tests {
         assert!(previewable("IMAGE/JPEG", PREVIEW_MAX));
         assert!(previewable("image/svg+xml", 10));
         assert!(!previewable("image/png", PREVIEW_MAX + 1));
-        assert!(!previewable("application/pdf", 10));
+        assert!(previewable("application/PDF", 10));
+        assert!(!previewable("application/pdf", PREVIEW_MAX + 1));
+        assert!(is_image("image/png") && !is_image("application/pdf"));
         assert!(!previewable("image/tiff", 10));
         assert!(!previewable("text/html", 10));
     }

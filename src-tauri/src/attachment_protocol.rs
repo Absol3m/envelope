@@ -8,7 +8,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use envelope_core::attachment::previewable;
+use envelope_core::attachment::{is_pdf, previewable};
 use sqlx::SqlitePool;
 use tauri::http::{header, Response, StatusCode};
 use tauri::{AppHandle, Manager};
@@ -69,15 +69,18 @@ async fn serve_id(
     if f.read_to_end(&mut bytes).await.is_err() {
         return status(StatusCode::NOT_FOUND);
     }
-    Response::builder()
+    let mut res = Response::builder()
         .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, file.mime.to_ascii_lowercase())
-        // Ouvert directement, un SVG n'exécute rien et ne charge rien.
-        .header(
+        .header(header::CONTENT_TYPE, file.mime.to_ascii_lowercase());
+    // Ouvert directement, un SVG n'exécute rien et ne charge rien. Pas de CSP pour un PDF : elle empêcherait le
+    // lecteur natif de la webview de s'afficher (le type est figé par nosniff, ce n'est pas du HTML).
+    if !is_pdf(&file.mime) {
+        res = res.header(
             header::CONTENT_SECURITY_POLICY,
             "default-src 'none'; style-src 'unsafe-inline'",
-        )
-        .header("X-Content-Type-Options", "nosniff")
+        );
+    }
+    res.header("X-Content-Type-Options", "nosniff")
         // Pas de cache du moteur de rendu : une image déjà chargée ne contournerait plus le verrouillage, et un
         // identifiant réutilisé ne montrerait pas l'ancienne image. L'accès est local, la relecture est peu coûteuse.
         .header(header::CACHE_CONTROL, "no-store")
@@ -144,9 +147,15 @@ mod tests {
         assert_eq!(r.headers()[header::CONTENT_TYPE], "image/png");
         assert_eq!(r.body().as_ref(), b"\x89PNG");
 
-        let not_image = insert(&db, "application/pdf", 4, &pdf).await;
+        let doc = insert(&db, "application/pdf", 4, &pdf).await;
+        let r = serve_id(&db, &dir, &dir, doc).await;
+        assert_eq!(r.status(), StatusCode::OK);
+        assert!(r.headers().get(header::CONTENT_SECURITY_POLICY).is_none());
+        let txt = dir.join("a.html");
+        std::fs::write(&txt, b"<b>").unwrap();
+        let not_shown = insert(&db, "text/html", 3, &txt).await;
         assert_eq!(
-            serve_id(&db, &dir, &dir, not_image).await.status(),
+            serve_id(&db, &dir, &dir, not_shown).await.status(),
             StatusCode::UNSUPPORTED_MEDIA_TYPE
         );
         let escaped = insert(&db, "image/png", 1, &outside).await;
