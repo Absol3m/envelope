@@ -138,8 +138,9 @@ pub fn run() {
             |ctx, request, responder| {
                 let app = ctx.app_handle().clone();
                 let path = request.uri().path().to_string();
+                let webview = ctx.webview_label().to_string();
                 tauri::async_runtime::spawn(async move {
-                    responder.respond(attachment_protocol::serve(&app, &path).await);
+                    responder.respond(attachment_protocol::serve(&app, &webview, &path).await);
                 });
             },
         )

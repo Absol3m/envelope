@@ -35,8 +35,10 @@ fn status(code: StatusCode) -> Response<Cow<'static, [u8]>> {
         .unwrap_or_default()
 }
 
-pub async fn serve(app: &AppHandle, path: &str) -> Response<Cow<'static, [u8]>> {
-    if lock::is_locked_or_missing(app) {
+/// `webview` : la webview qui demande. Seule la fenêtre principale lit les pièces jointes (les sous-cadres du message,
+/// qui chargent les images `cid:`, en font partie : le protocole ne les distingue pas).
+pub async fn serve(app: &AppHandle, webview: &str, path: &str) -> Response<Cow<'static, [u8]>> {
+    if webview != "main" || lock::is_locked_or_missing(app) {
         return status(StatusCode::FORBIDDEN);
     }
     let Some(id) = parse_id(path) else {
