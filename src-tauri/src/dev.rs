@@ -445,7 +445,7 @@ pub async fn seed_photo_thread(data_dir: &Path, images_dir: &Path) -> Result<usi
                 size: Some(raw.len() as i64),
             },
             ingest::Flags {
-                seen: *from_me,
+                seen: true, // lus : aucune action IMAP à l'ouverture
                 flagged: false,
             },
             parsed,

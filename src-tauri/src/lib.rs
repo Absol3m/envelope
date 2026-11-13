@@ -146,6 +146,10 @@ pub fn run() {
         .setup(|app| {
             main_window(app)?;
             let data_dir = app.path().app_data_dir()?;
+            // Développement : base d'essai ailleurs (ex. `seed_photos`), sans toucher à `HOME` (le trousseau du système
+            // en dépend). `ENVELOPE_NO_SYNC` : pas de synchro (comptes fictifs).
+            #[cfg(debug_assertions)]
+            let data_dir = std::env::var_os("ENVELOPE_DATA_DIR").map_or(data_dir, PathBuf::from);
             let db_path = db::db_path(&data_dir);
             let pool = tauri::async_runtime::block_on(db::init(&db_path))?;
             let lock_config = tauri::async_runtime::block_on(lock::load_config(&pool))?;
@@ -171,7 +175,14 @@ pub fn run() {
             });
             tauri::async_runtime::spawn(scheduled::run(app.handle().clone()));
             tauri::async_runtime::spawn(reminders::run(app.handle().clone()));
+            #[cfg(debug_assertions)]
+            let no_sync = std::env::var_os("ENVELOPE_NO_SYNC").is_some();
+            #[cfg(not(debug_assertions))]
+            let no_sync = false;
             tauri::async_runtime::spawn(async move {
+                if no_sync {
+                    return;
+                }
                 if let Err(e) = sync.start_all().await {
                     tracing::error!("démarrage de la synchro : {e}");
                 }
