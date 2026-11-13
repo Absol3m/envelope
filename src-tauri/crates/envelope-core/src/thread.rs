@@ -317,6 +317,9 @@ pub struct DetailAttachment {
     pub size: i64,
     pub content_id: Option<String>,
     pub is_inline: bool,
+    /// L'interface peut l'afficher (image de taille raisonnable) ; calculé après la requête.
+    #[sqlx(skip)]
+    pub previewable: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -349,13 +352,16 @@ pub async fn get_thread_detail(pool: &SqlitePool, thread_id: i64) -> Result<Opti
     .bind(thread_id)
     .fetch_all(pool)
     .await?;
-    let attachments = sqlx::query_as(
+    let mut attachments: Vec<DetailAttachment> = sqlx::query_as(
         "SELECT id, message_id, filename, mime_type, size, content_id, is_inline FROM attachments \
          WHERE message_id IN (SELECT id FROM messages WHERE thread_id = ?) ORDER BY message_id, id",
     )
     .bind(thread_id)
     .fetch_all(pool)
     .await?;
+    for a in &mut attachments {
+        a.previewable = crate::attachment::previewable(&a.mime_type, a.size.max(0) as u64);
+    }
     Ok(Some(ThreadDetail {
         id: thread_id,
         account_id,

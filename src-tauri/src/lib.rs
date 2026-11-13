@@ -6,6 +6,7 @@
 // Déclaré en premier : la macro `msg!` n'est visible que des modules qui suivent.
 #[macro_use]
 mod error;
+mod attachment_protocol;
 mod commands;
 mod db;
 #[cfg(debug_assertions)]
@@ -51,11 +52,7 @@ fn gated<R: tauri::Runtime>(
     inner: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
 ) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
     move |invoke| {
-        let locked = invoke
-            .message
-            .webview_ref()
-            .try_state::<lock::Lock>()
-            .map_or(true, |l| l.is_locked()); // échoue fermé : verrou introuvable = verrouillé
+        let locked = lock::is_locked_or_missing(invoke.message.webview_ref());
         if lock::blocks(locked, invoke.message.command()) {
             invoke.resolver.reject(error::AppError::Auth(msg!(
                 "lock.locked",
@@ -136,6 +133,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .register_asynchronous_uri_scheme_protocol(
+            attachment_protocol::SCHEME,
+            |ctx, request, responder| {
+                let app = ctx.app_handle().clone();
+                let path = request.uri().path().to_string();
+                tauri::async_runtime::spawn(async move {
+                    responder.respond(attachment_protocol::serve(&app, &path).await);
+                });
+            },
+        )
         .setup(|app| {
             main_window(app)?;
             let data_dir = app.path().app_data_dir()?;
@@ -233,7 +240,6 @@ pub fn run() {
             commands::empty_folder,
             commands::open_attachment,
             commands::inline_images,
-            commands::attachment_preview,
             commands::save_attachments,
             commands::mcp_info,
             #[cfg(desktop)]

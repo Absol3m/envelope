@@ -979,42 +979,46 @@ pub async fn empty_folder(state: State<'_, AppState>, folder_id: i64) -> Result<
 
 // ---------- Pièces jointes ----------
 
-/// Chemin d'une pièce jointe, uniquement si elle est bien dans le dossier des pièces jointes
-/// (une base altérée ne doit pas permettre d'ouvrir un fichier arbitraire).
-/// Une pièce jointe sur le disque : son fichier (vérifié sous le dossier des pièces jointes), son type et son nom.
-struct AttachmentFile {
-    path: std::path::PathBuf,
-    mime: String,
-    filename: Option<String>,
+/// Une pièce jointe sur le disque : son fichier, son type et son nom.
+pub(crate) struct AttachmentFile {
+    pub path: std::path::PathBuf,
+    pub mime: String,
+    pub filename: Option<String>,
 }
 
 async fn attachment_path(state: &AppState, attachment_id: i64) -> Result<std::path::PathBuf> {
-    Ok(attachment_file(state, attachment_id).await?.path)
+    Ok(attachment_file(
+        &state.db,
+        &state.attachments_dir,
+        &state.raw_dir,
+        attachment_id,
+    )
+    .await?
+    .path)
 }
 
-async fn attachment_file(state: &AppState, attachment_id: i64) -> Result<AttachmentFile> {
+/// Fichier d'une pièce jointe, uniquement s'il est bien dans le dossier des pièces jointes (une base altérée ne
+/// doit pas permettre d'ouvrir un fichier arbitraire).
+pub(crate) async fn attachment_file(
+    db: &sqlx::SqlitePool,
+    attachments_dir: &std::path::Path,
+    raw_dir: &std::path::Path,
+    attachment_id: i64,
+) -> Result<AttachmentFile> {
     let row: Option<(Option<String>, String, Option<String>)> =
         sqlx::query_as("SELECT storage_path, mime_type, filename FROM attachments WHERE id = ?")
             .bind(attachment_id)
-            .fetch_optional(&state.db)
+            .fetch_optional(db)
             .await?;
     let (stored, mime, filename) = row
         .ok_or_else(|| AppError::NotFound(msg!("attachment.not_found", "attachment not found")))?;
     let path = match stored {
         Some(p) => std::path::PathBuf::from(p),
         // Historique rapatrié : le contenu est extrait du message brut à la première ouverture.
-        None => {
-            ingest::materialize_attachment(
-                &state.db,
-                &state.attachments_dir,
-                &state.raw_dir,
-                attachment_id,
-            )
-            .await?
-        }
+        None => ingest::materialize_attachment(db, attachments_dir, raw_dir, attachment_id).await?,
     };
     let path = tokio::fs::canonicalize(path).await?;
-    let root = tokio::fs::canonicalize(&state.attachments_dir).await?;
+    let root = tokio::fs::canonicalize(attachments_dir).await?;
     if !path.starts_with(&root) {
         return Err(AppError::Invalid(msg!(
             "attachment.outside_folder",
@@ -1040,44 +1044,6 @@ pub async fn open_attachment(
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| AppError::Invalid((e.to_string()).into()))
-}
-
-/// Types d'image affichables dans l'aperçu : rendus par `<img>` (un SVG ainsi chargé n'exécute aucun script).
-const PREVIEW_TYPES: &[&str] = &[
-    "image/png",
-    "image/jpeg",
-    "image/gif",
-    "image/webp",
-    "image/avif",
-    "image/bmp",
-    "image/svg+xml",
-];
-const PREVIEW_MAX: u64 = 15 * 1024 * 1024;
-
-/// Aperçu d'une image jointe, en data URL. Refuse les autres types et les fichiers volumineux (ils s'ouvrent dans
-/// l'application du système).
-#[tauri::command]
-pub async fn attachment_preview(state: State<'_, AppState>, attachment_id: i64) -> Result<String> {
-    use tokio::io::AsyncReadExt;
-    let file = attachment_file(&state, attachment_id).await?;
-    let mime = file.mime.to_ascii_lowercase();
-    if !PREVIEW_TYPES.contains(&mime.as_str()) {
-        return Err(AppError::Invalid(msg!(
-            "attachment.no_preview",
-            "no preview for this type of file"
-        )));
-    }
-    let mut f = tokio::fs::File::open(&file.path).await?;
-    let size = f.metadata().await?.len();
-    if size > PREVIEW_MAX {
-        return Err(AppError::Invalid(msg!(
-            "attachment.too_big_for_preview",
-            "file too large for a preview"
-        )));
-    }
-    let mut bytes = Vec::with_capacity(size as usize);
-    f.read_to_end(&mut bytes).await?;
-    Ok(data_url(&mime, &bytes))
 }
 
 /// `data:<type>;base64,…` construit en une seule allocation (images jusqu'à 15 Mo).
@@ -1139,7 +1105,7 @@ pub async fn save_attachments(
     use tauri_plugin_dialog::DialogExt;
     let mut files = Vec::new();
     for id in attachment_ids {
-        let file = attachment_file(&state, id).await?;
+        let file = attachment_file(&state.db, &state.attachments_dir, &state.raw_dir, id).await?;
         files.push((file.path, attachment_file_name(file.filename.as_deref())));
     }
     match files.as_slice() {

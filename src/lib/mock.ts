@@ -1,6 +1,5 @@
 import { DEMO_EN, DEMO_EN_HTML } from "./mock.en";
 import { i18next, locale, t } from "./i18n";
-import { previewable } from "./attachments";
 import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
@@ -74,7 +73,7 @@ function msg(p: { from: [string | null, string]; to?: [string | null, string][];
   };
 }
 const att = (messageId: number, filename: string, mimeType: string, size: number): DetailAttachment => ({
-  id: nextAtt++, messageId, filename, mimeType, size, contentId: null, isInline: false,
+  id: nextAtt++, messageId, filename, mimeType, size, contentId: null, isInline: false, previewable: /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)$/.test(mimeType) && size <= 15 * 1024 * 1024, // reflète `envelope_core::attachment::previewable`
 });
 
 const svg = (a: string, b: string, label = "") =>
@@ -384,11 +383,7 @@ export const demoBackend: Backend = {
   },
   removeAccount: () => Promise.reject(new Error(t("demo:unavailable"))),
   openAttachment: () => delay(undefined, 60),
-  attachmentPreview: (id) => {
-    const a = T.flatMap((x) => x.attachments).find((x) => x.id === id);
-    if (!a || !previewable(a.mimeType)) return Promise.reject(new Error(t("demo:unavailable")));
-    return delay(DEMO_PHOTO, 80);
-  },
+  attachmentSrc: () => DEMO_PHOTO,
   saveAttachments: () => delay(0, 60),
   inlineImages: () => delay({}, 10),
   lockStatus: () => delay({ ...LOCK }, 20),

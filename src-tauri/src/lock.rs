@@ -122,6 +122,12 @@ pub struct Lock {
     busy: tokio::sync::Mutex<()>,
 }
 
+/// Verrouillée, ou verrou introuvable : on échoue fermé. Partagé par la barrière des commandes et par les
+/// protocoles d'URI personnalisés (que la barrière des commandes ne couvre pas).
+pub fn is_locked_or_missing<R: tauri::Runtime>(m: &impl tauri::Manager<R>) -> bool {
+    m.try_state::<Lock>().map_or(true, |l| l.is_locked())
+}
+
 impl Lock {
     /// Au lancement, l'application est verrouillée dès qu'un verrouillage est configuré.
     pub fn new(config: Config) -> Self {

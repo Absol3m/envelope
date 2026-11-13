@@ -1,4 +1,4 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { toBackendError } from "./backendError";
 import { t } from "./i18n";
 
@@ -131,6 +131,8 @@ export interface DetailAttachment {
   size: number;
   contentId: string | null;
   isInline: boolean;
+  /** Image de taille raisonnable : affichée par l'application (règle du moteur). */
+  previewable: boolean;
 }
 export interface ThreadDetail {
   id: number;
@@ -328,8 +330,8 @@ export interface Backend {
   /** Désabonne de la liste d'un message (POST en un clic ou message mailto). */
   unsubscribe(messageId: number): Promise<void>;
   openAttachment(id: number): Promise<void>;
-  /** Image jointe en data URL (rejette les autres types et les fichiers volumineux). */
-  attachmentPreview(id: number): Promise<string>;
+  /** URL d'une image jointe affichable (`previewable`) pour un `<img>` : le moteur la sert en flux, sans base64. */
+  attachmentSrc(id: number): string;
   /** Sélecteur natif (« Enregistrer sous », ou un dossier s'il y en a plusieurs) ; rend le nombre enregistré, 0 si annulé. */
   saveAttachments(ids: number[]): Promise<number>;
   inlineImages(messageId: number): Promise<Record<string, string>>;
@@ -419,7 +421,7 @@ export const tauriBackend: Backend = {
   saveTemplate: (template) => invoke("save_template", { template }),
   deleteTemplate: (id) => invoke("delete_template", { id }),
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
-  attachmentPreview: (attachmentId) => invoke("attachment_preview", { attachmentId }),
+  attachmentSrc: (id) => convertFileSrc(String(id), "attachment"),
   saveAttachments: (attachmentIds) => invoke("save_attachments", { attachmentIds, title: t("reader:saveFolderTitle") }),
   inlineImages: (messageId) => invoke("inline_images", { messageId }),
   lockStatus: () => invoke("lock_status"),
