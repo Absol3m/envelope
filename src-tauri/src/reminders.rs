@@ -10,14 +10,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::clock::now;
 use crate::error::{AppError, Result};
 use crate::AppState;
 
 const TICK: Duration = Duration::from_secs(30);
-
-fn now() -> i64 {
-    chrono::Utc::now().timestamp()
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

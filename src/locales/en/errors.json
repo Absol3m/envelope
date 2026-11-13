@@ -88,6 +88,7 @@
       "nothing_to_delete": "Nothing to delete in this folder"
     },
     "actions": {
+      "copy_pending": "The sent message isn't on the server yet: try again in a moment",
       "nothing_to_delete": "Nothing to delete: only messages in trash or spam can be",
       "already_in_folder": "The conversation is already in this folder",
       "only_trash_spam": "Only trash and spam can be emptied"

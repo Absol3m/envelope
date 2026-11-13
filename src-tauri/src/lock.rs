@@ -190,7 +190,7 @@ impl Lock {
         s.failures += 1;
         if s.failures > FREE_ATTEMPTS {
             let delay =
-                Duration::from_secs(1u64 << (s.failures - FREE_ATTEMPTS - 1).min(9)).min(MAX_DELAY);
+                crate::backoff::delay(1, MAX_DELAY.as_secs(), s.failures - FREE_ATTEMPTS - 1);
             s.not_before = Some(Instant::now() + delay);
         }
     }

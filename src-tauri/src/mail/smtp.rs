@@ -103,7 +103,9 @@ fn smtp_err(e: impl std::fmt::Display) -> AppError {
 
 /// Échec d'un envoi : « injoignable » quand le serveur n'a rien répondu (connexion, réseau, délai) — le message n'est
 /// pas parti et peut être renvoyé tel quel ; toute réponse du serveur (4xx, 5xx, authentification, TLS refusé) est
-/// une erreur à montrer, pas à retenter en silence.
+/// une erreur à montrer, pas à retenter en silence. lettre n'expose pas de `is_connection`/`is_network` : après avoir
+/// écarté tout ce qui est une réponse ou une erreur du client, il ne reste que connexion, réseau, délai et coupure —
+/// les cas « sans réponse » (déduit de la bibliothèque, pas garanti : les essais du port fermé et de l'adresse invalide figent ce comportement).
 fn send_err(e: lettre::transport::smtp::Error) -> AppError {
     let answered =
         e.is_response() || e.is_client() || e.is_transient() || e.is_permanent() || e.is_tls();

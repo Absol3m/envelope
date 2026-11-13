@@ -14,6 +14,7 @@ use serde::Serialize;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::clock::now;
 use crate::error::{AppError, Result};
 use crate::mail::smtp::OutgoingMessage;
 use crate::AppState;
@@ -27,10 +28,6 @@ const MAX_BYTES: usize = 40 * 1024 * 1024;
 /// Boîte d'envoi : délai entre deux essais, de 30 s doublé à chaque échec jusqu'à 10 min.
 const RETRY_BASE_SECS: i64 = 30;
 const RETRY_MAX_SECS: i64 = 600;
-
-fn now() -> i64 {
-    chrono::Utc::now().timestamp()
-}
 
 /// Ligne affichée dans la liste (sans le corps ni les pièces jointes).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -245,7 +242,8 @@ pub async fn fail(pool: &SqlitePool, id: i64, error: &str) -> Result<()> {
     Ok(())
 }
 
-/// Au démarrage : un envoi « en cours » à l'arrêt de l'application a peut-être abouti ; on ne le renvoie pas seul.
+/// Au démarrage : un envoi « en cours » à l'arrêt de l'application a peut-être abouti ; on ne le renvoie pas seul (un
+/// renvoi automatique risquerait un doublon chez le destinataire, irréparable ; l'utilisateur décide, « Envoyés » en main).
 pub async fn recover(pool: &SqlitePool) -> Result<()> {
     let interrupted = AppError::Invalid(msg!(
         "scheduled.interrupted",

@@ -88,6 +88,7 @@
       "nothing_to_delete": "Rien à supprimer dans ce dossier"
     },
     "actions": {
+      "copy_pending": "Le message envoyé n'est pas encore sur le serveur : réessayez dans un instant",
       "nothing_to_delete": "Rien à supprimer : seuls les messages de la corbeille ou du spam le peuvent",
       "already_in_folder": "La conversation est déjà dans ce dossier",
       "only_trash_spam": "Seuls la corbeille et le spam peuvent être vidés"

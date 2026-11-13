@@ -9,6 +9,7 @@ mod error;
 mod attachment_protocol;
 mod attachments;
 mod backoff;
+mod clock;
 mod commands;
 mod db;
 #[cfg(debug_assertions)]

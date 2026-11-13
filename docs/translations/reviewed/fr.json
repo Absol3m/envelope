@@ -273,6 +273,7 @@
  "errors:rust.local.copy_unverified": "8a838707",
  "errors:rust.local.copied_not_deleted": "cdb72dbf",
  "errors:rust.local.nothing_to_delete": "c31714d1",
+ "errors:rust.actions.copy_pending": "42b7d69d",
  "errors:rust.actions.nothing_to_delete": "7ea164ca",
  "errors:rust.actions.already_in_folder": "8ee921e8",
  "errors:rust.actions.only_trash_spam": "7068235e",

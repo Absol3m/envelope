@@ -35,8 +35,8 @@ const BACKFILL_BUDGET: Duration = Duration::from_secs(15);
 const RECONCILE_RECENT: i64 = 2000;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const FULL_SYNC_EVERY: Duration = Duration::from_secs(10 * 60);
-const MIN_BACKOFF: Duration = Duration::from_secs(5);
-const MAX_BACKOFF: Duration = Duration::from_secs(300);
+const MIN_BACKOFF_SECS: u64 = 5;
+const MAX_BACKOFF_SECS: u64 = 300;
 
 #[derive(Clone)]
 struct Ctx {
@@ -170,9 +170,9 @@ impl Ctx {
 }
 
 async fn run_account(ctx: Ctx) {
-    let mut backoff = MIN_BACKOFF;
+    let mut failures = 0u32; // passes interrompues depuis la dernière connexion réussie
     loop {
-        match session_loop(&ctx, &mut backoff).await {
+        match session_loop(&ctx, &mut failures).await {
             Err(AppError::NotFound(_)) => return, // compte supprimé
             Err(e) => {
                 tracing::warn!(account = %ctx.account_id, "sync interrupted: {e}");
@@ -180,20 +180,21 @@ async fn run_account(ctx: Ctx) {
             }
             Ok(()) => {}
         }
+        let wait = crate::backoff::delay(MIN_BACKOFF_SECS, MAX_BACKOFF_SECS, failures);
         tokio::select! {
-            _ = tokio::time::sleep(backoff) => {}
+            _ = tokio::time::sleep(wait) => {}
             _ = ctx.notify.notified() => {}
         }
-        backoff = (backoff * 2).min(MAX_BACKOFF);
+        failures = failures.saturating_add(1);
     }
 }
 
-async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
+async fn session_loop(ctx: &Ctx, failures: &mut u32) -> Result<()> {
     ctx.set_status("syncing", None).await;
     let acct = account::get(&ctx.pool, &ctx.account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
     let mut session = imap::connect(&acct, &cred).await?;
-    *backoff = MIN_BACKOFF; // connexion OK
+    *failures = 0; // connexion OK
     let caps = session.capabilities().await?;
     let idle_supported = caps.has_str("IDLE");
     let condstore = caps.has_str("CONDSTORE");

@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+use crate::clock::now;
 use crate::error::{AppError, Result};
 use crate::mail::account;
 
@@ -156,10 +157,6 @@ pub fn check_authorized_email(authorized: Option<&str>, expected: &str) -> Resul
 pub struct Authorized {
     pub tokens: OAuthTokens,
     pub email: Option<String>,
-}
-
-fn now() -> i64 {
-    chrono::Utc::now().timestamp()
 }
 
 fn random_token() -> String {

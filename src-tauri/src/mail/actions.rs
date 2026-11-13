@@ -99,6 +99,22 @@ async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Ve
 pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Vec<String>> {
     let targets = targets(pool, thread_id, action).await?;
     if targets.is_empty() {
+        // Conversation faite seulement du message envoyé, pas encore déposé sur le serveur (ligne provisoire) : agir
+        // « à vide » ferait croire que c'est fait ; on le dit.
+        let provisional: bool = sqlx::query_scalar(concat!(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE thread_id = ? AND ",
+            provisional_row!(),
+            ")"
+        ))
+        .bind(thread_id)
+        .fetch_one(pool)
+        .await?;
+        if provisional {
+            return Err(AppError::Invalid(msg!(
+                "actions.copy_pending",
+                "the sent message isn't on the server yet: try again in a moment"
+            )));
+        }
         // Les autres actions sont idempotentes ; supprimer pour de bon ne doit jamais « réussir »
         // à vide (dossier qui n'est ni la corbeille ni le spam, ou conversation déjà supprimée).
         if matches!(action, Action::Delete { .. }) {
@@ -366,6 +382,23 @@ mod tests {
             .map(|t| t.uid)
             .collect();
         assert_eq!(ids, [1, 2]);
+    }
+
+    /// Conversation réduite à la ligne provisoire : l'action dit pourquoi elle ne fait rien, au lieu de réussir à vide.
+    #[tokio::test]
+    async fn action_on_provisional_only_thread_says_so() {
+        let (pool, _) = setup().await;
+        for sql in [
+            "INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (2,'a','T','2026-03-02T10:00:00Z')",
+            "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,date,is_read) VALUES (9,'a',1,2,-4,'m9','T','a@x.fr','2026-03-02T12:00:00Z',1)",
+        ] {
+            sqlx::query(sql).execute(&pool).await.unwrap();
+        }
+        let err = apply(&pool, 2, Action::SetRead(false)).await.unwrap_err();
+        assert!(
+            matches!(&err, AppError::Invalid(m) if m.code == "actions.copy_pending"),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
