@@ -105,11 +105,8 @@ fn smtp_err(e: impl std::fmt::Display) -> AppError {
 /// pas parti et peut être renvoyé tel quel ; toute réponse du serveur (4xx, 5xx, authentification, TLS refusé) est
 /// une erreur à montrer, pas à retenter en silence.
 fn send_err(e: lettre::transport::smtp::Error) -> AppError {
-    let answered = e.is_response()
-        || e.is_client()
-        || e.is_transient()
-        || e.is_permanent()
-        || e.is_tls();
+    let answered =
+        e.is_response() || e.is_client() || e.is_transient() || e.is_permanent() || e.is_tls();
     if answered {
         return smtp_err(e);
     }

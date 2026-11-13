@@ -440,6 +440,14 @@ async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<Fo
 }
 
 /// Synchronise un dossier ; retourne le nombre de nouveaux messages.
+/// Lignes provisoires de « Envoyés » (voir `sentcopy`) : seul ce dossier peut en contenir, inutile d'écrire ailleurs.
+async fn sweep_provisional(ctx: &Ctx, f: &FolderRec, touched: &mut HashSet<i64>) -> Result<()> {
+    if f.role.as_deref() == Some("sent") {
+        touched.extend(sentcopy::sweep(&ctx.pool, f.id).await?);
+    }
+    Ok(())
+}
+
 async fn sync_folder(
     session: &mut ImapSession,
     ctx: &Ctx,
@@ -502,6 +510,7 @@ async fn sync_folder(
     let now = chrono::Utc::now().timestamp();
     if marks.unchanged_since(&saved, now) {
         tracing::debug!(folder = %f.path, "folder unchanged: nothing to do");
+        sweep_provisional(ctx, f, touched).await?;
         return Ok(0);
     }
     reconcile(session, ctx, f.id, touched, full).await?;
@@ -547,6 +556,8 @@ async fn sync_folder(
         }
     }
 
+    // Lignes provisoires de « Envoyés » dont la copie est déposée : la vraie vient d'être rapatriée.
+    sweep_provisional(ctx, f, touched).await?;
     ingest::refresh_folder_unread(&ctx.pool, f.id).await?;
     // État « entièrement réconcilié » : seulement après une passe COMPLÈTE menée à bien. Une passe partielle ne relit
     // que les messages récents : l'enregistrer ferait croire que l'historique est à jour.
@@ -756,11 +767,12 @@ async fn backfill_batch(
         let cursor = match stored {
             Some(c) => c,
             None => {
-                let min: Option<i64> =
-                    sqlx::query_scalar("SELECT MIN(uid) FROM messages WHERE folder_id = ?")
-                        .bind(f.id)
-                        .fetch_one(&ctx.pool)
-                        .await?;
+                let min: Option<i64> = sqlx::query_scalar(
+                    "SELECT MIN(uid) FROM messages WHERE folder_id = ? AND uid > 0",
+                )
+                .bind(f.id)
+                .fetch_one(&ctx.pool)
+                .await?;
                 match min {
                     Some(m) => m,
                     None => continue, // dossier vide en local : rien avant
@@ -806,7 +818,7 @@ async fn reconcile(
     full: bool,
 ) -> Result<()> {
     let min_uid: Option<i64> =
-        sqlx::query_scalar("SELECT MIN(uid) FROM messages WHERE folder_id = ?")
+        sqlx::query_scalar("SELECT MIN(uid) FROM messages WHERE folder_id = ? AND uid > 0")
             .bind(folder_id)
             .fetch_one(&ctx.pool)
             .await?;
@@ -819,7 +831,7 @@ async fn reconcile(
         min_uid
     } else {
         sqlx::query_scalar::<_, i64>(
-            "SELECT uid FROM messages WHERE folder_id = ? ORDER BY uid DESC LIMIT 1 OFFSET ?",
+            "SELECT uid FROM messages WHERE folder_id = ? AND uid > 0 ORDER BY uid DESC LIMIT 1 OFFSET ?",
         )
         .bind(folder_id)
         .bind(RECONCILE_RECENT)

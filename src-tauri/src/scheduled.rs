@@ -199,37 +199,36 @@ pub struct Claimed {
     pub account_id: String,
     pub message: OutgoingMessage,
     pub outbox: bool,
+    /// Échecs réseau déjà essuyés (boîte d'envoi).
+    pub attempts: i64,
 }
 
 /// Prend un message pour l'envoyer ; faux s'il a déjà été pris ou retiré (jamais deux envois du même message).
 pub async fn claim(pool: &SqlitePool, id: i64) -> Result<Option<Claimed>> {
-    let row: Option<(String, String, bool)> = sqlx::query_as(
-        "UPDATE scheduled SET status = 'sending', error = NULL WHERE id = ? AND status <> 'sending' RETURNING account_id, message, outbox",
+    let row: Option<(String, String, bool, i64)> = sqlx::query_as(
+        "UPDATE scheduled SET status = 'sending', error = NULL WHERE id = ? AND status <> 'sending' RETURNING account_id, message, outbox, attempts",
     )
     .bind(id)
     .fetch_optional(pool)
     .await?;
-    row.map(|(account_id, json, outbox)| {
+    row.map(|(account_id, json, outbox, attempts)| {
         Ok(Claimed {
             account_id,
             message: parse(&json)?,
             outbox,
+            attempts,
         })
     })
     .transpose()
 }
 
 /// Le serveur n'a pas répondu : le message passe (ou reste) en boîte d'envoi, prochain essai après un délai croissant.
-pub async fn requeue(pool: &SqlitePool, id: i64, error: &str) -> Result<()> {
-    let attempts: i64 = sqlx::query_scalar("SELECT attempts FROM scheduled WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .unwrap_or(0);
+pub async fn requeue(pool: &SqlitePool, id: i64, attempts: i64, error: &str) -> Result<()> {
     sqlx::query(
         "UPDATE scheduled SET status = 'pending', outbox = 1, attempts = attempts + 1, next_try_at = ?, error = ? WHERE id = ?",
     )
-    .bind(now() + retry_delay(attempts + 1))
+    .bind(now() + retry_delay(attempts + 1)) // `attempts` : avant cet échec ; `add_outbox` a déjà compté le délai 0
+
     .bind(error)
     .bind(id)
     .execute(pool)
@@ -299,6 +298,7 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
         account_id,
         message,
         outbox,
+        attempts,
     }) = claim(&state.db, id).await?
     else {
         return Ok(()); // déjà pris ou retiré
@@ -314,7 +314,7 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
         }
         // Pas de réseau : le message reste en boîte d'envoi, sans bruit (il repartira tout seul).
         Err(e @ AppError::Unreachable(_)) => {
-            requeue(&state.db, id, &e.to_wire()).await?;
+            requeue(&state.db, id, attempts, &e.to_wire()).await?;
             let _ = app.emit("scheduled:changed", Option::<Outcome>::None);
             return result.map(|_| ());
         }
@@ -470,7 +470,9 @@ mod tests {
         // Échec réseau : reste en file, délai doublé, dernière erreur conservée.
         let c = claim(&pool, id).await.unwrap().unwrap();
         assert!(c.outbox && c.message.subject == "hors ligne");
-        requeue(&pool, id, "toujours pas").await.unwrap();
+        requeue(&pool, id, c.attempts, "toujours pas")
+            .await
+            .unwrap();
         let (status, attempts, next): (String, i64, i64) =
             sqlx::query_as("SELECT status, attempts, next_try_at FROM scheduled WHERE id = ?")
                 .bind(id)
@@ -484,8 +486,8 @@ mod tests {
         let at = add(&pool, "a", now() + 60, &message("programmé"))
             .await
             .unwrap();
-        claim(&pool, at).await.unwrap();
-        requeue(&pool, at, "x").await.unwrap();
+        let c = claim(&pool, at).await.unwrap().unwrap();
+        requeue(&pool, at, c.attempts, "x").await.unwrap();
         assert!(list(&pool).await.unwrap().iter().all(|s| s.outbox));
         // On peut toujours le reprendre pour le modifier.
         assert_eq!(cancel(&pool, id).await.unwrap().subject, "hors ligne");

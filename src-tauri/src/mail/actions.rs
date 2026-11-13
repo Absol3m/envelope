@@ -78,7 +78,7 @@ struct Target {
 async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Vec<Target>> {
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
         "SELECT m.id, m.account_id, m.folder_id, f.path AS folder_path, m.uid \
-         FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = ",
+         FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.uid > 0 AND m.thread_id = ",
     );
     qb.push_bind(thread_id);
     match action {
@@ -344,6 +344,27 @@ mod tests {
             sqlx::query(sql).execute(&pool).await.unwrap();
         }
         (pool, 1)
+    }
+
+    /// Une ligne provisoire de « Envoyés » (UID négatif, pas encore sur le serveur) n'est jamais envoyée au serveur.
+    #[tokio::test]
+    async fn provisional_sent_row_is_never_targeted() {
+        let (pool, folder) = setup().await;
+        sqlx::query("INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,date,is_read) VALUES (3,'a',1,1,-1,'m3','S','a@x.fr','2026-03-02T12:00:00Z',0)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let moved = Action::Move {
+            folder_id: folder,
+            to: Destination::Archive,
+        };
+        let ids: Vec<i64> = targets(&pool, 1, moved)
+            .await
+            .unwrap()
+            .iter()
+            .map(|t| t.uid)
+            .collect();
+        assert_eq!(ids, [1, 2]);
     }
 
     #[tokio::test]

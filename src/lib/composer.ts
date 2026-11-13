@@ -244,7 +244,7 @@ export const useComposer = create<ComposerState>((set, get) => {
         pendingSend = null;
         try {
           const outcome = await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
-          onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi (ou, en boîte d'envoi, à l'envoi)
+          onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi
           lastSig.delete(draft.id);
           if (outcome === "queued") {
             void useMail.getState().refreshScheduled();

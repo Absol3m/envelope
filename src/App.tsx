@@ -46,6 +46,8 @@ export default function App() {
         if (!locked) void useMail.getState().reload({ silent: true }); // verrouillé, le moteur refuserait
         void notifyNewMail(e.payload, locked);
       }));
+      // Message envoyé, aussitôt montré dans « Envoyés » (avant que le serveur n'ait la copie).
+      unlisten.push(listen("sent-copy:shown", () => { if (useMail.getState().lock?.locked !== true) void useMail.getState().reload({ silent: true }); }));
       unlisten.push(listen<{ accountId: string; remaining: number }>("mail:backfill", (e) => useMail.getState().setBackfill(e.payload.accountId, e.payload.remaining)));
       unlisten.push(listen("mail:status", () => { if (useMail.getState().lock?.locked !== true) void useMail.getState().refreshAccounts(); }));
       unlisten.push(listen<number>("reminders:fired", (e) => {

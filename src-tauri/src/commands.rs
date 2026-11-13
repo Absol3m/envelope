@@ -534,18 +534,35 @@ pub(crate) async fn deliver(
 async fn after_send(app: &AppHandle, acct: Account, subject: String, raw: Vec<u8>) {
     let state = app.state::<AppState>();
     if acct.keeps_sent_copy() {
-        if let Err(e) = sentcopy::enqueue(&state.db, &state.raw_dir, &acct.id, &raw).await {
-            tracing::warn!(account = %acct.id, "could not copy to Sent: {e}");
-            let _ = app.emit(
-                "sent-copy:failed",
-                SentCopyFailed {
-                    subject,
-                    error: e.to_wire(),
-                },
-            );
+        match enqueue_and_show(&state, &acct.id, &raw).await {
+            Ok(()) => {
+                let _ = app.emit("sent-copy:shown", &acct.id);
+            }
+            Err(e) => {
+                tracing::warn!(account = %acct.id, "could not copy to Sent: {e}");
+                let _ = app.emit(
+                    "sent-copy:failed",
+                    SentCopyFailed {
+                        subject,
+                        error: e.to_wire(),
+                    },
+                );
+            }
         }
     }
     state.sync.trigger(&acct.id);
+}
+
+/// Met la copie en file, puis la montre aussitôt dans « Envoyés » : seule la mise en file est une erreur ; si
+/// l'affichage échoue, la synchro déposera quand même la copie.
+async fn enqueue_and_show(state: &AppState, account_id: &str, raw: &[u8]) -> Result<()> {
+    let queued = sentcopy::enqueue(&state.db, &state.raw_dir, account_id, raw).await?;
+    if let Err(e) =
+        sentcopy::show_now(&state.db, &state.attachments_dir, account_id, &queued, raw).await
+    {
+        tracing::warn!(account = %account_id, "sent message not shown at once: {e}");
+    }
+    Ok(())
 }
 
 /// Met un message en file pour l'envoyer à `send_at` (secondes Unix). L'application doit être ouverte à cette heure.
