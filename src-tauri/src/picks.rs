@@ -43,6 +43,12 @@ impl Picks {
     }
 }
 
+/// Chemin désigné dans un sélecteur natif.
+pub fn dialog_path(p: tauri_plugin_dialog::FilePath) -> crate::error::Result<PathBuf> {
+    p.into_path()
+        .map_err(|e| crate::error::AppError::Invalid((e.to_string()).into()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

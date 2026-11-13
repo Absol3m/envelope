@@ -7,6 +7,7 @@
 #[macro_use]
 mod error;
 mod attachment_protocol;
+mod attachments;
 mod commands;
 mod db;
 #[cfg(debug_assertions)]
@@ -250,9 +251,9 @@ pub fn run() {
             commands::rename_local_folder,
             commands::delete_local_folder,
             commands::empty_folder,
-            commands::open_attachment,
-            commands::inline_images,
-            commands::save_attachments,
+            attachments::open_attachment,
+            attachments::inline_images,
+            attachments::save_attachments,
             commands::mcp_info,
             #[cfg(desktop)]
             update::check_update,

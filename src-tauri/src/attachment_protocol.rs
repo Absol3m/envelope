@@ -14,7 +14,7 @@ use tauri::http::{header, Response, StatusCode};
 use tauri::{AppHandle, Manager};
 use tokio::io::AsyncReadExt;
 
-use crate::commands::attachment_file;
+use crate::attachments::attachment_file;
 use crate::{lock, AppState};
 
 pub const SCHEME: &str = "attachment";
