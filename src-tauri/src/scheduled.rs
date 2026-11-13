@@ -217,7 +217,7 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
         Ok(_) => {
             // Le message est parti : un échec de nettoyage ne doit pas le faire passer pour un échec d'envoi.
             if let Err(e) = remove(&state.db, id).await {
-                tracing::warn!("envoi programmé {id} parti, mais encore dans la file : {e}");
+                tracing::warn!("scheduled send {id} went out but is still queued: {e}");
             }
             None
         }
@@ -249,7 +249,7 @@ async fn tick(app: &AppHandle, state: &AppState) {
             let _ = fail(&state.db, id, &missed.to_wire()).await;
             let _ = app.emit("scheduled:changed", Option::<Outcome>::None);
         } else if let Err(e) = deliver_now(app, state, id).await {
-            tracing::warn!("envoi programmé {id} : {e}");
+            tracing::warn!("scheduled send {id}: {e}");
         }
     }
 }
@@ -258,7 +258,7 @@ async fn tick(app: &AppHandle, state: &AppState) {
 pub async fn run(app: AppHandle) {
     let state = app.state::<AppState>();
     if let Err(e) = recover(&state.db).await {
-        tracing::warn!("reprise des envois programmés : {e}");
+        tracing::warn!("resuming scheduled sends: {e}");
     }
     let mut interval = tokio::time::interval(TICK);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

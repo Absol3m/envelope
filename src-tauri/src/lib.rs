@@ -17,6 +17,7 @@ mod diskcrypt;
 mod lock;
 mod mail;
 mod mcp;
+mod native_text;
 mod picks;
 mod private;
 mod reminders;
@@ -155,7 +156,7 @@ pub fn run() {
             let db_path = db::db_path(&data_dir);
             let pool = tauri::async_runtime::block_on(db::init(&db_path))?;
             let lock_config = tauri::async_runtime::block_on(lock::load_config(&pool))?;
-            tracing::info!("base SQLite prête : {}", db_path.display());
+            tracing::info!("SQLite database ready: {}", db_path.display());
 
             let attachments_dir = data_dir.join("attachments");
             let raw_dir = data_dir.join("raw");
@@ -186,13 +187,14 @@ pub fn run() {
                     return;
                 }
                 if let Err(e) = sync.start_all().await {
-                    tracing::error!("démarrage de la synchro : {e}");
+                    tracing::error!("starting sync: {e}");
                 }
             });
             Ok(())
         })
         .invoke_handler(gated(tauri::generate_handler![
             commands::app_info,
+            native_text::set_native_texts,
             commands::lock_status,
             commands::unlock_password,
             commands::unlock_system,

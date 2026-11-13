@@ -123,7 +123,6 @@ pub async fn save_attachments(
     app: AppHandle,
     state: State<'_, AppState>,
     attachment_ids: Vec<i64>,
-    title: String, // titre du sélecteur de dossier, traduit par l'interface
 ) -> Result<usize> {
     use tauri_plugin_dialog::DialogExt;
     let mut files = Vec::new();
@@ -142,7 +141,12 @@ pub async fn save_attachments(
             Ok(1)
         }
         _ => {
-            let Some(dir) = app.dialog().file().set_title(title).blocking_pick_folder() else {
+            let Some(dir) = app
+                .dialog()
+                .file()
+                .set_title(&crate::native_text::get().save_folder_title)
+                .blocking_pick_folder()
+            else {
                 return Ok(0);
             };
             let dir = dialog_path(dir)?;

@@ -244,7 +244,7 @@ async fn on_failure(
             }
             // Même le dossier local échoue : on garde la ligne et on réessaie plus tard.
             Err(local_err) => {
-                tracing::error!("copie locale impossible : {local_err}");
+                tracing::error!("local copy failed: {local_err}");
                 (MAX_DELAY_SECS, false)
             }
         },
@@ -266,7 +266,7 @@ pub async fn drain(
     }
     let pending = match due(pool, &acct.id, now()).await {
         Ok(p) => p,
-        Err(e) => return tracing::warn!(account = %acct.id, "copies à déposer : {e}"),
+        Err(e) => return tracing::warn!(account = %acct.id, "pending Sent copies: {e}"),
     };
     let mut sent = None;
     for p in pending {
@@ -275,7 +275,7 @@ pub async fn drain(
                 let _ = done(pool, p.id).await;
             }
             Err(e) => {
-                tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
+                tracing::warn!(account = %acct.id, "could not copy to Sent: {e}");
                 on_failure(app, pool, dirs, acct, &p, &e).await;
             }
         }

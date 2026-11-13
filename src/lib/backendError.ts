@@ -12,7 +12,7 @@ const isWire = (v: unknown): v is WireError =>
   typeof v === "object" && v !== null && typeof (v as WireError).code === "string" && typeof (v as WireError).message === "string";
 
 /** Texte de l'erreur dans la langue active. Sans code (texte brut) ou sans traduction, le message du moteur. */
-export function describeWire(w: WireError): string {
+function describeWire(w: WireError): string {
   if (!w.code) return w.message;
   const options: Record<string, unknown> = { ...w.args, defaultValue: w.message };
   if ("count" in w.args) options.count = Number(w.args.count); // choix du pluriel

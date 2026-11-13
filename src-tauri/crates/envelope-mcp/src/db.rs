@@ -17,7 +17,7 @@ pub fn default_path() -> Option<PathBuf> {
 pub async fn open_readonly(path: &Path) -> Result<SqlitePool, String> {
     if !path.exists() {
         return Err(format!(
-            "base introuvable : {} (lancez Envelope une première fois, ou indiquez --db)",
+            "database not found: {} (start Envelope once, or pass --db)",
             path.display()
         ));
     }

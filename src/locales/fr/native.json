@@ -1,0 +1,10 @@
+{
+  "unlockReason": "Déverrouiller Envelope",
+  "oauthGranted": "Envelope est autorisé. Vous pouvez fermer cet onglet.",
+  "oauthDenied": "Autorisation refusée. Vous pouvez fermer cet onglet.",
+  "oauthBadState": "État invalide : cette page ne vient pas de la connexion lancée par Envelope.",
+  "importPickTitle": "Choisir le dossier à importer",
+  "exportPickTitle": "Choisir le dossier où écrire les fichiers .eml",
+  "mboxFilter": "Boîte mbox",
+  "saveFolderTitle": "Choisir un dossier pour les pièces jointes"
+}

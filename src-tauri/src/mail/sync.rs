@@ -175,7 +175,7 @@ async fn run_account(ctx: Ctx) {
         match session_loop(&ctx, &mut backoff).await {
             Err(AppError::NotFound(_)) => return, // compte supprimé
             Err(e) => {
-                tracing::warn!(account = %ctx.account_id, "synchro interrompue : {e}");
+                tracing::warn!(account = %ctx.account_id, "sync interrupted: {e}");
                 ctx.set_status("error", Some(e.to_wire())).await; // codé : le front le traduit à l'affichage
             }
             Ok(()) => {}
@@ -246,7 +246,7 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
             let state = ctx.app.state::<crate::AppState>();
             match crate::rules::apply(&ctx.pool, &state.actions, &ctx.account_id, &ids).await {
                 Ok(handled) => fresh.retain(|f| !handled.contains(&f.thread_id)),
-                Err(e) => tracing::warn!("règles : {e}"),
+                Err(e) => tracing::warn!("rules: {e}"),
             }
         }
         if full {
@@ -464,7 +464,7 @@ async fn sync_folder(
     let uid_next = mbox.uid_next.map(i64::from);
 
     if f.uid_validity.is_some() && f.uid_validity != uid_validity {
-        tracing::info!(folder = %f.path, "UIDVALIDITY changé : purge du cache local");
+        tracing::info!(folder = %f.path, "UIDVALIDITY changed: clearing the local cache");
         let tids: Vec<i64> = sqlx::query_scalar(
             "SELECT DISTINCT thread_id FROM messages WHERE folder_id = ? AND thread_id IS NOT NULL",
         )
@@ -501,7 +501,7 @@ async fn sync_folder(
     // drapeau. Pas de requête, pas de relecture des drapeaux, rien à récupérer.
     let now = chrono::Utc::now().timestamp();
     if marks.unchanged_since(&saved, now) {
-        tracing::debug!(folder = %f.path, "dossier inchangé : rien à faire");
+        tracing::debug!(folder = %f.path, "folder unchanged: nothing to do");
         return Ok(0);
     }
     reconcile(session, ctx, f.id, touched, full).await?;
@@ -588,7 +588,7 @@ async fn ingest_item(
         item.internal_date().map(|d| d.timestamp()),
         !lazy_attachments,
     ) else {
-        tracing::warn!(folder = %f.path, uid, "message illisible ignoré");
+        tracing::warn!(folder = %f.path, uid, "unreadable message skipped");
         return Ok(None);
     };
     let flags = ingest::Flags {

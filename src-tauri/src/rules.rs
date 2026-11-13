@@ -250,7 +250,7 @@ pub async fn apply(
             let _guard = lock.lock().await;
             for step in steps {
                 if let Err(e) = actions::apply(pool, tid, step).await {
-                    tracing::warn!("règle « {} » sur la conversation {tid} : {e}", r.name);
+                    tracing::warn!("rule \"{}\" on thread {tid}: {e}", r.name);
                     ok = false;
                 }
             }

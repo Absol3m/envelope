@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { BackendError, describeStored, describeWire, toBackendError } from "../backendError";
+import { BackendError, describeStored, toBackendError } from "../backendError";
 import { i18next } from "../i18n";
 
 const wire = (code: string, args: Record<string, string> = {}, message = "fallback") => ({ code, args, message });
+/** Texte affiché d'une erreur du moteur, par l'API publique. */
+const describeWire = (w: ReturnType<typeof wire>) => String(new BackendError(w));
 
 describe("erreurs du moteur", () => {
   it("le code est traduit avec ses paramètres, dans la langue active", async () => {

@@ -19,6 +19,8 @@
 - Une constante de module qui contient du texte (libellés, listes) se lit **à l'affichage** (getter ou fonction), pas à l'import : le changement de langue remonte l'interface (`main.tsx`).
 - Dans un fichier où `t` désigne autre chose (une conversation, un onglet…), importer `t as tr`.
 - Erreurs Rust : jamais de phrase pour l'utilisateur en dur ; `AppError::Invalid(msg!("code.stable", "english fallback {x}", x = valeur))` (`src-tauri/src/error.rs`), avec le code traduit dans `src/locales/*/errors.json` (`rust.<code>`) ; le front reçoit `{ code, args, message }`. Une erreur gardée en base ou émise en événement se stocke avec `e.to_wire()` et s'affiche avec `describeStored`.
+- Textes affichés hors du webview (invite d'authentification du système, page de fin d'OAuth, sélecteurs de fichiers) : clé dans `src/locales/*/native.json` et champ de `NativeTexts` (`src-tauri/src/native_text.rs`), lu par `native_text::get()` ; l'interface envoie le lot au démarrage et à chaque changement de langue. Journaux `tracing` et textes du serveur MCP (outils, ligne de commande) : en anglais, sans traduction.
+- Boîte de démonstration : textes dans `demo.json` › `mail` (`d("clé")` dans `src/lib/mock.ts`).
 - Essai : `pnpm dev` puis `?lang=en` ou `?lang=fr`. État : `pnpm i18n:status` (`docs/translations/STATUS.md`, vérifié en CI) ; si un texte anglais change, mettre à jour le français puis `pnpm i18n:status -- --accept fr` ; contribuer une langue : `TRANSLATING.md`.
 
 ## Architecture

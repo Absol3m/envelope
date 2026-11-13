@@ -149,7 +149,7 @@ export function Composer() {
         >
           <input type="datetime-local" aria-label={tr("composer:sendDateTime")} value={picking} onChange={(e) => setPicking(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-2 py-1 outline-none focus:border-accent" />
           <button type="submit" className={`${btnPrimary} h-8 px-3`}>{tr("composer:schedule")}</button>
-          <IconButton label={tr("composer:cancel")} onClick={() => setPicking(null)}><X size={14} /></IconButton>
+          <IconButton label={tr("common:cancel")} onClick={() => setPicking(null)}><X size={14} /></IconButton>
         </form>
       )}
       <footer className="flex h-14 shrink-0 items-center gap-2 border-t border-border px-3">

@@ -19,5 +19,6 @@
     "escape": "Esc"
   },
   "close": "Close",
-  "loading": "Loading"
+  "loading": "Loading",
+  "cancel": "Cancel"
 }

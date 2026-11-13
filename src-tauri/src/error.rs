@@ -48,10 +48,11 @@ impl From<&str> for Msg {
 macro_rules! msg {
     ($code:literal, $text:literal $(, $k:ident = $v:expr)* $(,)?) => {{
         $(let $k = format!("{}", $v);)*
+        let text = format!($text);
         $crate::error::Msg {
             code: $code,
-            args: vec![$((stringify!($k), $k.clone())),*],
-            text: format!($text),
+            args: vec![$((stringify!($k), $k)),*],
+            text,
         }
     }};
 }

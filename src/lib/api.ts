@@ -1,6 +1,6 @@
 import { convertFileSrc, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { toBackendError } from "./backendError";
-import { t } from "./i18n";
+import { i18next, t } from "./i18n";
 
 /** Appel IPC : une erreur du moteur est levée en `BackendError`, dont le texte est traduit dans la langue active. */
 const invoke = <T>(command: string, args?: Record<string, unknown>): Promise<T> => tauriInvoke<T>(command, args).catch((e: unknown) => { throw toBackendError(e); });
@@ -372,6 +372,13 @@ export interface SystemAppearance {
 
 export const systemAppearance = () => invoke<SystemAppearance>("system_appearance");
 
+/** Textes affichés hors du webview (invite de déverrouillage du système, page de fin d'OAuth, sélecteurs de fichiers),
+ *  envoyés au moteur dans la langue active : toutes les clés de l'espace `native`, avec le repli habituel sur l'anglais. */
+export const pushNativeTexts = () => {
+  const texts = Object.fromEntries(Object.keys(i18next.getResourceBundle("en", "native") as object).map((k) => [k, t(`native:${k}`)]));
+  return invoke<void>("set_native_texts", { texts });
+};
+
 export const tauriBackend: Backend = {
   demo: false,
   listAccounts: () => invoke("list_accounts"),
@@ -383,9 +390,9 @@ export const tauriBackend: Backend = {
   moveThread: (threadId, folderId, to) => invoke("move_thread", { threadId, folderId, to }),
   deleteThread: (threadId, folderId) => invoke("delete_thread", { threadId, folderId }),
   archiveLocal: (threadId, folderId, localFolderId) => invoke("archive_local", { threadId, folderId, localFolderId }),
-  importPick: () => invoke("import_pick", { title: t("import:pickTitle") }),
+  importPick: () => invoke("import_pick"),
   importRun: (token, keys) => invoke("import_run", { token, keys }),
-  exportPick: (format, defaultName) => invoke("export_pick", { format, defaultName, title: t("sidebar:exportPickTitle"), filterName: t("sidebar:mboxFilter") }),
+  exportPick: (format, defaultName) => invoke("export_pick", { format, defaultName }),
   exportFolder: (folderId, format, token) => invoke("export_folder", { folderId, format, token }),
   createLocalFolder: (name) => invoke("create_local_folder", { name }),
   renameLocalFolder: (folderId, name) => invoke("rename_local_folder", { folderId, name }),
@@ -395,7 +402,7 @@ export const tauriBackend: Backend = {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().setBadgeCount(count > 0 ? count : undefined);
   },
-  confirm: (message, okLabel) => ask(message, { title: "Envelope", kind: "warning", okLabel, cancelLabel: t("composer:cancel") }),
+  confirm: (message, okLabel) => ask(message, { title: "Envelope", kind: "warning", okLabel, cancelLabel: t("common:cancel") }),
   syncNow: (accountId) => invoke("sync_now", { accountId }),
   addAccount: (input) => invoke("add_account", { input }),
   addOAuthAccount: (provider, email) => invoke("add_oauth_account", { provider, email }),
@@ -430,7 +437,7 @@ export const tauriBackend: Backend = {
   deleteTemplate: (id) => invoke("delete_template", { id }),
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   attachmentSrc: (id) => convertFileSrc(String(id), "attachment"),
-  saveAttachments: (attachmentIds) => invoke("save_attachments", { attachmentIds, title: t("reader:saveFolderTitle") }),
+  saveAttachments: (attachmentIds) => invoke("save_attachments", { attachmentIds }),
   inlineImages: async (messageId) => {
     const ids = await invoke<Record<string, number>>("inline_images", { messageId });
     return Object.fromEntries(Object.entries(ids).map(([cid, id]) => [cid, tauriBackend.attachmentSrc(id)]));

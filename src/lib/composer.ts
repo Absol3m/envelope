@@ -253,7 +253,7 @@ export const useComposer = create<ComposerState>((set, get) => {
         }
       }, UNDO_MS);
       pendingSend = { cancel: () => { clearTimeout(timer); open(draft); } };
-      useMail.getState().toast({ message: t("composer:sending"), actionLabel: t("composer:cancel"), onAction: () => get().undoSend(), duration: UNDO_MS, countdown: true });
+      useMail.getState().toast({ message: t("composer:sending"), actionLabel: t("common:cancel"), onAction: () => get().undoSend(), duration: UNDO_MS, countdown: true });
     },
 
     async schedule(at, force = false) {
@@ -271,7 +271,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       onServer.delete(draft.id); // le brouillon du serveur est retiré à l'envoi, comme pour un envoi immédiat
       lastSig.delete(draft.id);
       void useMail.getState().refreshScheduled();
-      useMail.getState().toast({ message: t("composer:scheduledAt", { when: scheduledAt(at) }), actionLabel: t("composer:cancel"), onAction: () => void get().editScheduled(id, draft.accountId), duration: 6000 });
+      useMail.getState().toast({ message: t("composer:scheduledAt", { when: scheduledAt(at) }), actionLabel: t("common:cancel"), onAction: () => void get().editScheduled(id, draft.accountId), duration: 6000 });
     },
 
     async editScheduled(id, accountId) {

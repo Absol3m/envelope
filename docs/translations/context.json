@@ -21,5 +21,10 @@
   "nav:views.starred": "folder-like view listing the conversations you follow",
   "nav:moves.local.label": "stores a copy of the conversation only on this computer, outside any server",
   "rules:starAction": "rule action: follow the conversation",
-  "scheduled:edit": "button that reopens a scheduled message to change it"
+  "scheduled:edit": "button that reopens a scheduled message to change it",
+  "native:unlockReason": "reason shown in the system authentication prompt (Touch ID, Windows Hello); keep it short",
+  "native:oauthGranted": "plain-text page shown in the web browser after the user allowed Envelope to access their Google/Microsoft account",
+  "native:oauthBadState": "plain-text page shown in the web browser when the sign-in reply does not match the request Envelope sent",
+  "native:mboxFilter": "file type name in the system “Save as” dialog for an mbox export",
+  "demo:mail.roadmap.subject": "demo mailbox (browser preview and screenshots): translating the demo.mail texts is optional, English is used otherwise"
 }

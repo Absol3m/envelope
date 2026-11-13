@@ -102,7 +102,7 @@ async fn fetch_config(
     let client = match http() {
         Ok(c) => c,
         Err(e) => {
-            tracing::warn!("détection automatique indisponible : {e}");
+            tracing::warn!("server auto-detection unavailable: {e}");
             return None;
         }
     };
