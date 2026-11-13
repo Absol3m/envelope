@@ -243,12 +243,10 @@ export const useComposer = create<ComposerState>((set, get) => {
       const timer = setTimeout(async () => {
         pendingSend = null;
         try {
-          const report = await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
+          await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
           onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi
           lastSig.delete(draft.id);
-          const failure = typeof report.sentCopy === "object" ? report.sentCopy.failed : null;
-          if (failure === null) toast(t("composer:sent"));
-          else toast(t("composer:sentNoCopy", { error: failure }), "error", 8000);
+          toast(t("composer:sent")); // la copie dans « Envoyés » se fait en arrière-plan : son échec arrive par `sent-copy:failed`
         } catch (e) {
           open(draft); // rien n'est perdu : le message revient dans le panneau
           toast(t("composer:sendFailed", { error: String(e) }), "error", 7000);

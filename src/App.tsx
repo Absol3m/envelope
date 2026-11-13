@@ -54,6 +54,9 @@ export default function App() {
         void reload({ silent: true });
         toast({ message: e.payload > 1 ? `${e.payload} conversations reviennent` : "Une conversation revient" });
       }));
+      unlisten.push(listen<{ subject: string; error: string }>("sent-copy:failed", (e) => {
+        useMail.getState().toast({ message: tr("composer:sentNoCopy", { subject: e.payload.subject || tr("scheduled:noSubject"), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 });
+      }));
       unlisten.push(listen<{ subject: string; error: string | null } | null>("scheduled:changed", (e) => {
         const { toast, refreshScheduled } = useMail.getState();
         void refreshScheduled();

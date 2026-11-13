@@ -207,11 +207,6 @@ export interface DraftData {
   attachments: { filename: string; mimeType: string; dataBase64: string }[];
   fromEmail: string;
 }
-/** Sort de la copie dans « Envoyés » : déposée, rangée par le serveur (Gmail) ou impossible (cause). */
-export type SentCopy = "saved" | "server" | { failed: string };
-export interface SendReport {
-  sentCopy: SentCopy;
-}
 export interface McpInfo {
   binaryPath: string | null;
   dbPath: string;
@@ -300,7 +295,7 @@ export interface Backend {
   oauthStatus(): Promise<OAuthStatus>;
   setOAuthClient(provider: OAuthProviderId, clientId: string, clientSecret?: string): Promise<void>;
   clearOAuthClient(provider: OAuthProviderId): Promise<void>;
-  sendEmail(accountId: string, message: OutgoingMessage): Promise<SendReport>;
+  sendEmail(accountId: string, message: OutgoingMessage): Promise<void>;
   /** Enregistre le brouillon sur le serveur (nouvelle version, puis suppression des précédentes). */
   saveDraft(accountId: string, message: OutgoingMessage): Promise<void>;
   deleteDraft(accountId: string, draftId: string): Promise<void>;

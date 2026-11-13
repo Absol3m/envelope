@@ -212,7 +212,7 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
     let Some((account, message)) = claim(&state.db, id).await? else {
         return Ok(()); // déjà pris ou retiré
     };
-    let result = crate::commands::deliver(state, &account, &message).await;
+    let result = crate::commands::deliver(app, state, &account, &message).await;
     let error = match &result {
         Ok(_) => {
             // Le message est parti : un échec de nettoyage ne doit pas le faire passer pour un échec d'envoi.

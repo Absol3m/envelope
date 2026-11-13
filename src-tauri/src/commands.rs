@@ -1,7 +1,7 @@
 //! Commandes Tauri exposées au frontend (`invoke`).
 
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 
@@ -460,39 +460,32 @@ pub async fn search_emails(
     .await?)
 }
 
-/// Sort de la copie du message envoyé (le message lui-même est parti dans tous les cas).
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SentCopy {
-    /// Copie déposée dans « Envoyés ».
-    Saved,
-    /// Le serveur range lui-même le message (Gmail).
-    Server,
-    /// Copie impossible, avec la cause.
-    Failed(String),
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SendReport {
-    sent_copy: SentCopy,
+/// Copie non déposée dans « Envoyés » (le message, lui, est parti) : transmise à l'interface, qui ne peut pas l'attendre.
+#[derive(Clone, Serialize)]
+struct SentCopyFailed {
+    subject: String,
+    /// Erreur codée (`AppError::to_wire`), traduite à l'affichage.
+    error: String,
 }
 
 #[tauri::command]
 pub async fn send_email(
+    app: AppHandle,
     state: State<'_, AppState>,
     account_id: String,
     message: OutgoingMessage,
-) -> Result<SendReport> {
-    deliver(&state, &account_id, &message).await
+) -> Result<()> {
+    deliver(&app, &state, &account_id, &message).await
 }
 
-/// Envoi proprement dit (aussi utilisé par les envois programmés) : SMTP, retrait du brouillon, copie dans « Envoyés ».
+/// Envoi proprement dit (aussi utilisé par les envois programmés) : SMTP, retrait du brouillon ; la copie dans
+/// « Envoyés » se fait ensuite en tâche de fond (`after_send`), sans retarder la réponse.
 pub(crate) async fn deliver(
+    app: &AppHandle,
     state: &AppState,
     account_id: &str,
     message: &OutgoingMessage,
-) -> Result<SendReport> {
+) -> Result<()> {
     let acct = account::get(&state.db, account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
     let raw = smtp::send(&acct, &cred, message).await?;
@@ -503,20 +496,35 @@ pub(crate) async fn deliver(
             tracing::warn!(account = %acct.id, "brouillon non supprimé du serveur après l'envoi : {e}");
         }
     }
+    let app = app.clone();
+    let subject = message.subject.clone();
+    tauri::async_runtime::spawn(async move { after_send(&app, acct, cred, subject, raw).await });
+    Ok(())
+}
 
-    let sent_copy = if acct.server_files_sent() {
-        SentCopy::Server
-    } else {
-        match file_in_sent(state, &acct, &cred, &raw).await {
-            Ok(()) => SentCopy::Saved,
-            Err(e) => {
-                tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
-                SentCopy::Failed(e.to_string())
-            }
+/// Après l'envoi : dépose la copie dans « Envoyés » (sauf si le serveur la range lui-même, Gmail), puis déclenche la
+/// synchro pour la faire apparaître. Un échec est signalé à l'interface par l'événement `sent-copy:failed`.
+async fn after_send(
+    app: &AppHandle,
+    acct: Account,
+    cred: account::Credential,
+    subject: String,
+    raw: Vec<u8>,
+) {
+    let state = app.state::<AppState>();
+    if !acct.server_files_sent() {
+        if let Err(e) = file_in_sent(&state, &acct, &cred, &raw).await {
+            tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
+            let _ = app.emit(
+                "sent-copy:failed",
+                SentCopyFailed {
+                    subject,
+                    error: e.to_wire(),
+                },
+            );
         }
-    };
-    state.sync.trigger(account_id); // la copie (ou le nouveau dossier) apparaît à la synchro
-    Ok(SendReport { sent_copy })
+    }
+    state.sync.trigger(&acct.id); // la copie (ou le nouveau dossier) apparaît à la synchro
 }
 
 /// Met un message en file pour l'envoyer à `send_at` (secondes Unix). L'application doit être ouverte à cette heure.

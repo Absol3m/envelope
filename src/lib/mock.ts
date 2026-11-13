@@ -1,6 +1,6 @@
 import { DEMO_EN, DEMO_EN_HTML } from "./mock.en";
 import { i18next, locale, t } from "./i18n";
-import type { Account, Backend, ReminderKind, Rule, Detected, SendReport, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
@@ -300,7 +300,7 @@ export const demoBackend: Backend = {
       150,
     );
   },
-  sendEmail: () => delay<SendReport>({ sentCopy: "server" }, 400),
+  sendEmail: () => delay(undefined, 400),
   saveDraft: () => delay(undefined, 150),
   deleteDraft: () => delay(undefined, 100),
   openDraft: () => Promise.reject(new Error(t("demo:unavailable"))),

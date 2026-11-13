@@ -143,7 +143,7 @@ describe("brouillons enregistrés sur le serveur", () => {
 
   it("l'envoi transmet l'identifiant du brouillon, que le serveur supprime après un envoi réussi", async () => {
     const id = open({ to: [{ address: "bob@y.fr", name: null }], subject: "Salut" });
-    const sendEmail = vi.fn(() => Promise.resolve({ sentCopy: "saved" as const }));
+    const sendEmail = vi.fn(() => Promise.resolve());
     useMail.setState({ backend: { ...useMail.getState().backend, sendEmail } as Backend });
     useComposer.getState().send();
     await tick(5000 + 100);
