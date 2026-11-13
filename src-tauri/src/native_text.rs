@@ -15,7 +15,8 @@ const ENGLISH: &str = include_str!("../../src/locales/en/native.json");
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NativeTexts {
-    /// Raison affichée dans l'invite Touch ID / Windows Hello.
+    /// Raison affichée dans l'invite Touch ID / Windows Hello (pas d'invite native ailleurs : champ reçu mais non lu).
+    #[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
     pub unlock_reason: String,
     /// Pages rendues dans le navigateur à la fin de l'autorisation OAuth.
     pub oauth_granted: String,
