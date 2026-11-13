@@ -47,7 +47,13 @@ export default function App() {
         void notifyNewMail(e.payload, locked);
       }));
       // Message envoyé, aussitôt montré dans « Envoyés » (avant que le serveur n'ait la copie).
-      unlisten.push(listen("sent-copy:shown", () => { if (useMail.getState().lock?.locked !== true) void useMail.getState().reload({ silent: true }); }));
+      unlisten.push(listen("sent-copy:shown", () => {
+        const { lock, view, reload, refreshAccounts } = useMail.getState();
+        if (lock?.locked === true) return;
+        void refreshAccounts(); // « copies en attente » (barre latérale, réglages)
+        const showsSent = view.kind !== "role" || view.role === "sent"; // les autres boîtes se relisent à la synchro
+        if (showsSent) void reload({ silent: true });
+      }));
       unlisten.push(listen<{ accountId: string; remaining: number }>("mail:backfill", (e) => useMail.getState().setBackfill(e.payload.accountId, e.payload.remaining)));
       unlisten.push(listen("mail:status", () => { if (useMail.getState().lock?.locked !== true) void useMail.getState().refreshAccounts(); }));
       unlisten.push(listen<number>("reminders:fired", (e) => {

@@ -37,6 +37,8 @@
   "scheduled": "Outbox",
   "demo": "Demo mode",
   "syncError": "Sync error",
+  "copiesPending_one": "1 copy to Sent pending",
+  "copiesPending_other": "{{count}} copies to Sent pending",
   "backfillHint": "Older messages are downloaded in the background: they become searchable as they arrive.",
   "backfill": "Archive: {{n}} left",
   "syncing": "Syncing…",

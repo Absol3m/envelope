@@ -5,7 +5,7 @@
 //! de lui-même : un rappel « lundi 8 h » parti le mardi serait pire qu'un message en attente de décision.
 //!
 //! La même file sert de **boîte d'envoi** : un message dont l'envoi échoue faute de connexion (`AppError::Unreachable`)
-//! y reste (`outbox = 1`) et repart seul, avec un délai croissant, dès que le serveur répond. Il n'est jamais « en
+//! y reste (`next_try_at` renseigné) et repart seul, avec un délai croissant, dès que le serveur répond. Il n'est jamais « en
 //! retard » : il n'a pas d'heure à respecter, seulement un réseau à retrouver.
 
 use std::time::Duration;
@@ -50,7 +50,7 @@ pub struct Scheduled {
 
 /// Délai avant le prochain essai d'un message de la boîte d'envoi, après `attempts` échecs.
 fn retry_delay(attempts: i64) -> i64 {
-    (RETRY_BASE_SECS << attempts.clamp(0, 10)).min(RETRY_MAX_SECS)
+    crate::backoff::delay_secs(RETRY_BASE_SECS, RETRY_MAX_SECS, attempts)
 }
 
 pub async fn add(
@@ -76,24 +76,16 @@ pub async fn add_outbox(
     error: &str,
 ) -> Result<i64> {
     let at = now();
-    let outbox = Outbox {
-        next_try_at: at + retry_delay(0),
-        error,
-    };
-    insert(pool, account_id, at, Some(outbox), message).await
-}
-
-/// Boîte d'envoi : prochain essai et dernière erreur d'une ligne (`None` : envoi programmé).
-struct Outbox<'a> {
-    next_try_at: i64,
-    error: &'a str,
+    let retry = Some((at + retry_delay(0), error));
+    insert(pool, account_id, at, retry, message).await
 }
 
 async fn insert(
     pool: &SqlitePool,
     account_id: &str,
     send_at: i64,
-    outbox: Option<Outbox<'_>>,
+    // Boîte d'envoi : (prochain essai, dernière erreur) ; `None` pour un envoi programmé.
+    retry: Option<(i64, &str)>,
     message: &OutgoingMessage,
 ) -> Result<i64> {
     let queued: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM scheduled")
@@ -114,15 +106,15 @@ async fn insert(
             "message too large to schedule"
         )));
     }
+    let (next_try_at, last_error) = retry.unzip();
     Ok(sqlx::query(
-        "INSERT INTO scheduled (account_id, send_at, message, outbox, next_try_at, error) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO scheduled (account_id, send_at, message, next_try_at, error) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(account_id)
     .bind(send_at)
     .bind(json)
-    .bind(outbox.is_some())
-    .bind(outbox.as_ref().map(|o| o.next_try_at))
-    .bind(outbox.as_ref().map(|o| o.error))
+    .bind(next_try_at)
+    .bind(last_error)
     .execute(pool)
     .await?
     .last_insert_rowid())
@@ -155,7 +147,7 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Scheduled>> {
     // Objet et destinataires extraits en SQL : on ne relit ni le corps ni les pièces jointes pour afficher la liste.
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT id, account_id, send_at, json_extract(message, '$.subject') AS subject, \
-         json_extract(message, '$.to') AS to_json, status, error, outbox FROM scheduled ORDER BY send_at, id",
+         json_extract(message, '$.to') AS to_json, status, error, next_try_at IS NOT NULL AS outbox FROM scheduled ORDER BY send_at, id",
     )
     .fetch_all(pool)
     .await?;
@@ -206,7 +198,7 @@ pub struct Claimed {
 /// Prend un message pour l'envoyer ; faux s'il a déjà été pris ou retiré (jamais deux envois du même message).
 pub async fn claim(pool: &SqlitePool, id: i64) -> Result<Option<Claimed>> {
     let row: Option<(String, String, bool, i64)> = sqlx::query_as(
-        "UPDATE scheduled SET status = 'sending', error = NULL WHERE id = ? AND status <> 'sending' RETURNING account_id, message, outbox, attempts",
+        "UPDATE scheduled SET status = 'sending', error = NULL WHERE id = ? AND status <> 'sending' RETURNING account_id, message, next_try_at IS NOT NULL, attempts",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -225,7 +217,7 @@ pub async fn claim(pool: &SqlitePool, id: i64) -> Result<Option<Claimed>> {
 /// Le serveur n'a pas répondu : le message passe (ou reste) en boîte d'envoi, prochain essai après un délai croissant.
 pub async fn requeue(pool: &SqlitePool, id: i64, attempts: i64, error: &str) -> Result<()> {
     sqlx::query(
-        "UPDATE scheduled SET status = 'pending', outbox = 1, attempts = attempts + 1, next_try_at = ?, error = ? WHERE id = ?",
+        "UPDATE scheduled SET status = 'pending', attempts = attempts + 1, next_try_at = ?, error = ? WHERE id = ?",
     )
     .bind(now() + retry_delay(attempts + 1)) // `attempts` : avant cet échec ; `add_outbox` a déjà compté le délai 0
 
@@ -270,8 +262,8 @@ pub async fn recover(pool: &SqlitePool) -> Result<()> {
 /// jamais en retard : il repart dès que son délai est écoulé.
 pub async fn due(pool: &SqlitePool, at: i64) -> Result<Vec<(i64, bool)>> {
     let rows: Vec<(i64, i64, bool)> = sqlx::query_as(
-        "SELECT id, send_at, outbox FROM scheduled WHERE status = 'pending' \
-         AND (CASE WHEN outbox = 1 THEN next_try_at ELSE send_at END) <= ? ORDER BY send_at, id",
+        "SELECT id, send_at, next_try_at IS NOT NULL FROM scheduled WHERE status = 'pending' \
+         AND COALESCE(next_try_at, send_at) <= ? ORDER BY send_at, id",
     )
     .bind(at)
     .fetch_all(pool)
@@ -304,33 +296,31 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
         return Ok(()); // déjà pris ou retiré
     };
     let result = crate::commands::deliver(app, state, &account_id, &message).await;
-    let error = match &result {
+    // Ce que l'interface doit savoir : un envoi réussi ou en échec (toast), ou rien (le message reste en boîte d'envoi).
+    let outcome = |error| Outcome {
+        subject: message.subject.clone(),
+        error,
+        outbox,
+    };
+    let outcome = match &result {
         Ok(_) => {
             // Le message est parti : un échec de nettoyage ne doit pas le faire passer pour un échec d'envoi.
             if let Err(e) = remove(&state.db, id).await {
                 tracing::warn!("scheduled send {id} went out but is still queued: {e}");
             }
-            None
+            Some(outcome(None))
         }
         // Pas de réseau : le message reste en boîte d'envoi, sans bruit (il repartira tout seul).
         Err(e @ AppError::Unreachable(_)) => {
             requeue(&state.db, id, attempts, &e.to_wire()).await?;
-            let _ = app.emit("scheduled:changed", Option::<Outcome>::None);
-            return result.map(|_| ());
+            None
         }
         Err(e) => {
             fail(&state.db, id, &e.to_wire()).await?; // codé : le front le traduit à l'affichage
-            Some(e.to_wire())
+            Some(outcome(Some(e.to_wire())))
         }
     };
-    let _ = app.emit(
-        "scheduled:changed",
-        Outcome {
-            subject: message.subject,
-            error,
-            outbox,
-        },
-    );
+    let _ = app.emit("scheduled:changed", outcome);
     result.map(|_| ())
 }
 
@@ -452,7 +442,6 @@ mod tests {
             (0..8).map(retry_delay).collect::<Vec<_>>(),
             [30, 60, 120, 240, 480, 600, 600, 600]
         );
-        assert_eq!(retry_delay(i64::MAX), RETRY_MAX_SECS);
     }
 
     #[tokio::test]

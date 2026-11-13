@@ -61,7 +61,7 @@ pub fn after_failure(refusal: bool, attempts: i64, refusals: i64, age: i64) -> N
     if refusals + i64::from(refusal) >= MAX_REFUSALS || age >= MAX_AGE_SECS {
         return Next::Local;
     }
-    let delay = (BASE_DELAY_SECS << attempts.clamp(0, 7)).min(MAX_DELAY_SECS);
+    let delay = crate::backoff::delay_secs(BASE_DELAY_SECS, MAX_DELAY_SECS, attempts);
     Next::Retry {
         delay,
         refused: refusal,

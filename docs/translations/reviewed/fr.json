@@ -804,6 +804,8 @@
  "sidebar:scheduled": "3ddb6d9c",
  "sidebar:demo": "a85b7283",
  "sidebar:syncError": "86778bfc",
+ "sidebar:copiesPending_one": "4f25da11",
+ "sidebar:copiesPending_other": "8c45e2cb",
  "sidebar:backfillHint": "2cc762c6",
  "sidebar:backfill": "9a9c624a",
  "sidebar:syncing": "221ca630",

@@ -179,6 +179,8 @@ export function Sidebar() {
   const syncing = accounts.some((a) => a.syncStatus === "syncing");
   const backfillLeft = useMail((s) => Object.values(s.backfill).reduce((n, v) => n + v, 0));
   const errored = accounts.find((a) => a.syncStatus === "error");
+  const pendingCopies = accounts.reduce((n, a) => n + a.pendingCopies, 0); // copies dans « Envoyés » à déposer
+  const copyError = accounts.find((a) => a.pendingCopyError)?.pendingCopyError ?? null;
   const lastSync = accounts.map((a) => a.lastSyncAt).filter(Boolean).sort().pop() ?? null;
 
   return (
@@ -269,6 +271,8 @@ export function Sidebar() {
             <span className="flex items-center gap-1.5" title={t("sidebar:backfillHint")}><Spinner size={11} /> {t("sidebar:backfill", { n: formatNumber(backfillLeft) })}</span>
           ) : syncing ? (
             <span className="flex items-center gap-1.5"><Spinner size={11} /> {t("sidebar:syncing")}</span>
+          ) : pendingCopies > 0 ? (
+            <span className="flex items-center gap-1.5 text-warn" title={describeStored(copyError) ?? undefined}>● {t("sidebar:copiesPending", { count: pendingCopies })}</span>
           ) : (
             <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-success" /> {t("sidebar:synced", { when: relativeTime(lastSync) })}</span>
           )}
