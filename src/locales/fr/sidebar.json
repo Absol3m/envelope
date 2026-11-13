@@ -34,7 +34,7 @@
   "folders": "Dossiers",
   "foldersTitle": "Dossiers",
   "smartViews": "Vues intelligentes",
-  "scheduled": "Programmés",
+  "scheduled": "Boîte d'envoi",
   "demo": "Mode démo",
   "syncError": "Erreur de synchro",
   "backfillHint": "Les anciens messages sont téléchargés en arrière-plan : ils deviennent cherchables au fur et à mesure.",

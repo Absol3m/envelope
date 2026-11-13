@@ -71,6 +71,10 @@ pub enum AppError {
     Imap(#[from] async_imap::error::Error),
     #[error("SMTP: {0}")]
     Smtp(Msg),
+    /// Serveur SMTP injoignable (réseau coupé, DNS, délai dépassé) : le message n'est pas parti et peut être renvoyé
+    /// tel quel (boîte d'envoi). Un refus du serveur (authentification, destinataire…) reste un `Smtp`.
+    #[error("{0}")]
+    Unreachable(Msg),
     #[error("keychain: {0}")]
     Keyring(#[from] keyring::Error),
     #[error("network: {0}")]
@@ -99,6 +103,7 @@ impl AppError {
         let detail = |code: &'static str, d: String| (code, vec![("detail", d)]);
         match self {
             AppError::Smtp(m)
+            | AppError::Unreachable(m)
             | AppError::Auth(m)
             | AppError::NotFound(m)
             | AppError::Invalid(m) => (m.code, m.args.clone()),

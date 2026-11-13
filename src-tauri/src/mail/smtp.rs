@@ -101,6 +101,25 @@ fn smtp_err(e: impl std::fmt::Display) -> AppError {
     AppError::Smtp((e.to_string()).into())
 }
 
+/// Échec d'un envoi : « injoignable » quand le serveur n'a rien répondu (connexion, réseau, délai) — le message n'est
+/// pas parti et peut être renvoyé tel quel ; toute réponse du serveur (4xx, 5xx, authentification, TLS refusé) est
+/// une erreur à montrer, pas à retenter en silence.
+fn send_err(e: lettre::transport::smtp::Error) -> AppError {
+    let answered = e.is_response()
+        || e.is_client()
+        || e.is_transient()
+        || e.is_permanent()
+        || e.is_tls();
+    if answered {
+        return smtp_err(e);
+    }
+    AppError::Unreachable(msg!(
+        "smtp.unreachable",
+        "the SMTP server can't be reached: {detail}",
+        detail = e
+    ))
+}
+
 fn mailbox(s: &str) -> Result<Mailbox> {
     s.parse().map_err(|e| {
         AppError::Invalid(msg!(
@@ -251,7 +270,7 @@ pub async fn send(account: &Account, cred: &Credential, out: &OutgoingMessage) -
     transport(account, cred)?
         .send(msg)
         .await
-        .map_err(smtp_err)?;
+        .map_err(send_err)?;
     Ok(raw)
 }
 
@@ -314,6 +333,33 @@ mod tests {
             draft_id: None,
             from_email: None,
         }
+    }
+
+    /// Un port fermé n'est pas un refus du serveur : le message pourra repartir tel quel (boîte d'envoi).
+    #[tokio::test]
+    async fn serveur_injoignable_distingue_d_un_refus() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener); // plus personne n'écoute
+        let acct = Account {
+            smtp_host: "127.0.0.1".into(),
+            smtp_port: i64::from(port),
+            smtp_security: "starttls".into(),
+            ..account()
+        };
+        let cred = Credential::Password {
+            user: "me@x.fr".into(),
+            password: "x".into(),
+        };
+        let err = send(&acct, &cred, &outgoing(vec![], None))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Unreachable(_)), "{err:?}");
+        // Une erreur de construction (destinataire invalide) n'est jamais « injoignable ».
+        let mut bad = outgoing(vec![], None);
+        bad.to = vec!["pas une adresse".into()];
+        let err = send(&acct, &cred, &bad).await.unwrap_err();
+        assert!(!matches!(err, AppError::Unreachable(_)));
     }
 
     fn att(name: &str, bytes: &[u8]) -> OutgoingAttachment {

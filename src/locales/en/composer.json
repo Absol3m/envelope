@@ -65,6 +65,7 @@
   "draftKept": "Draft kept",
   "resume": "Resume",
   "sent": "Message sent",
+  "queued": "No connection: the message is in the outbox and will go out as soon as it's back",
   "sentNoCopy": "“{{subject}}” was sent, but a copy for “Sent” could not be kept — {{error}}",
   "sentCopyLocal": "A sent message could not be copied to “Sent” on the server, so it was saved in a local folder — {{error}}",
   "sendFailed": "Couldn't send — {{error}}",

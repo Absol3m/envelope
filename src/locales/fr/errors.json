@@ -124,7 +124,8 @@
       "attachments_too_big": "Pièces jointes trop volumineuses (maximum {{max}} Mo au total)",
       "no_recipient": "Au moins un destinataire est requis",
       "unencrypted": "SMTP : connexion non chiffrée refusée (choisissez TLS ou STARTTLS)",
-      "not_accepted": "Le serveur SMTP n'a pas répondu positivement"
+      "not_accepted": "Le serveur SMTP n'a pas répondu positivement",
+      "unreachable": "Le serveur SMTP est injoignable : {{detail}}"
     },
     "unsubscribe": {
       "unsupported": "Ce message ne propose pas de désabonnement automatique",

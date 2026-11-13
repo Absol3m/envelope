@@ -478,14 +478,30 @@ struct SentCopyFailed {
     error: String,
 }
 
+/// Sort d'un envoi demandé par l'utilisateur.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SendOutcome {
+    Sent,
+    /// Serveur injoignable : le message est en boîte d'envoi et partira dès que la connexion revient.
+    Queued,
+}
+
 #[tauri::command]
 pub async fn send_email(
     app: AppHandle,
     state: State<'_, AppState>,
     account_id: String,
     message: OutgoingMessage,
-) -> Result<()> {
-    deliver(&app, &state, &account_id, &message).await
+) -> Result<SendOutcome> {
+    match deliver(&app, &state, &account_id, &message).await {
+        Ok(()) => Ok(SendOutcome::Sent),
+        Err(e @ AppError::Unreachable(_)) => {
+            scheduled::add_outbox(&state.db, &account_id, &message, &e.to_wire()).await?;
+            Ok(SendOutcome::Queued)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Envoi proprement dit (aussi utilisé par les envois programmés) : SMTP, retrait du brouillon ; la copie dans

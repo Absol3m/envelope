@@ -124,7 +124,8 @@
       "attachments_too_big": "Attachments too large (maximum {{max}} MB in total)",
       "no_recipient": "At least one recipient is required",
       "unencrypted": "SMTP: unencrypted connection refused (choose TLS or STARTTLS)",
-      "not_accepted": "The SMTP server did not reply positively"
+      "not_accepted": "The SMTP server did not reply positively",
+      "unreachable": "The SMTP server can't be reached: {{detail}}"
     },
     "unsubscribe": {
       "unsupported": "This message doesn't offer automatic unsubscription",

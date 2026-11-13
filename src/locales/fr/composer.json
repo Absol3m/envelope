@@ -65,6 +65,7 @@
   "draftKept": "Brouillon conservé",
   "resume": "Reprendre",
   "sent": "Message envoyé",
+  "queued": "Pas de connexion : le message est dans la boîte d'envoi et partira dès qu'elle revient",
   "sentNoCopy": "« {{subject}} » est envoyé, mais sa copie pour « Envoyés » n’a pas pu être conservée — {{error}}",
   "sentCopyLocal": "Un message envoyé n’a pas pu être copié dans « Envoyés » sur le serveur : il est rangé dans un dossier local — {{error}}",
   "sendFailed": "Envoi impossible — {{error}}",

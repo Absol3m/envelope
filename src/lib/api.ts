@@ -229,6 +229,8 @@ export interface ScheduledSend {
   to: string[];
   status: "pending" | "sending" | "failed";
   error: string | null;
+  /** Boîte d'envoi : parti faute de connexion, repart seul (`sendAt` : date de mise en file). */
+  outbox: boolean;
 }
 
 export type LockMethod = "off" | "system" | "password";
@@ -302,7 +304,8 @@ export interface Backend {
   oauthStatus(): Promise<OAuthStatus>;
   setOAuthClient(provider: OAuthProviderId, clientId: string, clientSecret?: string): Promise<void>;
   clearOAuthClient(provider: OAuthProviderId): Promise<void>;
-  sendEmail(accountId: string, message: OutgoingMessage): Promise<void>;
+  /** `queued` : serveur injoignable, le message est en boîte d'envoi et partira dès le retour de la connexion. */
+  sendEmail(accountId: string, message: OutgoingMessage): Promise<"sent" | "queued">;
   /** Enregistre le brouillon sur le serveur (nouvelle version, puis suppression des précédentes). */
   saveDraft(accountId: string, message: OutgoingMessage): Promise<void>;
   deleteDraft(accountId: string, draftId: string): Promise<void>;

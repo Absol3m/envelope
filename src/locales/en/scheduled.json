@@ -1,7 +1,11 @@
 {
   "sendFailed": "Couldn't send — {{error}}",
-  "title": "Scheduled messages",
-  "hint": "They go out at the scheduled time if Envelope is open.",
+  "title": "Outbox",
+  "hint": "Scheduled messages go out at their time, the others as soon as the connection is back — as long as Envelope is open.",
+  "sending": "Sending…",
+  "to": "To: {{list}}",
+  "outboxWaiting": "Waiting for the connection",
+  "outboxSent": "Message sent — {{subject}}",
   "sendNow": "Send now",
   "edit": "Edit",
   "sendFailedFor": "Scheduled send failed — {{subject}}: {{error}}",

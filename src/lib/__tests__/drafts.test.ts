@@ -143,11 +143,23 @@ describe("brouillons enregistrés sur le serveur", () => {
 
   it("l'envoi transmet l'identifiant du brouillon, que le serveur supprime après un envoi réussi", async () => {
     const id = open({ to: [{ address: "bob@y.fr", name: null }], subject: "Salut" });
-    const sendEmail = vi.fn(() => Promise.resolve());
+    const sendEmail = vi.fn(() => Promise.resolve("sent" as const));
     useMail.setState({ backend: { ...useMail.getState().backend, sendEmail } as Backend });
     useComposer.getState().send();
     await tick(5000 + 100);
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect((sendEmail.mock.calls[0] as unknown[])[1]).toMatchObject({ draftId: id });
+  });
+
+  it("hors ligne, le message part en boîte d'envoi : il n'est pas rouvert et la file est relue", async () => {
+    open({ to: [{ address: "bob@y.fr", name: null }], subject: "Salut" });
+    const sendEmail = vi.fn(() => Promise.resolve("queued" as const));
+    const listScheduled = vi.fn(() => Promise.resolve([]));
+    useMail.setState({ backend: { ...useMail.getState().backend, sendEmail, listScheduled } as Backend });
+    useComposer.getState().send();
+    await tick(5000 + 100);
+    expect(useComposer.getState().draft).toBeNull();
+    expect(listScheduled).toHaveBeenCalled();
+    expect(useMail.getState().toasts.at(-1)?.message).toContain("boîte d'envoi");
   });
 });

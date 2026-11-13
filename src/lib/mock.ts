@@ -292,7 +292,7 @@ export const demoBackend: Backend = {
       150,
     );
   },
-  sendEmail: () => delay(undefined, 400),
+  sendEmail: () => delay("sent" as const, 400),
   saveDraft: () => delay(undefined, 150),
   deleteDraft: () => delay(undefined, 100),
   openDraft: () => Promise.reject(new Error(t("demo:unavailable"))),
@@ -330,7 +330,7 @@ export const demoBackend: Backend = {
     QUEUE.push({ id, accountId, message, sendAt });
     return delay(id, 60);
   },
-  listScheduled: () => delay(QUEUE.map((q) => ({ id: q.id, accountId: q.accountId, sendAt: q.sendAt, subject: q.message.subject, to: q.message.to, status: "pending" as const, error: null })), 40),
+  listScheduled: () => delay(QUEUE.map((q) => ({ id: q.id, accountId: q.accountId, sendAt: q.sendAt, subject: q.message.subject, to: q.message.to, status: "pending" as const, error: null, outbox: false })), 40),
   cancelScheduled: (id) => {
     const i = QUEUE.findIndex((q) => q.id === id);
     if (i < 0) return Promise.reject(new Error(t("demo:sendNotFound")));

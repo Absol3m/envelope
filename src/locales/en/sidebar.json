@@ -34,7 +34,7 @@
   "folders": "Folders",
   "foldersTitle": "Folders",
   "smartViews": "Smart views",
-  "scheduled": "Scheduled",
+  "scheduled": "Outbox",
   "demo": "Demo mode",
   "syncError": "Sync error",
   "backfillHint": "Older messages are downloaded in the background: they become searchable as they arrive.",

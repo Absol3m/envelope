@@ -1,7 +1,11 @@
 {
   "sendFailed": "Envoi impossible — {{error}}",
-  "title": "Envois programmés",
-  "hint": "Ils partent à l'heure prévue si Envelope est ouvert.",
+  "title": "Boîte d'envoi",
+  "hint": "Les messages programmés partent à leur heure, les autres dès que la connexion revient — tant qu'Envelope est ouvert.",
+  "sending": "Envoi en cours…",
+  "to": "À : {{list}}",
+  "outboxWaiting": "En attente de connexion",
+  "outboxSent": "Message envoyé — {{subject}}",
   "sendNow": "Envoyer maintenant",
   "edit": "Modifier",
   "sendFailedFor": "Envoi programmé impossible — {{subject}} : {{error}}",

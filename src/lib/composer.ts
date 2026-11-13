@@ -243,10 +243,13 @@ export const useComposer = create<ComposerState>((set, get) => {
       const timer = setTimeout(async () => {
         pendingSend = null;
         try {
-          await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
-          onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi
+          const outcome = await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
+          onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi (ou, en boîte d'envoi, à l'envoi)
           lastSig.delete(draft.id);
-          toast(t("composer:sent")); // la copie dans « Envoyés » se fait en arrière-plan : elle est mise en file côté moteur (reprise automatique) ; seuls `sent-copy:failed` et `sent-copy:local` arrivent ici
+          if (outcome === "queued") {
+            void useMail.getState().refreshScheduled();
+            toast(t("composer:queued"), "default", 6000);
+          } else toast(t("composer:sent")); // la copie dans « Envoyés » se fait en arrière-plan : elle est mise en file côté moteur (reprise automatique) ; seuls `sent-copy:failed` et `sent-copy:local` arrivent ici
         } catch (e) {
           open(draft); // rien n'est perdu : le message revient dans le panneau
           toast(t("composer:sendFailed", { error: String(e) }), "error", 7000);
