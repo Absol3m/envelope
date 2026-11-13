@@ -242,8 +242,8 @@ pub async fn fail(pool: &SqlitePool, id: i64, error: &str) -> Result<()> {
     Ok(())
 }
 
-/// Au démarrage : un envoi « en cours » à l'arrêt de l'application a peut-être abouti ; on ne le renvoie pas seul (un
-/// renvoi automatique risquerait un doublon chez le destinataire, irréparable ; l'utilisateur décide, « Envoyés » en main).
+/// Au démarrage : un envoi « en cours » à l'arrêt a peut-être abouti ; on ne le renvoie pas seul (doublon irréparable
+/// chez le destinataire) : l'utilisateur décide, « Envoyés » en main.
 pub async fn recover(pool: &SqlitePool) -> Result<()> {
     let interrupted = AppError::Invalid(msg!(
         "scheduled.interrupted",

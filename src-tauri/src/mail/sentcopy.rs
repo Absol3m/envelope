@@ -13,10 +13,9 @@
 //! dossier dès que sa ligne de file a disparu — la vraie copie, rapatriée par la même passe, la remplace (même
 //! Message-ID), ou le message est dans le dossier local de repli.
 //!
-//! Fenêtre résiduelle : `record` est appelé dès la fin du SMTP, avant le retrait du brouillon ; seul un arrêt dans les
-//! quelques millisecondes qui séparent la réponse du serveur SMTP de l'écriture de la ligne perd la copie. Aucun
-//! journal d'intention ne la ferme : écrit avant l'envoi, il ne dirait pas si le message est parti, et ranger dans
-//! « Envoyés » un message peut-être jamais envoyé serait pire qu'une copie manquante (renvoyer aussi).
+//! Fenêtre résiduelle : `enqueue` est appelé dès la fin du SMTP, avant le retrait du brouillon ; seul un arrêt dans les
+//! quelques millisecondes avant l'écriture de la ligne perd la copie. Un journal d'intention écrit avant l'envoi ne la
+//! ferme pas : il ne dirait pas si le message est parti.
 
 use std::path::Path;
 
@@ -87,46 +86,18 @@ pub struct Queued {
     pub raw_hash: String,
 }
 
-/// Enregistre un message qui vient d'être envoyé : mise en file de sa copie, puis affichage immédiat dans « Envoyés ».
-/// À appeler **dès la fin du SMTP**, avant tout autre travail (retrait du brouillon…) : c'est ce qui réduit la fenêtre où
-/// un arrêt de l'application perdrait la copie (le message est parti, rien ne l'a encore noté) à quelques millisecondes.
-/// Seule la mise en file est une erreur ; si l'affichage échoue, la synchro dépose quand même la copie.
-pub async fn record(
-    pool: &SqlitePool,
-    attachments_dir: &Path,
-    raw_dir: &Path,
-    account_id: &str,
-    raw: &[u8],
-) -> Result<()> {
-    let parsed = ingest::parse_with(raw, Some(now()), false); // une seule lecture : Message-ID et affichage
-    let message_id = parsed.as_ref().and_then(|p| p.message_id.as_deref());
-    let queued = enqueue(pool, raw_dir, account_id, message_id, raw).await?;
-    if let Some(parsed) = parsed {
-        let shown = show_now(
-            pool,
-            attachments_dir,
-            account_id,
-            &queued,
-            parsed,
-            raw.len(),
-        )
-        .await;
-        if let Err(e) = shown {
-            tracing::warn!(account = %account_id, "sent message not shown at once: {e}");
-        }
-    }
-    Ok(())
-}
-
-/// Range le message envoyé et le met en file ; l'envoi est déjà fait, on ne refait rien d'autre.
-async fn enqueue(
+/// Range le message envoyé et le met en file ; l'envoi est déjà fait, on ne refait rien d'autre. À appeler dès la fin du
+/// SMTP, avant tout autre travail (retrait du brouillon…) : voir la fenêtre résiduelle en tête de module.
+pub async fn enqueue(
     pool: &SqlitePool,
     raw_dir: &Path,
     account_id: &str,
-    message_id: Option<&str>,
     raw: &[u8],
 ) -> Result<Queued> {
     let hash = rawstore::put(raw_dir, raw).await?;
+    let message_id = mail_parser::MessageParser::default()
+        .parse_headers(raw)
+        .and_then(|m| m.message_id().map(str::to_string));
     let at = now();
     let id = sqlx::query_scalar(
         "INSERT INTO pending_append (account_id, raw_hash, message_id, next_try_at, created_at) \
@@ -144,13 +115,12 @@ async fn enqueue(
 
 /// Montre tout de suite le message dans « Envoyés » (ligne provisoire d'UID `-id`). Sans effet tant que le dossier
 /// n'est pas connu (première synchro pas encore faite) : la copie y apparaîtra quand le serveur l'aura.
-async fn show_now(
+pub async fn show_now(
     pool: &SqlitePool,
     attachments_dir: &Path,
     account_id: &str,
     queued: &Queued,
-    parsed: ingest::ParsedMessage,
-    size: usize,
+    raw: &[u8],
 ) -> Result<()> {
     let Some(folder_id) = sqlx::query_scalar::<_, i64>(
         "SELECT id FROM folders WHERE account_id = ? AND role = 'sent' LIMIT 1",
@@ -161,6 +131,9 @@ async fn show_now(
     else {
         return Ok(());
     };
+    let Some(parsed) = ingest::parse_with(raw, Some(now()), false) else {
+        return Ok(()); // illisible : la copie du serveur, elle, ne dépend pas de notre lecture
+    };
     let thread = ingest::store_with(
         pool,
         attachments_dir,
@@ -168,7 +141,7 @@ async fn show_now(
             account_id,
             folder_id,
             uid: -queued.id,
-            size: Some(size as i64),
+            size: Some(raw.len() as i64),
         },
         ingest::Flags {
             seen: true,
@@ -277,11 +250,8 @@ async fn append(
     }
     let raw = rawstore::get(raw_dir, &p.raw_hash).await?;
     match session.append(&*path, Some("(\\Seen)"), None, &raw).await {
-        // Vu sur un vrai serveur (Dovecot, quota dépassé) : un refus avant l'invite `+` — réponse `NO` étiquetée — sort
-        // de la bibliothèque en `Append`, sans le `NO`. async-imap ne produit `Append` que si la première réponse n'est
-        // pas l'invite : flux fermé (`None`) ou réponse étiquetée du serveur. Un `NOOP` qui aboutit exclut le flux
-        // fermé : le serveur a répondu, c'était un refus (durable). Déduit de la lecture de la bibliothèque, pas
-        // garanti : l'essai `dialogue_imap_reel` fige ce comportement et casserait à une mise à jour qui le change.
+        // async-imap rend `Append` pour un `NO` étiqueté (quota, vu sur Dovecot) comme pour un flux fermé ; un `NOOP`
+        // qui aboutit exclut le flux fermé : refus durable. Figé par l'essai `dialogue_imap_reel`.
         Err(async_imap::error::Error::Append) if session.noop().await.is_ok() => Err(
             async_imap::error::Error::No("the server refused the message (APPEND)".into()).into(),
         ),
@@ -450,10 +420,7 @@ mod tests {
             .unwrap();
         let dir = std::env::temp_dir().join(format!("envelope-sentcopy-{}", uuid::Uuid::new_v4()));
         let raw = b"Message-ID: <x1@example.com>\r\nSubject: s\r\n\r\ncorps";
-        let id = enqueue(&db, &dir, "acc", Some("x1@example.com"), raw)
-            .await
-            .unwrap()
-            .id;
+        let id = enqueue(&db, &dir, "acc", raw).await.unwrap().id;
         let rows = due(&db, "acc", now()).await.unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, id);
@@ -483,7 +450,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("envelope-sentcopy-{}", uuid::Uuid::new_v4()));
         let raw = b"Message-ID: <m1@x.fr>\r\nFrom: me@x.fr\r\nTo: bob@x.fr\r\nSubject: Devis\r\n\r\ncorps";
         // Dossier « Envoyés » pas encore connu (première synchro à faire) : la copie est en file, rien à montrer.
-        record(&db, &dir, &dir, "a", raw).await.unwrap();
+        let queued = enqueue(&db, &dir, "a", raw).await.unwrap();
+        show_now(&db, &dir, "a", &queued, raw).await.unwrap();
         let pending: Vec<(i64, Option<String>)> =
             sqlx::query_as("SELECT id, message_id FROM pending_append")
                 .fetch_all(&db)
@@ -507,7 +475,8 @@ mod tests {
         sqlx::query("INSERT INTO folders (id, account_id, path, name, role) VALUES (7,'a','Sent','Sent','sent')")
             .execute(&db).await.unwrap();
         let raw2 = b"Message-ID: <m2@x.fr>\r\nFrom: me@x.fr\r\nTo: bob@x.fr\r\nSubject: Devis 2\r\n\r\ncorps";
-        record(&db, &dir, &dir, "a", raw2).await.unwrap();
+        let queued2 = enqueue(&db, &dir, "a", raw2).await.unwrap();
+        show_now(&db, &dir, "a", &queued2, raw2).await.unwrap();
         let rows = shown().await;
         assert_eq!(rows.len(), 1);
         assert_eq!(
@@ -572,9 +541,7 @@ mod tests {
             async move {
                 let id = format!("{}@x.fr", uuid::Uuid::new_v4().simple());
                 let raw = format!("Message-ID: <{id}>\r\nFrom: me@x.fr\r\nTo: bob@x.fr\r\nSubject: s\r\n\r\n{body}");
-                let q = enqueue(&db, &dir, "a", Some(&id), raw.as_bytes())
-                    .await
-                    .unwrap();
+                let q = enqueue(&db, &dir, "a", raw.as_bytes()).await.unwrap();
                 let p = due(&db, "a", now() + 1)
                     .await
                     .unwrap()
@@ -639,10 +606,10 @@ mod tests {
             .await
             .unwrap();
         let dir = std::env::temp_dir().join(format!("envelope-sentcopy-{}", uuid::Uuid::new_v4()));
-        enqueue(&db, &dir, "a", None, b"Subject: 1\r\n\r\nx")
+        enqueue(&db, &dir, "a", b"Subject: 1\r\n\r\nx")
             .await
             .unwrap();
-        enqueue(&db, &dir, "b", None, b"Subject: 2\r\n\r\ny")
+        enqueue(&db, &dir, "b", b"Subject: 2\r\n\r\ny")
             .await
             .unwrap();
         crate::mail::account::set_copy_sent(&db, "a", false)
@@ -668,11 +635,11 @@ mod tests {
             .await
             .unwrap();
         let dir = std::env::temp_dir().join(format!("envelope-sentcopy-{}", uuid::Uuid::new_v4()));
-        let first = enqueue(&db, &dir, "a", None, b"Subject: 1\r\n\r\nx")
+        let first = enqueue(&db, &dir, "a", b"Subject: 1\r\n\r\nx")
             .await
             .unwrap()
             .id;
-        enqueue(&db, &dir, "a", None, b"Subject: 2\r\n\r\ny")
+        enqueue(&db, &dir, "a", b"Subject: 2\r\n\r\ny")
             .await
             .unwrap();
         let p = &due(&db, "a", now()).await.unwrap()[0];

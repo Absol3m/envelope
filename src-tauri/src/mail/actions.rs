@@ -94,22 +94,26 @@ async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Ve
     Ok(qb.build_query_as().fetch_all(pool).await?)
 }
 
+/// La conversation contient-elle une ligne provisoire de « Envoyés » (voir `sentcopy`) ?
+async fn has_provisional(pool: &SqlitePool, thread_id: i64) -> Result<bool> {
+    Ok(sqlx::query_scalar(concat!(
+        "SELECT EXISTS(SELECT 1 FROM messages WHERE thread_id = ? AND ",
+        provisional_row!(),
+        ")"
+    ))
+    .bind(thread_id)
+    .fetch_one(pool)
+    .await?)
+}
+
 /// Applique l'action sur le serveur puis en base ; retourne les comptes touchés (la conversation,
 /// elle, peut avoir disparu de la base si elle est devenue vide).
 pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Vec<String>> {
     let targets = targets(pool, thread_id, action).await?;
     if targets.is_empty() {
-        // Conversation faite seulement du message envoyé, pas encore déposé sur le serveur (ligne provisoire) : agir
-        // « à vide » ferait croire que c'est fait ; on le dit.
-        let provisional: bool = sqlx::query_scalar(concat!(
-            "SELECT EXISTS(SELECT 1 FROM messages WHERE thread_id = ? AND ",
-            provisional_row!(),
-            ")"
-        ))
-        .bind(thread_id)
-        .fetch_one(pool)
-        .await?;
-        if provisional {
+        // Conversation faite seulement du message envoyé, pas encore déposé sur le serveur : agir « à vide » ferait
+        // croire que c'est fait ; on le dit.
+        if has_provisional(pool, thread_id).await? {
             return Err(AppError::Invalid(msg!(
                 "actions.copy_pending",
                 "the sent message isn't on the server yet: try again in a moment"

@@ -272,7 +272,7 @@ export function Sidebar() {
           ) : syncing ? (
             <span className="flex items-center gap-1.5"><Spinner size={11} /> {t("sidebar:syncing")}</span>
           ) : pendingCopies > 0 ? (
-            <span className="flex items-center gap-1.5 text-warn" title={describeStored(copyError) ?? undefined}>● {t("sidebar:copiesPending", { count: pendingCopies })}</span>
+            <span className="flex items-center gap-1.5 text-warn" title={describeStored(copyError) ?? undefined}><span className="h-1.5 w-1.5 rounded-full bg-warn" /> {t("sidebar:copiesPending", { count: pendingCopies })}</span>
           ) : (
             <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-success" /> {t("sidebar:synced", { when: relativeTime(lastSync) })}</span>
           )}

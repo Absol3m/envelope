@@ -515,30 +515,13 @@ pub(crate) async fn deliver(
     let acct = account::get(&state.db, account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
     let raw = smtp::send(&acct, &cred, message).await?;
-    // D'abord la copie dans « Envoyés » (mise en file, jamais perdue ; seul le disque peut l'en empêcher, signalé tout de
-    // suite à l'interface), avant tout autre travail : voir `sentcopy::record`. Sauf si le serveur la range lui-même (Gmail).
-    if acct.keeps_sent_copy() {
-        let recorded = sentcopy::record(
-            &state.db,
-            &state.attachments_dir,
-            &state.raw_dir,
-            &acct.id,
-            &raw,
-        );
-        match recorded.await {
-            Ok(()) => {
-                let _ = app.emit("sent-copy:shown", &acct.id);
-            }
-            Err(e) => {
-                tracing::warn!(account = %acct.id, "could not copy to Sent: {e}");
-                let failed = SentCopyFailed {
-                    subject: message.subject.clone(),
-                    error: e.to_wire(),
-                };
-                let _ = app.emit("sent-copy:failed", failed);
-            }
-        }
-    }
+    // Copie dans « Envoyés » : mise en file dès maintenant (avant le retrait du brouillon, voir `sentcopy::enqueue`),
+    // affichée une fois le reste fait ; sauf si le serveur la range lui-même (Gmail).
+    let queued = if acct.keeps_sent_copy() {
+        queue_sent_copy(app, state, &acct.id, &message.subject, &raw).await
+    } else {
+        None
+    };
     // Le brouillon a atteint son but : on le retire du serveur (sans jamais faire échouer l'envoi).
     if let Some(draft_id) = message.draft_id.as_deref() {
         let _guard = state.actions.lock().await;
@@ -546,8 +529,39 @@ pub(crate) async fn deliver(
             tracing::warn!(account = %acct.id, "draft not deleted from the server after sending: {e}");
         }
     }
+    if let Some(queued) = queued {
+        match sentcopy::show_now(&state.db, &state.attachments_dir, &acct.id, &queued, &raw).await {
+            Ok(()) => {
+                let _ = app.emit("sent-copy:shown", &acct.id);
+            }
+            // La copie, elle, est en file : la synchro la dépose quand même.
+            Err(e) => tracing::warn!(account = %acct.id, "sent message not shown at once: {e}"),
+        }
+    }
     state.sync.trigger(&acct.id); // la synchro dépose la copie
     Ok(())
+}
+
+/// Met la copie en file ; seul le disque peut l'en empêcher, signalé tout de suite à l'interface (`sent-copy:failed`).
+async fn queue_sent_copy(
+    app: &AppHandle,
+    state: &AppState,
+    account_id: &str,
+    subject: &str,
+    raw: &[u8],
+) -> Option<sentcopy::Queued> {
+    match sentcopy::enqueue(&state.db, &state.raw_dir, account_id, raw).await {
+        Ok(queued) => Some(queued),
+        Err(e) => {
+            tracing::warn!(account = %account_id, "could not copy to Sent: {e}");
+            let failed = SentCopyFailed {
+                subject: subject.to_string(),
+                error: e.to_wire(),
+            };
+            let _ = app.emit("sent-copy:failed", failed);
+            None
+        }
+    }
 }
 
 /// Met un message en file pour l'envoyer à `send_at` (secondes Unix). L'application doit être ouverte à cette heure.

@@ -18,6 +18,9 @@ import { dragRegion } from "@/lib/platform";
 import { t as tr } from "@/lib/i18n";
 import { describeStored } from "@/lib/backendError";
 
+/** Application verrouillée : le moteur refuserait toute lecture, les écouteurs d'événements s'abstiennent. */
+const isLocked = () => useMail.getState().lock?.locked === true;
+
 // Écrans rarement ouverts : chargés à la demande, hors du paquet initial.
 const Onboarding = lazy(() => import("@/components/Onboarding").then((m) => ({ default: m.Onboarding })));
 const Composer = lazy(() => loadComposer().then((m) => ({ default: m.Composer })));
@@ -42,22 +45,22 @@ export default function App() {
     const unlisten: Promise<() => void>[] = [];
     import("@tauri-apps/api/event").then(({ listen }) => {
       unlisten.push(listen<SyncedPayload>("mail:synced", (e) => {
-        const locked = useMail.getState().lock?.locked === true;
+        const locked = isLocked();
         if (!locked) void useMail.getState().reload({ silent: true }); // verrouillé, le moteur refuserait
         void notifyNewMail(e.payload, locked);
       }));
       // Message envoyé, aussitôt montré dans « Envoyés » (avant que le serveur n'ait la copie).
       unlisten.push(listen("sent-copy:shown", () => {
-        const { lock, view, reload, refreshAccounts } = useMail.getState();
-        if (lock?.locked === true) return;
+        if (isLocked()) return;
+        const { view, reload, refreshAccounts } = useMail.getState();
         void refreshAccounts(); // « copies en attente » (barre latérale, réglages)
         const showsSent = view.kind !== "role" || view.role === "sent"; // les autres boîtes se relisent à la synchro
         if (showsSent) void reload({ silent: true });
       }));
       unlisten.push(listen<{ accountId: string; remaining: number }>("mail:backfill", (e) => useMail.getState().setBackfill(e.payload.accountId, e.payload.remaining)));
-      unlisten.push(listen("mail:status", () => { if (useMail.getState().lock?.locked !== true) void useMail.getState().refreshAccounts(); }));
+      unlisten.push(listen("mail:status", () => { if (!isLocked()) void useMail.getState().refreshAccounts(); }));
       unlisten.push(listen<number>("reminders:fired", (e) => {
-        if (useMail.getState().lock?.locked === true) return;
+        if (isLocked()) return;
         const { toast, reload } = useMail.getState();
         void reload({ silent: true });
         toast({ message: e.payload > 1 ? `${e.payload} conversations reviennent` : "Une conversation revient" });
