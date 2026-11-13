@@ -13,7 +13,7 @@ import { Avatar, btnPrimary, Kbd } from "./ui/primitives";
 import { BellOff } from "lucide-react";
 import { shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 import { t as tr } from "@/lib/i18n";
-import { AttachmentPreview, previewable } from "./AttachmentPreview";
+import { AttachmentPreview, InlineImage, previewable } from "./AttachmentPreview";
 
 // ───────────── Corps du message ─────────────
 
@@ -147,13 +147,19 @@ function attachmentIcon(mime: string) {
 function Attachments({ items }: { items: DetailAttachment[] }) {
   const { backend, toast } = useMail(useShallow((s) => ({ backend: s.backend, toast: s.toast })));
   const [preview, setPreview] = useState<DetailAttachment | null>(null);
+  const [unshown, setUnshown] = useState<ReadonlySet<number>>(new Set()); // images trop grosses ou illisibles : gardées en pièce jointe
   if (items.length === 0) return null;
+  // Les images s'affichent dans le fil, sous le message (celles déjà dans le corps, `cid:`, n'y sont pas répétées).
+  const shown = items.filter((a) => previewable(a.mimeType) && !a.isInline && !unshown.has(a.id));
+  const chips = items.filter((a) => !shown.includes(a));
   const fail = (key: "reader:openFailed" | "reader:saveFailed") => (e: unknown) => toast({ message: tr(key, { error: String(e) }), tone: "error" });
   const open = (a: DetailAttachment) => backend.openAttachment(a.id).catch(fail("reader:openFailed"));
   const save = (list: DetailAttachment[]) => backend.saveAttachments(list.map((a) => a.id)).then((n) => n > 0 && toast({ message: tr("reader:saved", { count: n }) }), fail("reader:saveFailed"));
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2">
-      {items.map((a) => {
+    <div className="mt-3 flex flex-col items-start gap-2">
+      {shown.map((a) => <InlineImage key={a.id} item={a} onOpen={() => setPreview(a)} onSave={() => void save([a])} onFail={() => setUnshown((s) => new Set(s).add(a.id))} />)}
+      {(chips.length > 0 || items.length > 1) && <div className="flex flex-wrap items-center gap-2">
+      {chips.map((a) => {
         const Icon = attachmentIcon(a.mimeType);
         return (
           <div key={a.id} className="group flex max-w-[300px] items-center rounded-lg bg-bg shadow-card">
@@ -169,6 +175,7 @@ function Attachments({ items }: { items: DetailAttachment[] }) {
         );
       })}
       {items.length > 1 && <button onClick={() => void save(items)} className="press rounded-md px-2 py-1 text-[12px] text-muted hover:bg-hover hover:text-fg">{tr("reader:saveAll")}</button>}
+      </div>}
       {preview && <AttachmentPreview item={preview} onClose={() => setPreview(null)} onSave={() => void save([preview])} onOpen={() => void open(preview)} />}
     </div>
   );
