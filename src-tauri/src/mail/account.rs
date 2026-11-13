@@ -557,12 +557,8 @@ pub fn sender(account: &Account, from_email: Option<&str>) -> Result<lettre::mes
     Ok(lettre::message::Mailbox::new(name, address))
 }
 
-pub async fn set_signature(pool: &SqlitePool, id: &str, signature: &str) -> Result<()> {
-    let done = sqlx::query("UPDATE accounts SET signature = ? WHERE id = ?")
-        .bind(signature)
-        .bind(id)
-        .execute(pool)
-        .await?;
+/// Une mise à jour qui n'a touché aucun compte : le compte n'existe pas.
+fn ensure_found(done: &sqlx::sqlite::SqliteQueryResult, id: &str) -> Result<()> {
     if done.rows_affected() == 0 {
         return Err(AppError::NotFound(msg!(
             "not_found.account",
@@ -573,6 +569,15 @@ pub async fn set_signature(pool: &SqlitePool, id: &str, signature: &str) -> Resu
     Ok(())
 }
 
+pub async fn set_signature(pool: &SqlitePool, id: &str, signature: &str) -> Result<()> {
+    let done = sqlx::query("UPDATE accounts SET signature = ? WHERE id = ?")
+        .bind(signature)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    ensure_found(&done, id)
+}
+
 /// Active ou désactive la copie dans « Envoyés » ; désactivée, les copies encore en attente sont abandonnées.
 pub async fn set_copy_sent(pool: &SqlitePool, id: &str, on: bool) -> Result<()> {
     let done = sqlx::query("UPDATE accounts SET copy_sent = ? WHERE id = ?")
@@ -580,13 +585,7 @@ pub async fn set_copy_sent(pool: &SqlitePool, id: &str, on: bool) -> Result<()> 
         .bind(id)
         .execute(pool)
         .await?;
-    if done.rows_affected() == 0 {
-        return Err(AppError::NotFound(msg!(
-            "not_found.account",
-            "account not found: {id}",
-            id = id
-        )));
-    }
+    ensure_found(&done, id)?;
     if !on {
         sqlx::query("DELETE FROM pending_append WHERE account_id = ?")
             .bind(id)
