@@ -12,6 +12,23 @@
 //!  search (FTS5) + requêtes de lecture
 //! ```
 
+/// Condition SQL des messages qui existent sur le serveur (colonne `uid` de `messages`). Les lignes provisoires de
+/// « Envoyés » (`sentcopy`) ont un UID négatif : toute requête qui lit ou pousse des UID vers un serveur IMAP
+/// (rapatriement, réconciliation, actions) doit y ajouter ce filtre — `concat!("… WHERE ", server_row!())` — et jamais
+/// écrire `uid > 0` à la main. Texte brut : il entre dans des requêtes `&'static str`.
+macro_rules! server_row {
+    () => {
+        "uid > 0"
+    };
+}
+
+/// Contraire de `server_row!` : lignes provisoires, dont l'UID est l'opposé de l'identifiant de la file `pending_append`.
+macro_rules! provisional_row {
+    () => {
+        "uid < 0"
+    };
+}
+
 pub mod account;
 pub mod actions;
 pub mod authres;

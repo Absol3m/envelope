@@ -163,10 +163,11 @@ pub async fn show_now(
 /// abandonnée) ; rend leurs conversations, à rafraîchir. Appelée à la fin de la synchro du dossier, après le
 /// rapatriement des nouveautés : la vraie copie est déjà là, le message ne clignote pas.
 pub async fn sweep(pool: &SqlitePool, folder_id: i64) -> Result<Vec<i64>> {
-    let threads: Vec<Option<i64>> = sqlx::query_scalar(
-        "DELETE FROM messages WHERE folder_id = ? AND uid < 0 \
-         AND -uid NOT IN (SELECT id FROM pending_append) RETURNING thread_id",
-    )
+    let threads: Vec<Option<i64>> = sqlx::query_scalar(concat!(
+        "DELETE FROM messages WHERE folder_id = ? AND ",
+        provisional_row!(),
+        " AND -uid NOT IN (SELECT id FROM pending_append) RETURNING thread_id"
+    ))
     .bind(folder_id)
     .fetch_all(pool)
     .await?;

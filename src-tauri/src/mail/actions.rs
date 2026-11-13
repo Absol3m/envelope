@@ -78,9 +78,10 @@ struct Target {
 async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Vec<Target>> {
     let mut qb: QueryBuilder<Sqlite> = QueryBuilder::new(
         "SELECT m.id, m.account_id, m.folder_id, f.path AS folder_path, m.uid \
-         FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.uid > 0 AND m.thread_id = ",
+         FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.",
     );
-    qb.push_bind(thread_id);
+    qb.push(server_row!());
+    qb.push(" AND m.thread_id = ").push_bind(thread_id);
     match action {
         Action::SetRead(read) => qb.push(" AND m.is_read <> ").push_bind(read),
         Action::SetStarred(on) => qb.push(" AND m.is_starred <> ").push_bind(on),

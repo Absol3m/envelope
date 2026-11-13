@@ -767,9 +767,10 @@ async fn backfill_batch(
         let cursor = match stored {
             Some(c) => c,
             None => {
-                let min: Option<i64> = sqlx::query_scalar(
-                    "SELECT MIN(uid) FROM messages WHERE folder_id = ? AND uid > 0",
-                )
+                let min: Option<i64> = sqlx::query_scalar(concat!(
+                    "SELECT MIN(uid) FROM messages WHERE folder_id = ? AND ",
+                    server_row!()
+                ))
                 .bind(f.id)
                 .fetch_one(&ctx.pool)
                 .await?;
@@ -817,11 +818,13 @@ async fn reconcile(
     touched: &mut HashSet<i64>,
     full: bool,
 ) -> Result<()> {
-    let min_uid: Option<i64> =
-        sqlx::query_scalar("SELECT MIN(uid) FROM messages WHERE folder_id = ? AND uid > 0")
-            .bind(folder_id)
-            .fetch_one(&ctx.pool)
-            .await?;
+    let min_uid: Option<i64> = sqlx::query_scalar(concat!(
+        "SELECT MIN(uid) FROM messages WHERE folder_id = ? AND ",
+        server_row!()
+    ))
+    .bind(folder_id)
+    .fetch_one(&ctx.pool)
+    .await?;
     let Some(min_uid) = min_uid else {
         return Ok(());
     };
@@ -830,9 +833,11 @@ async fn reconcile(
     let min_uid = if full {
         min_uid
     } else {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT uid FROM messages WHERE folder_id = ? AND uid > 0 ORDER BY uid DESC LIMIT 1 OFFSET ?",
-        )
+        sqlx::query_scalar::<_, i64>(concat!(
+            "SELECT uid FROM messages WHERE folder_id = ? AND ",
+            server_row!(),
+            " ORDER BY uid DESC LIMIT 1 OFFSET ?"
+        ))
         .bind(folder_id)
         .bind(RECONCILE_RECENT)
         .fetch_optional(&ctx.pool)
