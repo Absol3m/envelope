@@ -334,6 +334,7 @@ export interface Backend {
   attachmentSrc(id: number): string;
   /** Sélecteur natif (« Enregistrer sous », ou un dossier s'il y en a plusieurs) ; rend le nombre enregistré, 0 si annulé. */
   saveAttachments(ids: number[]): Promise<number>;
+  /** Images `cid:` du message : identifiant de contenu → URL (protocole `attachment://`). */
   inlineImages(messageId: number): Promise<Record<string, string>>;
   lockStatus(): Promise<LockStatus>;
   unlockPassword(password: string): Promise<void>;
@@ -423,7 +424,10 @@ export const tauriBackend: Backend = {
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   attachmentSrc: (id) => convertFileSrc(String(id), "attachment"),
   saveAttachments: (attachmentIds) => invoke("save_attachments", { attachmentIds, title: t("reader:saveFolderTitle") }),
-  inlineImages: (messageId) => invoke("inline_images", { messageId }),
+  inlineImages: async (messageId) => {
+    const ids = await invoke<Record<string, number>>("inline_images", { messageId });
+    return Object.fromEntries(Object.entries(ids).map(([cid, id]) => [cid, tauriBackend.attachmentSrc(id)]));
+  },
   lockStatus: () => invoke("lock_status"),
   unlockPassword: (password) => invoke("unlock_password", { password }),
   unlockSystem: () => invoke("unlock_system"),

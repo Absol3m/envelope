@@ -63,14 +63,16 @@ export interface Prepared {
   trackers: number;
 }
 
-/** `cid` : images « inline » du message (identifiant de contenu → data URL). */
+/** `cid` : images « inline » du message (identifiant de contenu → URL `attachment://`). */
 export function prepareHtml(html: string, opts: { allowRemote: boolean; cid?: Record<string, string> }): Prepared {
-  const withCid = opts.cid ? html.replace(/cid:([^"'\s>)]+)/gi, (m, id: string) => opts.cid?.[id] ?? m) : html;
   ctx.allowRemote = opts.allowRemote;
   ctx.blocked = 0;
   ctx.trackers = 0;
-  const clean = DOMPurify.sanitize(withCid, { FORBID_TAGS, FORBID_ATTR: ["srcset", "ping"] });
-  const img = opts.allowRemote ? "img-src data: https: http:" : "img-src data:";
+  const sanitized = DOMPurify.sanitize(html, { FORBID_TAGS, FORBID_ATTR: ["srcset", "ping"] });
+  // Après la sanitisation : DOMPurify retirerait le schéma `attachment:`, et l'URL du protocole (en `http://` sous Windows)
+  // serait prise pour une image distante. Les URL substituées viennent du moteur, jamais du message.
+  const clean = opts.cid ? sanitized.replace(/cid:([^"'\s>)]+)/gi, (m, id: string) => opts.cid?.[id] ?? m) : sanitized;
+  const img = `img-src data: attachment: http://attachment.localhost${opts.allowRemote ? " https: http:" : ""}`;
   const csp = `default-src 'none'; ${img}; style-src 'unsafe-inline'; font-src data:`;
   return {
     srcDoc: `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>${BASE_CSS}</style></head><body>${clean}</body></html>`,

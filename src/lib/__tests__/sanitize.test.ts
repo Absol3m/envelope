@@ -22,12 +22,12 @@ describe("assainissement des e-mails HTML", () => {
     expect(blocked.blocked).toBe(2);
     expect(blocked.srcDoc).not.toMatch(/\ssrc="(https?:|\/\/)/); // aucun `src` distant ne subsiste (data-blocked-src n'est pas chargé)
     expect(blocked.srcDoc).toContain("data-blocked-src");
-    expect(blocked.srcDoc).toContain("img-src data:;");
+    expect(blocked.srcDoc).toContain("img-src data: attachment: http://attachment.localhost;");
 
     const allowed = prepareHtml(html, { allowRemote: true });
     expect(allowed.blocked).toBe(0);
     expect(allowed.srcDoc).toContain("https://track.test/pixel.gif");
-    expect(allowed.srcDoc).toContain("img-src data: https: http:");
+    expect(allowed.srcDoc).toContain("img-src data: attachment: http://attachment.localhost https: http:");
   });
 
   it("l'état d'un appel ne fuit pas dans le suivant", () => {
@@ -42,8 +42,9 @@ describe("assainissement des e-mails HTML", () => {
   });
 
   it("remplace cid: par les images inline, sans toucher aux inconnues", () => {
-    const { srcDoc, blocked } = prepareHtml(`<img src="cid:logo@x"><img src="cid:autre">`, { allowRemote: false, cid: { "logo@x": "data:image/png;base64,QUJD" } });
-    expect(srcDoc).toContain("data:image/png;base64,QUJD");
+    const { srcDoc, blocked } = prepareHtml(`<img src="cid:logo@x"><img src="cid:autre">`, { allowRemote: false, cid: { "logo@x": "attachment://localhost/7" } });
+    expect(srcDoc).toContain('src="attachment://localhost/7"');
+    expect(srcDoc).toContain("cid:autre");
     expect(blocked).toBe(0);
   });
 

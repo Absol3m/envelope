@@ -24,6 +24,7 @@ use crate::scheduled;
 use crate::templates::{self, Template};
 use crate::AppState;
 use envelope_core::addr::Addr;
+use envelope_core::attachment::{is_image, previewable};
 use envelope_core::contacts;
 use envelope_core::search::{self, FolderRow, MessageSummary};
 use envelope_core::thread::{self, ThreadDetail, ThreadQuery, ThreadSummary};
@@ -1046,16 +1047,6 @@ pub async fn open_attachment(
         .map_err(|e| AppError::Invalid((e.to_string()).into()))
 }
 
-/// `data:<type>;base64,…` construit en une seule allocation (images jusqu'à 15 Mo).
-fn data_url(mime: &str, bytes: &[u8]) -> String {
-    use base64::{engine::general_purpose::STANDARD, Engine};
-    let prefix = format!("data:{mime};base64,");
-    let mut out = String::with_capacity(prefix.len() + bytes.len().div_ceil(3) * 4);
-    out.push_str(&prefix);
-    STANDARD.encode_string(bytes, &mut out);
-    out
-}
-
 /// Chemin désigné dans un sélecteur natif.
 fn dialog_path(p: tauri_plugin_dialog::FilePath) -> Result<std::path::PathBuf> {
     p.into_path()
@@ -1131,27 +1122,24 @@ pub async fn save_attachments(
     }
 }
 
-/// Images « inline » d'un message (`cid:`), en data URLs, pour l'affichage hors-ligne.
-/// Bornées en taille : une image géante ne doit pas gonfler la réponse.
+/// Images « inline » d'un message (`cid:`) : identifiant de contenu → identifiant de pièce jointe, que l'interface
+/// sert par le protocole `attachment://` (même règle d'affichage que l'aperçu : `previewable`, images seulement).
 #[tauri::command]
 pub async fn inline_images(
     state: State<'_, AppState>,
     message_id: i64,
-) -> Result<std::collections::HashMap<String, String>> {
-    let rows: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT id, content_id, mime_type FROM attachments \
-         WHERE message_id = ? AND content_id IS NOT NULL AND mime_type LIKE 'image/%' AND size <= ?",
+) -> Result<std::collections::HashMap<String, i64>> {
+    let rows: Vec<(i64, String, String, i64)> = sqlx::query_as(
+        "SELECT id, content_id, mime_type, size FROM attachments WHERE message_id = ? AND content_id IS NOT NULL",
     )
     .bind(message_id)
-    .bind(ingest::INLINE_IMAGE_MAX as i64)
     .fetch_all(&state.db)
     .await?;
-    let mut out = std::collections::HashMap::new();
-    for (id, cid, mime) in rows {
-        let bytes = tokio::fs::read(attachment_path(&state, id).await?).await?;
-        out.insert(cid, data_url(&mime, &bytes));
-    }
-    Ok(out)
+    Ok(rows
+        .into_iter()
+        .filter(|(_, _, mime, size)| is_image(mime) && previewable(mime, (*size).max(0) as u64))
+        .map(|(id, cid, ..)| (cid, id))
+        .collect())
 }
 
 // ---------- Serveur MCP (panneau de réglages) ----------
