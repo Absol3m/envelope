@@ -270,7 +270,7 @@ pub fn parse_draft(raw: &[u8], id: String, account_id: String) -> Result<DraftDa
             .into_iter()
             .filter(|a| !a.is_inline || a.filename.is_some())
             .map(|a| DraftAttachment {
-                filename: a.filename.unwrap_or_else(|| "pièce-jointe".into()),
+                filename: a.filename.unwrap_or_else(|| "attachment".into()),
                 mime_type: a.mime_type,
                 data_base64: STANDARD.encode(&a.data),
             })

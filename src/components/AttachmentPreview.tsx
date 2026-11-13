@@ -23,7 +23,7 @@ export function AttachmentPreview({ item, onClose, onSave, onOpen }: { item: Det
           <div className="flex items-center gap-2">
             <Dialog.Title className="min-w-0 flex-1 truncate text-[14px] font-semibold">{name}</Dialog.Title>
             <button onClick={onSave} className={btn}><Download size={14} />{tr("reader:save")}</button>
-            <button onClick={onOpen} className={btn}><ExternalLink size={14} />{tr("reader:openWith")}</button>
+            <button onClick={onOpen} className={btn}><ExternalLink size={14} />{tr("reader:openAttachment")}</button>
             <Dialog.Close aria-label={tr("common:close")} className="press rounded-md p-1 text-muted hover:bg-hover hover:text-fg"><X size={16} /></Dialog.Close>
           </div>
           <div className="mt-3 flex min-h-[160px] flex-1 items-center justify-center overflow-auto rounded-xl bg-bg">

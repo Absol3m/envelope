@@ -53,5 +53,5 @@
   "saved_one": "{{count}} file saved",
   "saved_other": "{{count}} files saved",
   "saveFailed": "Couldn't save — {{error}}",
-  "openWith": "Open"
+  "openAttachment": "Open"
 }

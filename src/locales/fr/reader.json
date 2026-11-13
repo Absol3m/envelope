@@ -53,5 +53,5 @@
   "saved_one": "{{count}} fichier enregistré",
   "saved_other": "{{count}} fichiers enregistrés",
   "saveFailed": "Enregistrement impossible — {{error}}",
-  "openWith": "Ouvrir"
+  "openAttachment": "Ouvrir"
 }

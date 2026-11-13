@@ -57,7 +57,7 @@ fn header_filename(name: &str) -> String {
         .filter(|c| !c.is_control() && *c != '"')
         .collect();
     match clean.trim() {
-        "" => "pièce-jointe".into(),
+        "" => "attachment".into(),
         trimmed => trimmed.to_string(),
     }
 }
@@ -393,7 +393,7 @@ mod tests {
     fn filename_is_sanitized() {
         assert_eq!(header_filename("../../etc/passwd"), "passwd");
         assert_eq!(header_filename("a\"b\r\n.pdf"), "ab.pdf");
-        assert_eq!(header_filename("  "), "pièce-jointe");
+        assert_eq!(header_filename("  "), "attachment");
     }
 
     #[test]
