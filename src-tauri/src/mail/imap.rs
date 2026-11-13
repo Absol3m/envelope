@@ -263,17 +263,6 @@ fn new_folder_path<'a>(
     prefix.map_or_else(|| name.to_string(), |p| format!("{p}{name}"))
 }
 
-/// Dépose `raw` (message déjà envoyé) dans le dossier « Envoyés », marqué lu.
-/// `known` : chemin déjà connu de la synchro (évite un LIST) ; à défaut on le cherche ou on le crée.
-pub async fn append_sent(session: &mut ImapSession, known: Option<&str>, raw: &[u8]) -> Result<()> {
-    let path = match known {
-        Some(p) => p.to_string(),
-        None => find_or_create(session, "sent", "Sent").await?,
-    };
-    session.append(&path, Some("(\\Seen)"), None, raw).await?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

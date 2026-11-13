@@ -24,7 +24,7 @@ use tokio::sync::Notify;
 
 use crate::error::{AppError, Result};
 use crate::mail::imap::{self, ImapSession};
-use crate::mail::{account, ingest, rawstore};
+use crate::mail::{account, ingest, rawstore, sentcopy};
 
 const INITIAL_WINDOW: i64 = 200;
 /// Lot de l'historique rapatrié (messages par requête IMAP) et durée maximale d'une série de lots
@@ -203,6 +203,16 @@ async fn session_loop(ctx: &Ctx, backoff: &mut Duration) -> Result<()> {
     let mut folders = Vec::new();
     loop {
         ctx.set_status("syncing", None).await;
+        // Copies d'envoyés en attente : avant la synchro des dossiers, pour qu'elles apparaissent dans la même passe.
+        sentcopy::drain(
+            &ctx.app,
+            &ctx.pool,
+            &ctx.attachments_dir,
+            &ctx.raw_dir,
+            &acct,
+            &mut session,
+        )
+        .await;
         // LIST + upsert des dossiers : seulement sur passe complète (un réveil IDLE ne change pas l'arbre).
         if full || folders.is_empty() {
             folders = sync_folder_list(&mut session, ctx).await?;

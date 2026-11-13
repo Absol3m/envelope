@@ -115,6 +115,9 @@
     "rawstore": {
       "invalid_hash": "Invalid message hash"
     },
+    "sentcopy": {
+      "unreadable": "Unreadable sent message"
+    },
     "smtp": {
       "too_many_attachments": "Too many attachments (maximum {{max}})",
       "attachment_unreadable": "Attachment “{{name}}” unreadable: {{detail}}",

@@ -115,6 +115,9 @@
     "rawstore": {
       "invalid_hash": "Empreinte de message invalide"
     },
+    "sentcopy": {
+      "unreadable": "Message envoyé illisible"
+    },
     "smtp": {
       "too_many_attachments": "Trop de pièces jointes (maximum {{max}})",
       "attachment_unreadable": "Pièce jointe « {{name}} » illisible : {{detail}}",

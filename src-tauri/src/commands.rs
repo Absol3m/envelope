@@ -15,6 +15,7 @@ use crate::mail::imap;
 use crate::mail::local;
 use crate::mail::mbox;
 use crate::mail::oauth::{self, OAuthProvider};
+use crate::mail::sentcopy;
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
 use crate::picks;
@@ -498,22 +499,17 @@ pub(crate) async fn deliver(
     }
     let app = app.clone();
     let subject = message.subject.clone();
-    tauri::async_runtime::spawn(async move { after_send(&app, acct, cred, subject, raw).await });
+    tauri::async_runtime::spawn(async move { after_send(&app, acct, subject, raw).await });
     Ok(())
 }
 
-/// Après l'envoi : dépose la copie dans « Envoyés » (sauf si le serveur la range lui-même, Gmail), puis déclenche la
-/// synchro pour la faire apparaître. Un échec est signalé à l'interface par l'événement `sent-copy:failed`.
-async fn after_send(
-    app: &AppHandle,
-    acct: Account,
-    cred: account::Credential,
-    subject: String,
-    raw: Vec<u8>,
-) {
+/// Après l'envoi : met la copie dans « Envoyés » en file (`mail::sentcopy`, reprise à chaque synchro, jamais perdue), sauf
+/// si le serveur la range lui-même (Gmail), puis réveille la synchro qui la dépose. Seule l'impossibilité de la mettre en
+/// file (disque) est signalée tout de suite à l'interface (`sent-copy:failed`).
+async fn after_send(app: &AppHandle, acct: Account, subject: String, raw: Vec<u8>) {
     let state = app.state::<AppState>();
     if !acct.server_files_sent() {
-        if let Err(e) = file_in_sent(&state, &acct, &cred, &raw).await {
+        if let Err(e) = sentcopy::enqueue(&state.db, &state.raw_dir, &acct.id, &raw).await {
             tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
             let _ = app.emit(
                 "sent-copy:failed",
@@ -524,7 +520,7 @@ async fn after_send(
             );
         }
     }
-    state.sync.trigger(&acct.id); // la copie (ou le nouveau dossier) apparaît à la synchro
+    state.sync.trigger(&acct.id);
 }
 
 /// Met un message en file pour l'envoyer à `send_at` (secondes Unix). L'application doit être ouverte à cette heure.
@@ -628,24 +624,6 @@ pub async fn delete_draft(
 #[tauri::command]
 pub async fn open_draft(state: State<'_, AppState>, thread_id: i64) -> Result<drafts::DraftData> {
     drafts::open(&state.db, &state.raw_dir, thread_id).await
-}
-
-async fn file_in_sent(
-    state: &AppState,
-    acct: &Account,
-    cred: &account::Credential,
-    raw: &[u8],
-) -> Result<()> {
-    // Dossier déjà connu de la synchro ; sinon `append_sent` le cherche sur le serveur, voire le crée.
-    let known: Option<String> =
-        sqlx::query_scalar("SELECT path FROM folders WHERE account_id = ? AND role = 'sent'")
-            .bind(&acct.id)
-            .fetch_optional(&state.db)
-            .await?;
-    let mut session = imap::connect(acct, cred).await?;
-    let res = imap::append_sent(&mut session, known.as_deref(), raw).await;
-    let _ = session.logout().await;
-    res
 }
 
 /// Adresses déjà vues qui correspondent à la saisie (autocomplétion du destinataire).
