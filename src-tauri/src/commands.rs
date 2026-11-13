@@ -387,6 +387,15 @@ pub async fn set_account_signature(
 }
 
 #[tauri::command]
+pub async fn set_account_copy_sent(
+    state: State<'_, AppState>,
+    account_id: String,
+    on: bool,
+) -> Result<()> {
+    account::set_copy_sent(&state.db, &account_id, on).await
+}
+
+#[tauri::command]
 pub async fn add_identity(
     state: State<'_, AppState>,
     account_id: String,
@@ -508,7 +517,7 @@ pub(crate) async fn deliver(
 /// file (disque) est signalée tout de suite à l'interface (`sent-copy:failed`).
 async fn after_send(app: &AppHandle, acct: Account, subject: String, raw: Vec<u8>) {
     let state = app.state::<AppState>();
-    if !acct.server_files_sent() {
+    if acct.keeps_sent_copy() {
         if let Err(e) = sentcopy::enqueue(&state.db, &state.raw_dir, &acct.id, &raw).await {
             tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
             let _ = app.emit(

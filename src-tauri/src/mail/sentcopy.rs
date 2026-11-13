@@ -261,7 +261,7 @@ pub async fn drain(
     acct: &Account,
     session: &mut imap::ImapSession,
 ) {
-    if acct.server_files_sent() {
+    if !acct.keeps_sent_copy() {
         return;
     }
     let pending = match due(pool, &acct.id, now()).await {
@@ -363,5 +363,34 @@ mod tests {
             rawstore::exists(&dir, &rows[0].raw_hash).await,
             "le brut n'est jamais supprimé"
         );
+    }
+
+    #[tokio::test]
+    async fn desactiver_la_copie_abandonne_la_file_du_compte() {
+        let db = crate::db::init_memory().await.unwrap();
+        sqlx::query("INSERT INTO accounts (id,email,username,imap_host,smtp_host) VALUES ('a','a@x.fr','a','i','s'),('b','b@x.fr','b','i','s')")
+            .execute(&db)
+            .await
+            .unwrap();
+        let dir = std::env::temp_dir().join(format!("envelope-sentcopy-{}", uuid::Uuid::new_v4()));
+        enqueue(&db, &dir, "a", b"Subject: 1\r\n\r\nx")
+            .await
+            .unwrap();
+        enqueue(&db, &dir, "b", b"Subject: 2\r\n\r\ny")
+            .await
+            .unwrap();
+        crate::mail::account::set_copy_sent(&db, "a", false)
+            .await
+            .unwrap();
+        assert!(due(&db, "a", now() + 1).await.unwrap().is_empty());
+        assert_eq!(due(&db, "b", now() + 1).await.unwrap().len(), 1);
+        let on: bool = sqlx::query_scalar("SELECT copy_sent FROM accounts WHERE id = 'a'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert!(!on);
+        assert!(crate::mail::account::set_copy_sent(&db, "inconnu", true)
+            .await
+            .is_err());
     }
 }

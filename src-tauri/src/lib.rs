@@ -211,6 +211,7 @@ pub fn run() {
             commands::clear_oauth_client,
             commands::remove_account,
             commands::set_account_signature,
+            commands::set_account_copy_sent,
             commands::schedule_send,
             commands::list_rules,
             commands::save_rule,

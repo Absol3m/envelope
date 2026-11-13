@@ -79,6 +79,12 @@
     "installedPlaceholder": "Nom exact, ex. Helvetica Neue",
     "sample": "Aa Bb Cc — Le vif zéphyr jubile sur les kumquats du clown gracieux. 0123456789"
   },
+  "copySent": {
+    "title": "Copie des messages envoyés",
+    "hint": "Une copie de chaque message envoyé est déposée dans le dossier « Envoyés » du compte. Si le serveur la refuse, elle est gardée dans un dossier local.",
+    "label": "Copier les messages envoyés dans Envoyés pour {{email}}",
+    "byServer": "Le serveur range déjà lui-même les messages envoyés."
+  },
   "drafts": {
     "title": "Brouillons",
     "hint": "Un brouillon est enregistré dans le dossier Brouillons du serveur quelques secondes après la dernière modification, et supprimé une fois le message envoyé. Désactivé, il reste sur cet ordinateur seulement.",

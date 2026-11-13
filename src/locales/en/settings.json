@@ -79,6 +79,12 @@
     "installedPlaceholder": "Exact name, e.g. Helvetica Neue",
     "sample": "Aa Bb Cc — The quick brown fox jumps over the lazy dog. 0123456789"
   },
+  "copySent": {
+    "title": "Copy of sent messages",
+    "hint": "A copy of each message you send is saved in the account's Sent folder. If the server refuses it, the copy is kept in a local folder.",
+    "label": "Copy sent messages in Sent for {{email}}",
+    "byServer": "The server already files sent messages itself."
+  },
   "drafts": {
     "title": "Drafts",
     "hint": "A draft is saved in the server's Drafts folder a few seconds after the last change, and deleted once the message is sent. When off, it stays on this computer only.",

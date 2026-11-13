@@ -26,6 +26,8 @@ export interface Account {
   lastSyncAt: string | null;
   /** Texte brut, inséré dans les nouveaux messages et les réponses. */
   signature: string;
+  /** Une copie des messages envoyés est déposée dans « Envoyés » (toujours faux de fait pour Gmail, qui la range lui-même). */
+  copySent: boolean;
   identities: Identity[];
 }
 /** Dossier trouvé dans une source d'import (profil Thunderbird, dossier de boîtes mbox ou Maildir). */
@@ -306,6 +308,7 @@ export interface Backend {
   suggestContacts(accountId: string | null, query: string): Promise<Addr[]>;
   removeAccount(accountId: string): Promise<void>;
   setAccountSignature(accountId: string, signature: string): Promise<void>;
+  setAccountCopySent(accountId: string, on: boolean): Promise<void>;
   /** Met le message en file pour `sendAt` (secondes Unix) ; renvoie l'identifiant de l'envoi programmé. */
   scheduleSend(accountId: string, message: OutgoingMessage, sendAt: number): Promise<number>;
   /** Pose ou remplace le rappel de la conversation ; `dueAt` en secondes Unix. */
@@ -406,6 +409,7 @@ export const tauriBackend: Backend = {
   removeAccount: (accountId) => invoke("remove_account", { accountId }),
   unsubscribe: (messageId) => invoke("unsubscribe", { messageId }),
   setAccountSignature: (accountId, signature) => invoke("set_account_signature", { accountId, signature }),
+  setAccountCopySent: (accountId, on) => invoke("set_account_copy_sent", { accountId, on }),
   scheduleSend: (accountId, message, sendAt) => invoke("schedule_send", { accountId, message, sendAt }),
   setReminder: (threadId, kind, dueAt) => invoke("set_reminder", { threadId, kind, dueAt }),
   clearReminder: (threadId) => invoke("clear_reminder", { threadId }),

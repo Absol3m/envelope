@@ -77,6 +77,8 @@ pub struct Account {
     pub sync_status: String,
     pub sync_error: Option<String>,
     pub signature: String,
+    /// Déposer une copie des messages envoyés dans « Envoyés » (réglage du compte ; voir `keeps_sent_copy`).
+    pub copy_sent: bool,
     /// Alias d'envoi (table `identities`), remplis par `list` et `get`.
     #[sqlx(skip)]
     pub identities: Vec<Identity>,
@@ -87,11 +89,16 @@ impl Account {
     pub fn server_files_sent(&self) -> bool {
         self.provider == "gmail"
     }
+
+    /// Faut-il déposer nous-mêmes une copie de chaque message envoyé : voulu par l'utilisateur, et le serveur ne le fait pas.
+    pub fn keeps_sent_copy(&self) -> bool {
+        self.copy_sent && !self.server_files_sent()
+    }
 }
 
 pub const ACCOUNT_COLUMNS: &str = "id, email, display_name, provider, auth_kind, username, \
     imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, \
-    last_sync_at, sync_status, sync_error, signature";
+    last_sync_at, sync_status, sync_error, signature, copy_sent";
 
 /// Identifiants résolus, prêts à être présentés à IMAP/SMTP.
 #[derive(Debug, Clone)]
@@ -562,6 +569,29 @@ pub async fn set_signature(pool: &SqlitePool, id: &str, signature: &str) -> Resu
             "account not found: {id}",
             id = id
         )));
+    }
+    Ok(())
+}
+
+/// Active ou désactive la copie dans « Envoyés » ; désactivée, les copies encore en attente sont abandonnées.
+pub async fn set_copy_sent(pool: &SqlitePool, id: &str, on: bool) -> Result<()> {
+    let done = sqlx::query("UPDATE accounts SET copy_sent = ? WHERE id = ?")
+        .bind(on)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    if done.rows_affected() == 0 {
+        return Err(AppError::NotFound(msg!(
+            "not_found.account",
+            "account not found: {id}",
+            id = id
+        )));
+    }
+    if !on {
+        sqlx::query("DELETE FROM pending_append WHERE account_id = ?")
+            .bind(id)
+            .execute(pool)
+            .await?;
     }
     Ok(())
 }

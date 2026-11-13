@@ -17,8 +17,8 @@ const FR_TEMPLATE_BODY = "<p>Bonjour,</p><p>Nous avons bien reçu votre message 
 const TEMPLATES: Template[] = [{ id: 1, name: "Accusé de réception", subject: "Re : votre demande", bodyHtml: FR_TEMPLATE_BODY }];
 
 const ACCOUNTS: Account[] = [
-  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr" }] },
-  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "", identities: [] },
+  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", copySent: true, identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr" }] },
+  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "", copySent: true, identities: [] },
 ];
 
 const ROLES = ["inbox", "drafts", "sent", "archive", "junk", "trash"] as const;
@@ -328,6 +328,11 @@ export const demoBackend: Backend = {
   setAccountSignature: (id, signature) => {
     const a = ACCOUNTS.find((x) => x.id === id);
     if (a) a.signature = signature;
+    return delay(undefined, 60);
+  },
+  setAccountCopySent: (id, on) => {
+    const a = ACCOUNTS.find((x) => x.id === id);
+    if (a) a.copySent = on;
     return delay(undefined, 60);
   },
   scheduleSend: (accountId, message, sendAt) => {

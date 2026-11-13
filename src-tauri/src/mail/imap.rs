@@ -348,6 +348,7 @@ mod starttls_tests {
             sync_status: "idle".into(),
             sync_error: None,
             signature: String::new(),
+            copy_sent: true,
             identities: vec![],
         }
     }

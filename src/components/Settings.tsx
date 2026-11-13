@@ -91,6 +91,19 @@ function Code({ title, text }: { title: string; text: string }) {
 
 // ───────────── Comptes ─────────────
 
+/** Copie des messages envoyés dans « Envoyés », par compte (Gmail la range lui-même : réglage sans effet, grisé). */
+function CopySentField({ account }: { account: Account }) {
+  const { backend, refreshAccounts, toast } = useMail(useShallow((s) => ({ backend: s.backend, refreshAccounts: s.refreshAccounts, toast: s.toast })));
+  const byServer = account.provider === "gmail";
+  const change = (on: boolean) => backend.setAccountCopySent(account.id, on).then(refreshAccounts, (e) => toast({ message: String(e), tone: "error" }));
+  return (
+    <label className={cn("flex max-w-[420px] items-center gap-3 text-[13px]", byServer && "opacity-60")}>
+      <span className="flex-1">{account.email}{byServer && <span className="block text-[12px] text-muted">{tr("settings:copySent.byServer")}</span>}</span>
+      <Switch checked={byServer || account.copySent} onChange={(v) => void change(v)} label={tr("settings:copySent.label", { email: account.email })} />
+    </label>
+  );
+}
+
 /** Signature d'un compte : enregistrée à la perte du focus, si elle a changé. */
 function SignatureField({ id, email, value }: { id: string; email: string; value: string }) {
   const { backend, refreshAccounts, toast } = useMail(useShallow((s) => ({ backend: s.backend, refreshAccounts: s.refreshAccounts, toast: s.toast })));
@@ -206,6 +219,14 @@ function AccountsPanel() {
         <Section title={tr("settings:signatures")} hint={tr("settings:signaturesHint")}>
           <div className="space-y-3">
             {accounts.map((a) => <SignatureField key={a.id} id={a.id} email={a.email} value={a.signature} />)}
+          </div>
+        </Section>
+      )}
+
+      {accounts.length > 0 && (
+        <Section title={tr("settings:copySent.title")} hint={tr("settings:copySent.hint")}>
+          <div className="space-y-3">
+            {accounts.map((a) => <CopySentField key={a.id} account={a} />)}
           </div>
         </Section>
       )}
