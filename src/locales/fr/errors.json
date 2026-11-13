@@ -59,7 +59,10 @@
       "exists": "{{path}} existe déjà"
     },
     "attachment": {
-      "outside_folder": "Pièce jointe hors du dossier autorisé"
+      "outside_folder": "Pièce jointe hors du dossier autorisé",
+      "not_found": "Pièce jointe introuvable",
+      "no_preview": "Pas d'aperçu pour ce type de fichier",
+      "too_big_for_preview": "Fichier trop volumineux pour un aperçu"
     },
     "keychain": {
       "interrupted": "Accès au trousseau interrompu : {{detail}}"

@@ -381,6 +381,8 @@ export const demoBackend: Backend = {
   },
   removeAccount: () => Promise.reject(new Error(t("demo:unavailable"))),
   openAttachment: () => delay(undefined, 60),
+  attachmentPreview: () => Promise.reject(new Error(t("demo:unavailable"))),
+  saveAttachments: () => delay(0, 60),
   inlineImages: () => delay({}, 10),
   lockStatus: () => delay({ ...LOCK }, 20),
   unlockPassword: (password) => (password === "demo1234" ? ((LOCK.locked = false), delay(undefined, 200)) : Promise.reject(new Error(t("demo:wrongPassword")))),

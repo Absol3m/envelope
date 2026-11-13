@@ -1,4 +1,4 @@
-import { ChevronDown, File, FileArchive, FileImage, FileText, ImageOff, Mail, MailOpen, Paperclip, ShieldAlert, ShieldCheck, Star, Trash2 } from "lucide-react";
+import { ChevronDown, Download, File, FileArchive, FileImage, FileText, ImageOff, Mail, MailOpen, Paperclip, ShieldAlert, ShieldCheck, Star, Trash2 } from "lucide-react";
 import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -13,6 +13,7 @@ import { Avatar, btnPrimary, Kbd } from "./ui/primitives";
 import { BellOff } from "lucide-react";
 import { shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 import { t as tr } from "@/lib/i18n";
+import { AttachmentPreview, previewable } from "./AttachmentPreview";
 
 // ───────────── Corps du message ─────────────
 
@@ -145,25 +146,30 @@ function attachmentIcon(mime: string) {
 
 function Attachments({ items }: { items: DetailAttachment[] }) {
   const { backend, toast } = useMail(useShallow((s) => ({ backend: s.backend, toast: s.toast })));
+  const [preview, setPreview] = useState<DetailAttachment | null>(null);
   if (items.length === 0) return null;
+  const fail = (key: "reader:openFailed" | "reader:saveFailed") => (e: unknown) => toast({ message: tr(key, { error: String(e) }), tone: "error" });
+  const open = (a: DetailAttachment) => backend.openAttachment(a.id).catch(fail("reader:openFailed"));
+  const save = (list: DetailAttachment[]) => backend.saveAttachments(list.map((a) => a.id)).then((n) => n > 0 && toast({ message: tr("reader:saved", { count: n }) }), fail("reader:saveFailed"));
   return (
-    <div className="mt-3 flex flex-wrap gap-2">
+    <div className="mt-3 flex flex-wrap items-center gap-2">
       {items.map((a) => {
         const Icon = attachmentIcon(a.mimeType);
         return (
-          <button
-            key={a.id}
-            onClick={() => backend.openAttachment(a.id).catch((e) => toast({ message: tr("reader:openFailed", { error: String(e) }), tone: "error" }))}
-            className="press group flex max-w-[260px] items-center gap-2.5 rounded-lg bg-bg py-1.5 pl-2 pr-3 text-left shadow-card hover:bg-hover"
-          >
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent"><Icon size={16} /></span>
-            <span className="min-w-0">
-              <span className="block truncate text-[12.5px] font-medium">{a.filename ?? tr("reader:attachment")}</span>
-              <span className="tnum block text-[11px] text-muted">{fileSize(a.size)}</span>
-            </span>
-          </button>
+          <div key={a.id} className="group flex max-w-[300px] items-center rounded-lg bg-bg shadow-card">
+            <button onClick={() => (previewable(a.mimeType) ? setPreview(a) : void open(a))} className="press flex min-w-0 items-center gap-2.5 rounded-l-lg py-1.5 pl-2 pr-2 text-left hover:bg-hover">
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent"><Icon size={16} /></span>
+              <span className="min-w-0">
+                <span className="block truncate text-[12.5px] font-medium">{a.filename ?? tr("reader:attachment")}</span>
+                <span className="tnum block text-[11px] text-muted">{fileSize(a.size)}</span>
+              </span>
+            </button>
+            <button aria-label={tr("reader:save")} title={tr("reader:save")} onClick={() => void save([a])} className="press self-stretch rounded-r-lg px-2 text-muted hover:bg-hover hover:text-fg"><Download size={14} /></button>
+          </div>
         );
       })}
+      {items.length > 1 && <button onClick={() => void save(items)} className="press rounded-md px-2 py-1 text-[12px] text-muted hover:bg-hover hover:text-fg">{tr("reader:saveAll")}</button>}
+      {preview && <AttachmentPreview item={preview} onClose={() => setPreview(null)} onSave={() => void save([preview])} onOpen={() => void open(preview)} />}
     </div>
   );
 }

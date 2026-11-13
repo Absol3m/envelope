@@ -47,5 +47,12 @@
   "shortcutsHint": "Les raccourcis sont là si vous les voulez :",
   "reading": "Lecture",
   "selectAll": "Tout sélectionner",
-  "noText": "(message sans texte)"
+  "noText": "(message sans texte)",
+  "save": "Enregistrer",
+  "saveAll": "Tout enregistrer",
+  "saveFolderTitle": "Choisir un dossier pour les pièces jointes",
+  "saved_one": "{{count}} fichier enregistré",
+  "saved_other": "{{count}} fichiers enregistrés",
+  "saveFailed": "Enregistrement impossible — {{error}}",
+  "openWith": "Ouvrir"
 }

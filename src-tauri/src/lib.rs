@@ -233,6 +233,8 @@ pub fn run() {
             commands::empty_folder,
             commands::open_attachment,
             commands::inline_images,
+            commands::attachment_preview,
+            commands::save_attachments,
             commands::mcp_info,
             #[cfg(desktop)]
             update::check_update,

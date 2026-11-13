@@ -59,7 +59,10 @@
       "exists": "{{path}} already exists"
     },
     "attachment": {
-      "outside_folder": "Attachment outside the allowed folder"
+      "outside_folder": "Attachment outside the allowed folder",
+      "not_found": "Attachment not found",
+      "no_preview": "No preview for this type of file",
+      "too_big_for_preview": "File too large for a preview"
     },
     "keychain": {
       "interrupted": "Keychain access interrupted: {{detail}}"

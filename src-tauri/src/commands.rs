@@ -1030,6 +1030,127 @@ pub async fn open_attachment(
         .map_err(|e| AppError::Invalid((e.to_string()).into()))
 }
 
+/// Types d'image affichables dans l'aperçu : rendus par `<img>` (un SVG ainsi chargé n'exécute aucun script).
+const PREVIEW_TYPES: &[&str] = &[
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/avif",
+    "image/bmp",
+    "image/svg+xml",
+];
+const PREVIEW_MAX: u64 = 15 * 1024 * 1024;
+
+/// Aperçu d'une image jointe, en data URL. Refuse les autres types et les fichiers volumineux (ils s'ouvrent dans
+/// l'application du système).
+#[tauri::command]
+pub async fn attachment_preview(state: State<'_, AppState>, attachment_id: i64) -> Result<String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let mime: String = sqlx::query_scalar("SELECT mime_type FROM attachments WHERE id = ?")
+        .bind(attachment_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound(msg!("attachment.not_found", "attachment not found")))?;
+    let mime = mime.to_ascii_lowercase();
+    if !PREVIEW_TYPES.contains(&mime.as_str()) {
+        return Err(AppError::Invalid(msg!(
+            "attachment.no_preview",
+            "no preview for this type of file"
+        )));
+    }
+    let path = attachment_path(&state, attachment_id).await?;
+    if tokio::fs::metadata(&path).await?.len() > PREVIEW_MAX {
+        return Err(AppError::Invalid(msg!(
+            "attachment.too_big_for_preview",
+            "file too large for a preview"
+        )));
+    }
+    let bytes = tokio::fs::read(path).await?;
+    Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+}
+
+/// Nom de fichier proposé pour une pièce jointe : celui du message, réduit à son dernier élément (jamais de chemin).
+fn attachment_file_name(name: Option<&str>) -> String {
+    let leaf = name
+        .and_then(|n| n.rsplit(['/', '\\']).next())
+        .map(|n| n.trim().trim_start_matches('.'))
+        .unwrap_or("");
+    let clean: String = leaf.chars().filter(|c| !c.is_control()).collect();
+    if clean.is_empty() {
+        "attachment".into()
+    } else {
+        clean
+    }
+}
+
+/// `name`, ou `name (2)`, `name (3)`… si le fichier existe déjà dans `dir`.
+fn free_name(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let candidate = dir.join(name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    };
+    (2..)
+        .map(|n| dir.join(format!("{stem} ({n}){ext}")))
+        .find(|p| !p.exists())
+        .unwrap_or(candidate)
+}
+
+/// Enregistre des pièces jointes : « Enregistrer sous » pour une seule, choix d'un dossier pour plusieurs (les noms
+/// déjà pris sont suivis de « (2) »). Le sélecteur est ouvert ici : l'interface ne fournit jamais de chemin.
+/// Rend le nombre de fichiers enregistrés (0 si l'utilisateur annule).
+#[tauri::command]
+pub async fn save_attachments(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    attachment_ids: Vec<i64>,
+    title: String, // titre du sélecteur de dossier, traduit par l'interface
+) -> Result<usize> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut files = Vec::new();
+    for id in attachment_ids {
+        let name: Option<String> =
+            sqlx::query_scalar("SELECT filename FROM attachments WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&state.db)
+                .await?
+                .flatten();
+        files.push((
+            attachment_path(&state, id).await?,
+            attachment_file_name(name.as_deref()),
+        ));
+    }
+    let to_path = |p: tauri_plugin_dialog::FilePath| {
+        p.into_path()
+            .map_err(|e| AppError::Invalid((e.to_string()).into()))
+    };
+    match files.as_slice() {
+        [] => Ok(0),
+        [(src, name)] => {
+            let dialog = app.dialog().file().set_file_name(name);
+            let Some(dest) = dialog.blocking_save_file() else {
+                return Ok(0);
+            };
+            tokio::fs::copy(src, to_path(dest)?).await?;
+            Ok(1)
+        }
+        _ => {
+            let Some(dir) = app.dialog().file().set_title(title).blocking_pick_folder() else {
+                return Ok(0);
+            };
+            let dir = to_path(dir)?;
+            for (src, name) in &files {
+                tokio::fs::copy(src, free_name(&dir, name)).await?;
+            }
+            Ok(files.len())
+        }
+    }
+}
+
 /// Images « inline » d'un message (`cid:`), en data URLs, pour l'affichage hors-ligne.
 /// Bornées en taille : une image géante ne doit pas gonfler la réponse.
 #[tauri::command]
@@ -1082,5 +1203,33 @@ pub fn mcp_info(state: State<'_, AppState>) -> McpInfo {
     McpInfo {
         binary_path,
         db_path: state.db_path.display().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::*;
+
+    #[test]
+    fn nom_propose_sans_chemin_ni_point_initial() {
+        assert_eq!(attachment_file_name(Some("../../etc/passwd")), "passwd");
+        assert_eq!(attachment_file_name(Some("C:\\Users\\x\\a.pdf")), "a.pdf");
+        assert_eq!(attachment_file_name(Some(".bashrc")), "bashrc");
+        assert_eq!(attachment_file_name(Some("a\nb.txt")), "ab.txt");
+        assert_eq!(attachment_file_name(Some("")), "attachment");
+        assert_eq!(attachment_file_name(None), "attachment");
+    }
+
+    #[test]
+    fn nom_libre_dans_le_dossier() {
+        let dir = std::env::temp_dir().join(format!("envelope-free-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(free_name(&dir, "a.pdf"), dir.join("a.pdf"));
+        std::fs::write(dir.join("a.pdf"), b"x").unwrap();
+        assert_eq!(free_name(&dir, "a.pdf"), dir.join("a (2).pdf"));
+        std::fs::write(dir.join("a (2).pdf"), b"x").unwrap();
+        assert_eq!(free_name(&dir, "a.pdf"), dir.join("a (3).pdf"));
+        std::fs::write(dir.join("noext"), b"x").unwrap();
+        assert_eq!(free_name(&dir, "noext"), dir.join("noext (2)"));
     }
 }
