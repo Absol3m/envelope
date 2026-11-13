@@ -12,7 +12,10 @@
   "app": {
     "windows": [],
     "macOSPrivateApi": true,
-    "security": { "csp": null }
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: http: attachment: http://attachment.localhost; frame-src attachment: http://attachment.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https: http: attachment: http://attachment.localhost; frame-src attachment: http://attachment.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src ipc: http://ipc.localhost ws://localhost:1420 http://localhost:1420"
+    }
   },
   "bundle": {
     "active": true,
