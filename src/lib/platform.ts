@@ -3,6 +3,7 @@ import { t } from "./i18n";
 /** Conventions propres à chaque système : macOS d'un côté, Windows et Linux de l'autre. */
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 export const isWindows = typeof navigator !== "undefined" && /Windows/.test(navigator.userAgent);
+export const isLinux = typeof navigator !== "undefined" && /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
 
 /** Nom de la fenêtre de réglages selon l'usage du système. */
 export const settingsLabel = () => t(isMac ? "nav:settings.mac" : "nav:settings.pc");

@@ -11,7 +11,7 @@ import { cn, openExternal } from "@/lib/utils";
 import { useComposer } from "@/lib/composer";
 import { Avatar, btnPrimary, Kbd } from "./ui/primitives";
 import { BellOff } from "lucide-react";
-import { shortcut, suppressWebviewContextMenu } from "@/lib/platform";
+import { isLinux, shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 import { t as tr } from "@/lib/i18n";
 import { AttachmentPreview, InlineImage } from "./AttachmentPreview";
 
@@ -151,6 +151,8 @@ function Attachments({ items }: { items: DetailAttachment[] }) {
   if (items.length === 0) return null;
   // Les images s'affichent dans le fil, sous le message (celles déjà dans le corps, `cid:`, n'y sont pas répétées).
   const isShown = (a: DetailAttachment) => a.previewable && a.mimeType.startsWith("image/") && !a.isInline && !unshown.has(a.id);
+  // WebKitGTK (Linux) n'a pas de lecteur PDF : le PDF s'ouvre dans l'application du système.
+  const inApp = (a: DetailAttachment) => a.previewable && !(isLinux && a.mimeType.toLowerCase() === "application/pdf");
   const shown = items.filter(isShown);
   const chips = items.filter((a) => !isShown(a));
   const fail = (key: "reader:openFailed" | "reader:saveFailed") => (e: unknown) => toast({ message: tr(key, { error: String(e) }), tone: "error" });
@@ -164,7 +166,7 @@ function Attachments({ items }: { items: DetailAttachment[] }) {
         const Icon = attachmentIcon(a.mimeType);
         return (
           <div key={a.id} className="group flex max-w-[300px] items-center rounded-lg bg-bg shadow-card">
-            <button onClick={() => (a.previewable ? setPreview(a) : void open(a))} className="press flex min-w-0 items-center gap-2.5 rounded-l-lg py-1.5 pl-2 pr-2 text-left hover:bg-hover">
+            <button onClick={() => (inApp(a) ? setPreview(a) : void open(a))} className="press flex min-w-0 items-center gap-2.5 rounded-l-lg py-1.5 pl-2 pr-2 text-left hover:bg-hover">
               <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent"><Icon size={16} /></span>
               <span className="min-w-0">
                 <span className="block truncate text-[12.5px] font-medium">{a.filename ?? tr("reader:attachment")}</span>
