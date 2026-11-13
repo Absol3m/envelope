@@ -1,5 +1,6 @@
 import { DEMO_EN, DEMO_EN_HTML } from "./mock.en";
 import { i18next, locale, t } from "./i18n";
+import { previewable } from "./attachments";
 import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
@@ -80,6 +81,8 @@ const svg = (a: string, b: string, label = "") =>
   `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="220"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="600" height="220" fill="url(#g)"/><text x="32" y="124" font-family="Helvetica,Arial" font-size="34" font-weight="700" fill="white">${label}</text></svg>`)}`;
 
 const me1 = () => me("pro");
+/** Image de remplacement des pièces jointes image de la démonstration. */
+const DEMO_PHOTO = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7aa7ff"/><stop offset="1" stop-color="#f0a56c"/></linearGradient></defs><rect width="720" height="420" fill="url(#g)"/><circle cx="520" cy="130" r="48" fill="#fff" opacity=".8"/><path d="M0 420V300l160-110 140 90 120-80 200 130v90z" fill="#2f4b3a" opacity=".85"/></svg>')}`;
 const T: MockThread[] = [];
 const add = (accountId: string, role: MockThread["role"], messages: DetailMessage[], attachments: DetailAttachment[] = [], starred = false) => {
   const id = T.length + 1;
@@ -383,9 +386,8 @@ export const demoBackend: Backend = {
   openAttachment: () => delay(undefined, 60),
   attachmentPreview: (id) => {
     const a = T.flatMap((x) => x.attachments).find((x) => x.id === id);
-    if (!a?.mimeType.startsWith("image/")) return Promise.reject(new Error(t("demo:unavailable")));
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="420"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7aa7ff"/><stop offset="1" stop-color="#f0a56c"/></linearGradient></defs><rect width="720" height="420" fill="url(#g)"/><circle cx="520" cy="130" r="48" fill="#fff" opacity=".8"/><path d="M0 420V300l160-110 140 90 120-80 200 130v90z" fill="#2f4b3a" opacity=".85"/></svg>`;
-    return delay(`data:image/svg+xml;utf8,${encodeURIComponent(svg)}`, 80);
+    if (!a || !previewable(a.mimeType)) return Promise.reject(new Error(t("demo:unavailable")));
+    return delay(DEMO_PHOTO, 80);
   },
   saveAttachments: () => delay(0, 60),
   inlineImages: () => delay({}, 10),

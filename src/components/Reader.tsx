@@ -13,7 +13,8 @@ import { Avatar, btnPrimary, Kbd } from "./ui/primitives";
 import { BellOff } from "lucide-react";
 import { shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 import { t as tr } from "@/lib/i18n";
-import { AttachmentPreview, InlineImage, previewable } from "./AttachmentPreview";
+import { AttachmentPreview, InlineImage } from "./AttachmentPreview";
+import { previewable } from "@/lib/attachments";
 
 // ───────────── Corps du message ─────────────
 
@@ -150,8 +151,9 @@ function Attachments({ items }: { items: DetailAttachment[] }) {
   const [unshown, setUnshown] = useState<ReadonlySet<number>>(new Set()); // images trop grosses ou illisibles : gardées en pièce jointe
   if (items.length === 0) return null;
   // Les images s'affichent dans le fil, sous le message (celles déjà dans le corps, `cid:`, n'y sont pas répétées).
-  const shown = items.filter((a) => previewable(a.mimeType) && !a.isInline && !unshown.has(a.id));
-  const chips = items.filter((a) => !shown.includes(a));
+  const isShown = (a: DetailAttachment) => previewable(a.mimeType) && !a.isInline && !unshown.has(a.id);
+  const shown = items.filter(isShown);
+  const chips = items.filter((a) => !isShown(a));
   const fail = (key: "reader:openFailed" | "reader:saveFailed") => (e: unknown) => toast({ message: tr(key, { error: String(e) }), tone: "error" });
   const open = (a: DetailAttachment) => backend.openAttachment(a.id).catch(fail("reader:openFailed"));
   const save = (list: DetailAttachment[]) => backend.saveAttachments(list.map((a) => a.id)).then((n) => n > 0 && toast({ message: tr("reader:saved", { count: n }) }), fail("reader:saveFailed"));
