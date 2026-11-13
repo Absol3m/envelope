@@ -503,7 +503,7 @@ pub(crate) async fn deliver(
     if let Some(draft_id) = message.draft_id.as_deref() {
         let _guard = state.actions.lock().await;
         if let Err(e) = drafts::remove(&state.db, &acct, &cred, draft_id).await {
-            tracing::warn!(account = %acct.id, "brouillon non supprimé du serveur après l'envoi : {e}");
+            tracing::warn!(account = %acct.id, "draft not deleted from the server after sending: {e}");
         }
     }
     let app = app.clone();
@@ -519,7 +519,7 @@ async fn after_send(app: &AppHandle, acct: Account, subject: String, raw: Vec<u8
     let state = app.state::<AppState>();
     if acct.keeps_sent_copy() {
         if let Err(e) = sentcopy::enqueue(&state.db, &state.raw_dir, &acct.id, &raw).await {
-            tracing::warn!(account = %acct.id, "copie dans Envoyés impossible : {e}");
+            tracing::warn!(account = %acct.id, "could not copy to Sent: {e}");
             let _ = app.emit(
                 "sent-copy:failed",
                 SentCopyFailed {
@@ -807,10 +807,12 @@ pub struct ImportSource {
 pub async fn import_pick(
     app: AppHandle,
     state: State<'_, AppState>,
-    title: String, // texte de la boîte de dialogue, traduit par l'interface
 ) -> Result<Option<ImportSource>> {
     use tauri_plugin_dialog::DialogExt;
-    let mut dialog = app.dialog().file().set_title(title);
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_title(&crate::native_text::get().import_pick_title);
     if let Some(dir) = thunderbird_dir(&app) {
         dialog = dialog.set_directory(dir);
     }
@@ -870,18 +872,21 @@ pub async fn export_pick(
     state: State<'_, AppState>,
     format: export::Format,
     default_name: String,
-    title: String, // textes de la boîte de dialogue, traduits par l'interface
-    filter_name: String,
 ) -> Result<Option<String>> {
     use tauri_plugin_dialog::DialogExt;
+    let texts = crate::native_text::get();
     let picked = match format {
         export::Format::Mbox => app
             .dialog()
             .file()
             .set_file_name(export::slug(&default_name) + ".mbox")
-            .add_filter(filter_name, &["mbox"])
+            .add_filter(&texts.mbox_filter, &["mbox"])
             .blocking_save_file(),
-        export::Format::Eml => app.dialog().file().set_title(title).blocking_pick_folder(),
+        export::Format::Eml => app
+            .dialog()
+            .file()
+            .set_title(&texts.export_pick_title)
+            .blocking_pick_folder(),
     };
     let Some(picked) = picked else {
         return Ok(None);

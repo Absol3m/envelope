@@ -65,7 +65,7 @@ export function RulesPanel() {
         {confirming ? (
           <>
             <button className={`${btnPrimary} gap-2`} onClick={() => void runNow()}>{tr("rules:confirmRun")}</button>
-            <button className={btnGhost} onClick={() => setConfirming(false)}>{tr("composer:cancel")}</button>
+            <button className={btnGhost} onClick={() => setConfirming(false)}>{tr("common:cancel")}</button>
           </>
         ) : (
           <button className={`${btnGhost} gap-2`} disabled={busy || rules.length === 0} onClick={() => setConfirming(true)}><Play size={14} /> {tr("rules:runNow")}</button>
@@ -100,7 +100,7 @@ function RuleForm({ rule, accounts, onSave, onCancel }: { rule: Rule; accounts: 
         </select>
       </fieldset>
       <div className="flex justify-end gap-2">
-        <button type="button" className={btnGhost} onClick={onCancel}>{tr("composer:cancel")}</button>
+        <button type="button" className={btnGhost} onClick={onCancel}>{tr("common:cancel")}</button>
         <button type="submit" className={btnPrimary} disabled={!valid}>{tr("settings:save")}</button>
       </div>
     </form>

@@ -33,6 +33,7 @@ const MAX_DELAY: Duration = Duration::from_secs(300);
 /// Commandes qui restent disponibles verrouillé : celles du déverrouillage, de la réinitialisation et de l'apparence.
 const ALLOWED_WHEN_LOCKED: &[&str] = &[
     "app_info",
+    "set_native_texts", // langue de l'invite de déverrouillage
     "system_appearance",
     "lock_status",
     "unlock_system",
@@ -440,14 +441,15 @@ async fn native_authenticate() -> Result<()> {
                         "system authentication unavailable"
                     ))
                 })?;
+            let texts = crate::native_text::get();
             let text = Text {
                 android: AndroidText {
                     title: "Envelope",
                     subtitle: None,
                     description: None,
                 },
-                apple: "déverrouiller Envelope",
-                windows: WindowsText::new_truncated("Envelope", "Déverrouiller Envelope"),
+                apple: &texts.unlock_reason,
+                windows: WindowsText::new_truncated("Envelope", &texts.unlock_reason),
             };
             let (done_tx, done_rx) = std::sync::mpsc::channel();
             Context::new(())

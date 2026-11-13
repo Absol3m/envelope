@@ -135,7 +135,7 @@ pub async fn run(app: AppHandle) {
             Ok(n) => {
                 let _ = app.emit("reminders:fired", n);
             }
-            Err(e) => tracing::warn!("rappels : {e}"),
+            Err(e) => tracing::warn!("reminders: {e}"),
         }
     }
 }

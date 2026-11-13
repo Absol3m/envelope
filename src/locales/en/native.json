@@ -1,0 +1,10 @@
+{
+  "unlockReason": "Unlock Envelope",
+  "oauthGranted": "Envelope is authorized. You can close this tab.",
+  "oauthDenied": "Authorization denied. You can close this tab.",
+  "oauthBadState": "Invalid state: this page does not come from the sign-in Envelope started.",
+  "importPickTitle": "Choose the folder to import",
+  "exportPickTitle": "Choose the folder to write the .eml files to",
+  "mboxFilter": "mbox mailbox",
+  "saveFolderTitle": "Choose a folder for the attachments"
+}

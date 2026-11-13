@@ -50,7 +50,6 @@
   "noText": "(message without text)",
   "save": "Save",
   "saveAll": "Save all",
-  "saveFolderTitle": "Choose a folder for the attachments",
   "saved_one": "{{count}} file saved",
   "saved_other": "{{count}} files saved",
   "saveFailed": "Couldn't save — {{error}}",

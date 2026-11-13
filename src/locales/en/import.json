@@ -26,6 +26,5 @@
   "failed_one": "{{n}} unreadable or too large",
   "failed_other": "{{n}} unreadable or too large",
   "done": "Done",
-  "noFolders": "No mail folders (mbox or Maildir) found here. Choose the Thunderbird profile folder or the one that contains your mailboxes.",
-  "pickTitle": "Choose the folder to import"
+  "noFolders": "No mail folders (mbox or Maildir) found here. Choose the Thunderbird profile folder or the one that contains your mailboxes."
 }

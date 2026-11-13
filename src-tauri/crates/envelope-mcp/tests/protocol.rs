@@ -106,7 +106,7 @@ async fn initialize_and_tool_list() {
         info.server_info.as_ref().map(|i| i.name.as_str()),
         Some("envelope")
     );
-    assert!(info.instructions.as_deref().unwrap().contains("pas fiable"));
+    assert!(info.instructions.as_deref().unwrap().contains("untrusted"));
     let tools = c.list_all_tools().await.unwrap();
     let mut names: Vec<&str> = tools.iter().map(|t| &*t.name).collect();
     names.sort();
@@ -137,7 +137,7 @@ async fn search_is_compact_and_flags_untrusted_content() {
     let (r, text) = call(&c, "search_emails", json!({"query": "budg"})).await;
     assert_ne!(r.is_error, Some(true));
     assert!(
-        block_text(&r, 0).contains("non fiable"),
+        block_text(&r, 0).contains("untrusted"),
         "l'avertissement précède les données"
     );
     let data: Value = serde_json::from_str(&block_text(&r, 1)).unwrap();
@@ -300,5 +300,5 @@ async fn database_is_read_only() {
     assert!(open_readonly(&path.with_extension("absente"))
         .await
         .unwrap_err()
-        .contains("introuvable"));
+        .contains("not found"));
 }

@@ -1,10 +1,10 @@
-//! `envelope-mcp [--db CHEMIN]` : serveur MCP sur stdio. stdout ne porte que le protocole.
+//! `envelope-mcp [--db PATH]` : serveur MCP sur stdio. stdout ne porte que le protocole.
 
 use envelope_mcp::db;
 use envelope_mcp::tools::EnvelopeTools;
 use rmcp::{transport::stdio, ServiceExt};
 
-const USAGE: &str = "usage: envelope-mcp [--db CHEMIN] [--allow-locked]\n  CHEMIN par défaut : $ENVELOPE_DB, sinon le dossier de données de l'application.\n  --allow-locked : démarrer même si le verrouillage d'Envelope est actif (ce serveur lit la base sans passer par l'application : il ne respecte pas le verrou).";
+const USAGE: &str = "usage: envelope-mcp [--db PATH] [--allow-locked]\n  PATH defaults to $ENVELOPE_DB, otherwise the app's data folder.\n  --allow-locked: start even if Envelope's app lock is on (this server reads the database without going through the app, so it does not honor the lock).";
 
 #[tokio::main]
 async fn main() {
@@ -16,33 +16,33 @@ async fn main() {
             "--db" => path = args.next().map(Into::into),
             "--allow-locked" => allow_locked = true,
             "-h" | "--help" => return println!("{USAGE}"),
-            other => return fail(&format!("option inconnue `{other}`\n{USAGE}")),
+            other => return fail(&format!("unknown option `{other}`\n{USAGE}")),
         }
     }
     let Some(path) = path.or_else(db::default_path) else {
-        return fail("dossier de données introuvable ; utilisez --db");
+        return fail("data folder not found; use --db");
     };
     let pool = match db::open_readonly(&path).await {
         Ok(p) => p,
         Err(e) => return fail(&e),
     };
     if !allow_locked && db::lock_enabled(&pool).await {
-        return fail("le verrouillage d'Envelope est actif et ce serveur le contournerait (il lit la base directement) : désactivez le verrouillage, ou relancez avec --allow-locked en connaissance de cause");
+        return fail("Envelope's app lock is on and this server would bypass it (it reads the database directly): turn the lock off, or restart with --allow-locked if you accept that");
     }
-    eprintln!("envelope-mcp : base {} (lecture seule)", path.display());
+    eprintln!("envelope-mcp: database {} (read-only)", path.display());
 
     // Le SDK porte le protocole (JSON-RPC, cycle de vie, versions) ; on ne fournit que les outils.
     match EnvelopeTools::new(pool).serve(stdio()).await {
         Ok(service) => {
             if let Err(e) = service.waiting().await {
-                fail(&format!("protocole : {e}"));
+                fail(&format!("protocol: {e}"));
             }
         }
-        Err(e) => fail(&format!("démarrage : {e}")),
+        Err(e) => fail(&format!("startup: {e}")),
     }
 }
 
 fn fail(msg: &str) {
-    eprintln!("envelope-mcp : {msg}");
+    eprintln!("envelope-mcp: {msg}");
     std::process::exit(1);
 }

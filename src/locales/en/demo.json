@@ -3,5 +3,119 @@
   "threadNotFound": "Conversation {{id}} not found",
   "sendNotFound": "Send not found.",
   "ruleRequired": "Name and condition required",
-  "wrongPassword": "Wrong password"
+  "wrongPassword": "Wrong password",
+  "mail": {
+    "template": {
+      "subject": "Re: your request",
+      "name": "Acknowledgement of receipt",
+      "body": "<p>Hello,</p><p>We have received your message and will get back to you within 48 hours.</p><p>Best regards,</p>"
+    },
+    "roadmap": {
+      "subject": "T1 roadmap review — I need your input",
+      "m1": "Hi Alex,\n\nWe're freezing the Q1 roadmap on Friday. Before that, I'd like your feedback on three points:\n\n1. The timeline for the mail client revamp (beta release end of February?)\n2. The trade-off between offline sync and full-text search\n3. The design workload for keyboard shortcuts\n\nI've attached version 3 of the document.\n\nThanks in advance,\nCamille",
+      "re": "Re: T1 roadmap review — I need your input",
+      "m2": "Hi Camille,\n\nI'll look at it this afternoon. On point 2, I think we can ship everything: search is already indexed locally (FTS5), offline sync is the real topic.\n\nI'll send detailed feedback before 5 pm.\n\nAlex\n\n> Hi Alex,\n> We're freezing the Q1 roadmap on Friday.",
+      "m3": "Perfect, thanks!\n\nThomas is in copy: he can review the technical part in parallel. If you could also add an estimate in days for the MCP server, it would help me for Thursday's presentation.\n\nCamille\n\n> I'll send detailed feedback before 5 pm.\n> Alex"
+    },
+    "quote": {
+      "subject": "Website redesign quote — final version",
+      "m1": "Alex, here is the final version of the quote for the redesign. I've included your remarks about maintenance.\n\nThomas",
+      "re": "Re: Website redesign quote — final version",
+      "m2": "Thanks Thomas. One question: does the maintenance plan include minor changes?",
+      "m3": "Yes, up to 4 hours a month. Beyond that, it's billed at the quote's hourly rate.\n\n> One question: does the maintenance plan include minor changes?",
+      "m4": "Last thing: the client signs tomorrow morning. I'm also sending you the updated terms and conditions, to attach to the purchase order.\n\nThomas"
+    },
+    "invoice": {
+      "subject": "Question about invoice #2026-0142",
+      "body": "Hello,\n\nWe received invoice #2026-0142 but the amount excluding tax doesn't match the signed quote (€2,400 instead of €2,150).\n\nCould you check it and send us a corrected version?\n\nBest regards,\nSophie Martin\nMartin & Associates"
+    },
+    "github": {
+      "subject": "[envelope] Pull request #14: Add read-only MCP server",
+      "opened": "{{user}} opened a pull request:",
+      "title": "Add read-only MCP server",
+      "intro": "This PR introduces {{name}}:",
+      "stdio": "JSON-RPC 2.0 over stdio",
+      "tools": "5 tools, all <strong>read-only</strong>",
+      "warning": "Systematic warning about untrusted content",
+      "view": "View pull request",
+      "footer": "You are receiving this because you follow this repository."
+    },
+    "calendar": {
+      "subject": "Invitation: Weekly team meeting — Mon 10:00 AM",
+      "body": "Weekly team meeting\nMonday 10:00 – 10:45 AM (Paris time)\nLocation: Gutenberg room / Google Meet\n\nAttendees: Camille Laurent, Thomas Bernard, Julie Moreau, Alex Morel\n\nReply: Yes · No · Maybe"
+    },
+    "stripe": {
+      "subject": "Payment receipt — €49.00",
+      "heading": "Payment receipt",
+      "paid": "Paid on November 8, 2026",
+      "plan": "Atelier Pro subscription (monthly)",
+      "amount": "€49.00",
+      "vat": "VAT (20%)",
+      "included": "included",
+      "total": "Total",
+      "card": "Visa card ending in 4242 · Receipt no. 2184-9031"
+    },
+    "newsletter": {
+      "subject": "The Morning Letter: is AI in the mailbox really useful?",
+      "title": "AI in the mailbox: gimmick or real revolution?",
+      "date": "Monday, November 9 · 6 min read",
+      "lead": "Automatic summaries, suggested replies, smart sorting… Mail clients have become the first testing ground for agents. But who really controls what the agent reads — and sends — on your behalf?",
+      "intro": "In this issue: the <strong>MCP</strong> protocol explained simply, three open-source tools to try this week, and why the content of an email should always be treated as <em>untrusted</em>.",
+      "read": "Read the full issue →",
+      "footer": "You are receiving this email because you are subscribed.",
+      "unsubscribe": "Unsubscribe"
+    },
+    "phishing": {
+      "subject": "Action required: your account will be suspended",
+      "hello": "Hello,",
+      "body": "Unusual activity was detected on your account. Verify your identity within 24 hours:"
+    },
+    "rust": {
+      "subject": "Rust Weekly #212 — async fn in traits, sqlx 0.9, Tauri 3 alpha",
+      "body": "This week:\n\n• async fn in traits: a year of experience\n• sqlx 0.9: what changes\n• Tauri 3 alpha: migrating from v2\n• A mail client in Rust, from zero to beta\n\nHappy reading!\nThe Rust team"
+    },
+    "review": {
+      "subject": "Your Friday review",
+      "body": "Hi Alex,\n\nI'm confirming our annual review on Friday at 2:30 pm, Gutenberg room. Please prepare a summary of your projects this year: the team is mostly waiting for your view on the mail client.\n\nSee you Friday,\nJulie"
+    },
+    "security": {
+      "subject": "Security alert: new sign-in to your account",
+      "body": "A new sign-in was detected:\n\nDevice: MacBook Pro (macOS)\nApproximate location: Lille, France\nDate: November 6, 9:14 PM\n\nIf this was you, no action is needed."
+    },
+    "sunday": {
+      "subject": "Sunday at our place?",
+      "m1": "Hi sweetie,\n\nWe're making a gratin on Sunday lunchtime, are you coming with Léa? Dad found the old photos again and really wants to show them to you.\n\nXOXO",
+      "re": "Re: Sunday at our place?",
+      "m2": "Gladly! We'll arrive around noon. We'll bring dessert.\n\n> We're making a gratin on Sunday lunchtime, are you coming with Léa?"
+    },
+    "photos": {
+      "subject": "Photos from the weekend",
+      "body": "Hi! The photos from the hike, as promised. The last one is my favorite, it looks like a postcard.\n\nShall we do it again in spring?"
+    },
+    "lisbon": {
+      "subject": "Your Lisbon booking is confirmed",
+      "body": "Good news, it's confirmed!\n\nBright apartment in Alfama\nDecember 12 → 17, 2026 · 2 guests\nTotal: €612.40\n\nYour host, Marta, will contact you 48 hours before arrival."
+    },
+    "statement": {
+      "subject": "Your November statement is available",
+      "body": "Your November account statement is available in your online banking.\n\nFor your security, never share your credentials by email."
+    },
+    "figma": {
+      "subject": "Camille commented on “Design System v2”",
+      "body": "Camille Laurent left a comment on “Design System v2”:\n\n“The secondary text contrast is a bit low in dark mode, can we lighten it by 5%?”\n\nReply in Figma"
+    },
+    "notes": {
+      "subject": "Meeting notes — design workshop of November 3",
+      "body": "Here are the notes from the workshop. The decisions are in bold in the shared document."
+    },
+    "planning": {
+      "subject": "Re: December planning",
+      "body": "Thanks Julie, noted for the week of the 14th."
+    },
+    "senders": {
+      "mom": "Mom",
+      "bankSecurity": "Security Department",
+      "security": "Atelier Nord Security"
+    }
+  }
 }

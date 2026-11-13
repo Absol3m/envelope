@@ -3,5 +3,119 @@
   "threadNotFound": "Conversation {{id}} introuvable",
   "sendNotFound": "Envoi introuvable.",
   "ruleRequired": "Nom et condition requis",
-  "wrongPassword": "Mot de passe incorrect"
+  "wrongPassword": "Mot de passe incorrect",
+  "mail": {
+    "template": {
+      "subject": "Re : votre demande",
+      "name": "Accusé de réception",
+      "body": "<p>Bonjour,</p><p>Nous avons bien reçu votre message et revenons vers vous sous 48 h.</p><p>Cordialement,</p>"
+    },
+    "roadmap": {
+      "subject": "Revue de la roadmap T1 — besoin de votre avis",
+      "m1": "Bonjour Alex,\n\nOn fige la roadmap du T1 vendredi. Avant ça, j'aimerais ton retour sur trois points :\n\n1. Le calendrier de la refonte du client mail (sortie bêta fin février ?)\n2. L'arbitrage entre synchronisation hors-ligne et recherche plein texte\n3. La charge côté design pour les raccourcis clavier\n\nJe t'ai joint la version 3 du document.\n\nMerci d'avance,\nCamille",
+      "re": "Re: Revue de la roadmap T1 — besoin de votre avis",
+      "m2": "Salut Camille,\n\nJe regarde ça cet après-midi. Sur le point 2, je pense qu'on peut tout livrer : la recherche est déjà indexée en local (FTS5), la synchro hors-ligne est le vrai sujet.\n\nJe te fais un retour détaillé avant 17 h.\n\nAlex\n\n> Bonjour Alex,\n> On fige la roadmap du T1 vendredi.",
+      "m3": "Parfait, merci !\n\nThomas est en copie : il pourra relire la partie technique en parallèle. Si tu peux aussi ajouter une estimation en jours pour le serveur MCP, ça m'aiderait pour la présentation de jeudi.\n\nCamille\n\n> Je te fais un retour détaillé avant 17 h.\n> Alex"
+    },
+    "quote": {
+      "subject": "Devis refonte site — version finale",
+      "m1": "Alex, voici la version finale du devis pour la refonte. J'ai intégré tes remarques sur la maintenance.\n\nThomas",
+      "re": "Re: Devis refonte site — version finale",
+      "m2": "Merci Thomas. Une question : le forfait de maintenance inclut-il les évolutions mineures ?",
+      "m3": "Oui, jusqu'à 4 heures par mois. Au-delà, c'est facturé au taux horaire du devis.\n\n> Une question : le forfait de maintenance inclut-il les évolutions mineures ?",
+      "m4": "Dernier point : le client signe demain matin. Je t'envoie aussi les CGV mises à jour, à joindre au bon de commande.\n\nThomas"
+    },
+    "invoice": {
+      "subject": "Question sur la facture #2026-0142",
+      "body": "Bonjour,\n\nNous avons bien reçu la facture #2026-0142 mais le montant HT ne correspond pas au devis signé (2 400 € au lieu de 2 150 €).\n\nPourriez-vous la vérifier et nous renvoyer une version corrigée ?\n\nCordialement,\nSophie Martin\nCabinet Martin & Associés"
+    },
+    "github": {
+      "subject": "[envelope] Pull request #14 : Ajout du serveur MCP en lecture seule",
+      "opened": "{{user}} a ouvert une pull request :",
+      "title": "Ajout du serveur MCP en lecture seule",
+      "intro": "Cette PR introduit {{name}} :",
+      "stdio": "JSON-RPC 2.0 sur stdio",
+      "tools": "5 outils, tous en <strong>lecture seule</strong>",
+      "warning": "Avertissement systématique sur le contenu non fiable",
+      "view": "Voir la pull request",
+      "footer": "Vous recevez ceci car vous suivez ce dépôt."
+    },
+    "calendar": {
+      "subject": "Invitation : Point hebdo équipe — lun. 10:00",
+      "body": "Point hebdo équipe\nlundi 10:00 – 10:45 (heure de Paris)\nLieu : Salle Gutenberg / Google Meet\n\nParticipants : Camille Laurent, Thomas Bernard, Julie Moreau, Alex Morel\n\nRépondre : Oui · Non · Peut-être"
+    },
+    "stripe": {
+      "subject": "Reçu de paiement — 49,00 €",
+      "heading": "Reçu de paiement",
+      "paid": "Payé le 8 novembre 2026",
+      "plan": "Abonnement Atelier Pro (mensuel)",
+      "amount": "49,00 €",
+      "vat": "TVA (20 %)",
+      "included": "inclus",
+      "total": "Total",
+      "card": "Carte Visa se terminant par 4242 · Reçu n° 2184-9031"
+    },
+    "newsletter": {
+      "subject": "La Lettre du matin : l'IA dans la boîte mail, vraiment utile ?",
+      "title": "L'IA dans la boîte mail : gadget ou vraie révolution ?",
+      "date": "Lundi 9 novembre · 6 min de lecture",
+      "lead": "Résumés automatiques, réponses suggérées, tri intelligent… Les clients mail sont devenus le premier terrain d'expérimentation des agents. Mais qui contrôle vraiment ce que l'agent lit — et envoie — en votre nom ?",
+      "intro": "Dans cette édition : le protocole <strong>MCP</strong> expliqué simplement, trois outils open source à essayer cette semaine, et pourquoi le contenu d'un e-mail doit toujours être traité comme <em>non fiable</em>.",
+      "read": "Lire l'édition complète →",
+      "footer": "Vous recevez cet e-mail car vous êtes abonné.",
+      "unsubscribe": "Se désabonner"
+    },
+    "phishing": {
+      "subject": "Action requise : votre compte sera suspendu",
+      "hello": "Bonjour,",
+      "body": "Une activité inhabituelle a été détectée sur votre compte. Vérifiez votre identité dans les 24 h :"
+    },
+    "rust": {
+      "subject": "Hebdo Rust France #212 — async fn dans les traits, sqlx 0.9, Tauri 3 alpha",
+      "body": "Cette semaine :\n\n• async fn dans les traits : retour d'expérience après un an\n• sqlx 0.9 : ce qui change\n• Tauri 3 alpha : migration depuis la v2\n• Un client mail en Rust, de zéro à la bêta\n\nBonne lecture !\nL'équipe Rust France"
+    },
+    "review": {
+      "subject": "Votre entretien de vendredi",
+      "body": "Bonjour Alex,\n\nJe confirme notre entretien annuel vendredi à 14 h 30, salle Gutenberg. Pensez à préparer un bilan de vos projets de l'année : l'équipe attend surtout votre point de vue sur le client mail.\n\nÀ vendredi,\nJulie"
+    },
+    "security": {
+      "subject": "Alerte sécurité : nouvelle connexion à votre compte",
+      "body": "Une nouvelle connexion a été détectée :\n\nAppareil : MacBook Pro (macOS)\nLieu approximatif : Lille, France\nDate : 6 novembre, 21:14\n\nSi c'était vous, aucune action n'est nécessaire."
+    },
+    "sunday": {
+      "subject": "Dimanche chez nous ?",
+      "m1": "Coucou mon grand,\n\nOn fait un gratin dimanche midi, tu viens avec Léa ? Papa a ressorti les vieilles photos, il veut absolument te les montrer.\n\nBisous",
+      "re": "Re: Dimanche chez nous ?",
+      "m2": "Avec plaisir ! On arrive vers midi. On apporte le dessert.\n\n> On fait un gratin dimanche midi, tu viens avec Léa ?"
+    },
+    "photos": {
+      "subject": "Photos du week-end",
+      "body": "Salut ! Les photos de la rando, comme promis. La dernière est ma préférée, on dirait une carte postale.\n\nOn remet ça au printemps ?"
+    },
+    "lisbon": {
+      "subject": "Votre réservation à Lisbonne est confirmée",
+      "body": "Bonne nouvelle, c'est confirmé !\n\nAppartement lumineux à Alfama\n12 → 17 décembre 2026 · 2 voyageurs\nTotal : 612,40 €\n\nVotre hôte, Marta, vous contactera 48 h avant l'arrivée."
+    },
+    "statement": {
+      "subject": "Votre relevé de novembre est disponible",
+      "body": "Votre relevé de compte de novembre est disponible dans votre espace client.\n\nPour votre sécurité, ne communiquez jamais vos identifiants par e-mail."
+    },
+    "figma": {
+      "subject": "Camille a commenté « Design System v2 »",
+      "body": "Camille Laurent a laissé un commentaire sur « Design System v2 » :\n\n« Le contraste du texte secondaire est un peu faible en mode sombre, on peut l'éclaircir de 5 % ? »\n\nRépondre dans Figma"
+    },
+    "notes": {
+      "subject": "Compte rendu — atelier design du 3 novembre",
+      "body": "Voici le compte rendu de l'atelier. Les décisions sont en gras dans le document partagé."
+    },
+    "planning": {
+      "subject": "Re: Planning de décembre",
+      "body": "Merci Julie, c'est noté pour la semaine du 14."
+    },
+    "senders": {
+      "mom": "Maman",
+      "bankSecurity": "Service Sécurité",
+      "security": "Sécurité Atelier Nord"
+    }
+  }
 }

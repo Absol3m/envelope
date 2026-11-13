@@ -269,26 +269,27 @@ async fn wait_for_code(
         // Le `state` conditionne tout (code comme erreur) : sans lui, la requête n'émane pas du navigateur
         // que nous avons ouvert, elle est écartée et n'interrompt rien.
         let state_ok = q.get("state").map(String::as_str) == Some(expected_state);
+        let texts = crate::native_text::get();
         let (status, body, outcome) =
             if !state_ok && (q.contains_key("code") || q.contains_key("error")) {
-                ("400 Bad Request", "État invalide.", None)
+                ("400 Bad Request", texts.oauth_bad_state.as_str(), None)
             } else if let Some(err) = q.get("error") {
                 (
                     "400 Bad Request",
-                    "Autorisation refusée. Vous pouvez fermer cet onglet.",
+                    texts.oauth_denied.as_str(),
                     Some(Err(AppError::Auth((err.clone()).into()))),
                 )
             } else if let Some(code) = q.get("code") {
                 (
                     "200 OK",
-                    "Envelope est autorisé. Vous pouvez fermer cet onglet.",
+                    texts.oauth_granted.as_str(),
                     Some(Ok(code.clone())),
                 )
             } else {
                 ("404 Not Found", "", None) // favicon, etc.
             };
-        let html = format!("<!doctype html><meta charset=utf-8><body style=\"font-family:sans-serif;padding:3rem\">{body}");
-        let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len());
+        // Texte brut : la phrase traduite n'est jamais interprétée comme du HTML, rien à échapper.
+        let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         let _ = tokio::time::timeout(conn_timeout, sock.write_all(response.as_bytes())).await;
         if let Some(o) = outcome {
             return o;

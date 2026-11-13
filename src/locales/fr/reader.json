@@ -50,7 +50,6 @@
   "noText": "(message sans texte)",
   "save": "Enregistrer",
   "saveAll": "Tout enregistrer",
-  "saveFolderTitle": "Choisir un dossier pour les pièces jointes",
   "saved_one": "{{count}} fichier enregistré",
   "saved_other": "{{count}} fichiers enregistrés",
   "saveFailed": "Enregistrement impossible — {{error}}",

@@ -26,6 +26,5 @@
   "failed_one": "{{n}} illisible ou trop volumineux",
   "failed_other": "{{n}} illisibles ou trop volumineux",
   "done": "Terminer",
-  "noFolders": "Aucun dossier de mails (mbox ou Maildir) trouvé ici. Choisissez le dossier du profil Thunderbird ou celui qui contient vos boîtes.",
-  "pickTitle": "Choisir le dossier à importer"
+  "noFolders": "Aucun dossier de mails (mbox ou Maildir) trouvé ici. Choisissez le dossier du profil Thunderbird ou celui qui contient vos boîtes."
 }

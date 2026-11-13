@@ -6,13 +6,19 @@ import { useMail } from "@/lib/store";
 import { suppressWebviewContextMenu } from "@/lib/platform";
 import { applyFont, savedFont } from "@/lib/font";
 import { useTranslation } from "react-i18next";
-import "@/lib/i18n";
+import { i18next } from "@/lib/i18n";
+import { isTauri, pushNativeTexts } from "@/lib/api";
 import "./index.css";
 
 suppressWebviewContextMenu(document);
 void applyFont(savedFont());
 // Thème posé avant le premier rendu (pas d'éclair blanc en mode sombre), puis couleurs du système.
 watchSystemAppearance(() => useMail.getState());
+// Textes des fenêtres natives (invite de déverrouillage, sélecteurs…) dans la langue de l'interface, dès le démarrage.
+if (isTauri()) {
+  void pushNativeTexts();
+  i18next.on("languageChanged", () => void pushNativeTexts());
+}
 if (import.meta.env.DEV) void import("./dev").then((m) => m.applyDevParams());
 
 /** Les textes sont lus à l'affichage ; changer de langue remonte l'interface pour que tout (y compris les composants

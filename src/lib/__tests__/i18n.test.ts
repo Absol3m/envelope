@@ -58,6 +58,18 @@ describe("fichiers de langue", () => {
     }
     expect(missing).toEqual([]);
   });
+  it("la boîte de démonstration n'affiche aucune clé brute, en français comme en anglais", async () => {
+    const { i18next } = await import("../i18n");
+    const { demoBackend } = await import("../mock");
+    for (const lang of ["fr", "en"]) {
+      await i18next.changeLanguage(lang); // reconstruit le jeu de données
+      const threads = await demoBackend.listThreads({ limit: 1000 });
+      const texts = (await Promise.all(threads.map((t) => demoBackend.getThread(t.id)))).flatMap((d) => d.messages.flatMap((m) => [m.subject, m.fromName ?? "", m.bodyText ?? "", m.bodyHtml ?? ""]));
+      texts.push(...(await demoBackend.listTemplates()).flatMap((t) => [t.name, t.subject, t.bodyHtml]));
+      expect(texts.filter((s) => /^mail\.|\{\{/.test(s)), lang).toEqual([]);
+    }
+    await i18next.changeLanguage("fr");
+  });
   it("chaque code d'erreur du moteur Rust (msg!) a sa traduction", () => {
     const rust: string[] = [];
     const walk = (d: string) => readdirSync(d).forEach((n) => { const p = join(d, n); statSync(p).isDirectory() ? walk(p) : n.endsWith(".rs") && rust.push(p); });
