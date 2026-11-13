@@ -345,6 +345,123 @@ pub async fn seed_local(db_path: &Path, count: usize) -> Result<()> {
     Ok(())
 }
 
+/// Dépose dans la boîte de réception d'un compte fictif `photos@example.com` (hôtes invalides : aucune synchro) une conversation avec des images jointes (paysage, portrait,
+/// carré, une image trop grosse pour l'aperçu) et un PDF, à partir des fichiers de `images_dir` : l'affichage des
+/// pièces jointes dans le fil se juge sur de vrais messages. Passe par `ingest`, comme un message reçu.
+pub async fn seed_photo_thread(data_dir: &Path, images_dir: &Path) -> Result<usize> {
+    use crate::mail::ingest;
+    let read = |name: &str| {
+        std::fs::read(images_dir.join(name)).map_err(|e| invalid(format!("{name} : {e}")))
+    };
+    let kind = |name: &str| -> Result<ContentType> {
+        let mime = match name.rsplit('.').next() {
+            Some("jpg" | "jpeg") => "image/jpeg",
+            Some("png") => "image/png",
+            Some("gif") => "image/gif",
+            Some("webp") => "image/webp",
+            Some("pdf") => "application/pdf",
+            _ => "application/octet-stream",
+        };
+        ContentType::parse(mime).map_err(invalid)
+    };
+    struct Msg {
+        id: &'static str,
+        from_me: bool,
+        text: &'static str,
+        hours_ago: u64,
+        files: &'static [&'static str],
+        reply_to: Option<&'static str>,
+    }
+    let thread = [
+        Msg { id: "photos-1", from_me: false, text: "Salut ! Voilà les photos du chantier de ce matin : la vue d'ensemble, l'escalier, et un détail de la rambarde.\n\nDis-moi ce que tu en penses.\n\nValentino", hours_ago: 30, files: &["chantier-vue.jpg", "chantier-portrait.png", "chantier-carre.jpg"], reply_to: None },
+        Msg { id: "photos-2", from_me: true, text: "Merci Valentino, elles sont très nettes. Peux-tu m'envoyer la façade et le plan à jour ?\n\nAlex", hours_ago: 26, files: &[], reply_to: Some("photos-1") },
+        Msg { id: "photos-3", from_me: false, text: "Voici la façade, le plan en PDF, et la photo en pleine résolution (elle est lourde).\n\nValentino", hours_ago: 20, files: &["chantier-vue.jpg", "chantier-portrait.png", "chantier-carre.jpg", "facade.jpg", "plan.pdf", "gros-fichier.png"], reply_to: Some("photos-2") },
+    ];
+    let pool = crate::db::init(&crate::db::db_path(data_dir)).await?;
+    let dir = data_dir.join("attachments");
+    let raw_dir = data_dir.join("raw");
+    sqlx::query("INSERT OR IGNORE INTO accounts (id, email, username, imap_host, smtp_host) VALUES ('photos','alex.morel@example.com','alex','invalid.invalid','invalid.invalid')")
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT OR IGNORE INTO folders (account_id, path, name, role) VALUES ('photos', 'INBOX', 'INBOX', 'inbox')")
+        .execute(&pool)
+        .await?;
+    let folder: i64 =
+        sqlx::query_scalar("SELECT id FROM folders WHERE account_id = 'photos' AND path = 'INBOX'")
+            .fetch_one(&pool)
+            .await?;
+    let valentino: Mailbox = "Valentino Rossi <valentino.rossi@example.com>"
+        .parse()
+        .map_err(invalid)?;
+    let me: Mailbox = "Alex Morel <alex.morel@example.com>"
+        .parse()
+        .map_err(invalid)?;
+    let now = SystemTime::now();
+    let mut touched = std::collections::HashSet::new();
+    for Msg {
+        id,
+        from_me,
+        text,
+        hours_ago,
+        files,
+        reply_to,
+    } in &thread
+    {
+        let (from, to) = if *from_me {
+            (&me, &valentino)
+        } else {
+            (&valentino, &me)
+        };
+        let at = now - Duration::from_secs(hours_ago * 3600);
+        let mut b = Message::builder()
+            .from(from.clone())
+            .to(to.clone())
+            .subject(if reply_to.is_some() {
+                "Re: Photos du chantier"
+            } else {
+                "Photos du chantier"
+            })
+            .date(at)
+            .message_id(Some(format!("<{id}@example.com>")));
+        if let Some(parent) = reply_to {
+            let parent = format!("<{parent}@example.com>");
+            b = b.in_reply_to(parent.clone()).references(parent);
+        }
+        let mut parts = MultiPart::mixed().singlepart(SinglePart::plain((*text).to_string()));
+        for f in *files {
+            parts = parts.singlepart(Attachment::new((*f).to_string()).body(read(f)?, kind(f)?));
+        }
+        let raw = b.multipart(parts).map_err(invalid)?.formatted();
+        let parsed = ingest::parse(&raw, None).ok_or_else(|| invalid("message illisible"))?;
+        // Comme un message reçu : le brut est rangé dans le magasin, les pièces jointes sont extraites à la demande.
+        let hash = crate::mail::rawstore::put(&raw_dir, &raw).await?;
+        let tid = ingest::store_with(
+            &pool,
+            &dir,
+            ingest::MessageLoc {
+                account_id: "photos",
+                folder_id: folder,
+                uid: ingest::next_uid(&pool, folder).await?,
+                size: Some(raw.len() as i64),
+            },
+            ingest::Flags {
+                seen: *from_me,
+                flagged: false,
+            },
+            parsed,
+            ingest::StoreOpts {
+                raw_hash: Some(&hash),
+                lazy_attachments: true,
+            },
+        )
+        .await?;
+        touched.insert(tid);
+    }
+    ingest::refresh_threads(&pool, &touched).await?;
+    ingest::refresh_folder_unread(&pool, folder).await?;
+    Ok(thread.len())
+}
+
 /// Archive en local la première conversation de la boîte de réception dont l'objet contient
 /// `subject` (essai de bout en bout : copie vérifiée, puis suppression sur le serveur).
 pub async fn archive_local_by_subject(data_dir: &Path, subject: &str) -> Result<String> {
