@@ -19,6 +19,7 @@ const flat = (all: Record<string, Tree>) => Object.fromEntries(Object.entries(al
 const enKeys = flat(en);
 const frKeys = flat(fr);
 
+const sig = (s: string) => vars(s).filter((v) => v !== "count").join();
 describe("fichiers de langue", () => {
   it("mêmes espaces de noms et mêmes clés en français et en anglais", () => {
     expect(Object.keys(fr).sort()).toEqual(Object.keys(en).sort());
@@ -28,14 +29,14 @@ describe("fichiers de langue", () => {
   it("mêmes variables d'interpolation dans chaque langue", () => {
     const diffs = Object.keys(frKeys).filter((k) => enKeys[k] !== undefined && vars(frKeys[k]).join() !== vars(enKeys[k]).join());
     // `count` peut manquer d'un côté d'un pluriel (« une seule conversation ») : on compare hors `count`.
-    const real = diffs.filter((k) => vars(frKeys[k]).filter((v) => v !== "count").join() !== vars(enKeys[k]).filter((v) => v !== "count").join());
+    const real = diffs.filter((k) => sig(frKeys[k]) !== sig(enKeys[k]));
     expect(real).toEqual([]);
   });
   it("toute langue ajoutée (hors fr) : les textes présents ont les mêmes variables que l'anglais", () => {
     const others = readdirSync(ROOT).filter((l) => l !== "en" && l !== "fr" && statSync(join(ROOT, l)).isDirectory());
     for (const lang of others) {
       const keys = flat(load(lang));
-      const bad = Object.keys(keys).filter((k) => enKeys[k] !== undefined && vars(keys[k]).filter((v) => v !== "count").join() !== vars(enKeys[k]).filter((v) => v !== "count").join());
+      const bad = Object.keys(keys).filter((k) => enKeys[k] !== undefined && sig(keys[k]) !== sig(enKeys[k]));
       expect(bad, lang).toEqual([]);
     }
   });

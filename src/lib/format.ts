@@ -5,13 +5,14 @@ const DAY = 86_400_000;
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 
 /** Formateurs `Intl` de la langue active, gardés par langue et par options (leur construction est coûteuse). */
-const formatters = new Map<string, Intl.DateTimeFormat>();
-function dtf(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = `${locale()}|${JSON.stringify(options)}`;
+const formatters = new Map<string, Intl.DateTimeFormat | Intl.RelativeTimeFormat | Intl.NumberFormat>();
+function cached<F extends Intl.DateTimeFormat | Intl.RelativeTimeFormat | Intl.NumberFormat>(kind: string, options: object, make: (loc: string) => F): F {
+  const key = `${locale()}|${kind}|${JSON.stringify(options)}`;
   let f = formatters.get(key);
-  if (!f) formatters.set(key, (f = new Intl.DateTimeFormat(locale(), options)));
-  return f;
+  if (!f) formatters.set(key, (f = make(locale())));
+  return f as F;
 }
+const dtf = (options: Intl.DateTimeFormatOptions) => cached("d", options, (l) => new Intl.DateTimeFormat(l, options));
 const time = () => dtf({ hour: "2-digit", minute: "2-digit" });
 const weekdayShort = () => dtf({ weekday: "short" });
 const dayMonth = () => dtf({ day: "numeric", month: "short" });
@@ -19,8 +20,15 @@ const dayMonthYear = () => dtf({ day: "numeric", month: "short", year: "2-digit"
 const full = () => dtf({ weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const scheduled = () => dtf({ weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" });
 const monthYear = () => dtf({ month: "long", year: "numeric" });
+const fullShort = () => dtf({ dateStyle: "full", timeStyle: "short" });
+const weekdayTime = () => dtf({ weekday: "long", hour: "numeric", minute: "2-digit" });
 
 /** Date et heure d'un envoi programmé (millisecondes) : « lundi 16 novembre à 08:00 ». */
+/** « lundi, 16 novembre 2026 à 08:00 » (date longue d'un message cité). */
+export const fullDateTime = (iso: string) => fullShort().format(new Date(iso));
+/** « lundi 08:00 » (créneaux proposés par « Envoyer plus tard »). */
+export const weekdayTimeOf = (d: Date) => weekdayTime().format(d);
+
 export const scheduledAt = (ms: number) => scheduled().format(ms);
 
 /** Heure du jour, « Hier », jour de semaine, puis date : le plus court lisible. */
@@ -52,14 +60,14 @@ export function relativeTime(iso: string | null, now = Date.now()): string {
   if (!iso) return t("common:time.never");
   const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
   if (s < 45) return t("common:time.justNow");
-  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: "always", style: "short" });
+  const rtf = cached("r", {}, (l) => new Intl.RelativeTimeFormat(l, { numeric: "always", style: "short" }));
   if (s < 3600) return rtf.format(-Math.round(s / 60), "minute");
   if (s < 86_400) return rtf.format(-Math.round(s / 3600), "hour");
   return rtf.format(-Math.round(s / 86_400), "day");
 }
 
 /** Nombre selon les usages de la langue active (séparateurs de milliers et décimal). */
-export const formatNumber = (n: number, maximumFractionDigits = 0) => new Intl.NumberFormat(locale(), { maximumFractionDigits }).format(n);
+export const formatNumber = (n: number, maximumFractionDigits = 0) => cached("n", { maximumFractionDigits }, (l) => new Intl.NumberFormat(l, { maximumFractionDigits })).format(n);
 
 export function fileSize(bytes: number): string {
   if (bytes < 1024) return t("common:size.bytes", { n: bytes });

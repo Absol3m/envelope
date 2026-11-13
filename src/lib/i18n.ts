@@ -7,7 +7,7 @@ export const LANGUAGES = [
   { code: "en", label: "English" },
   { code: "fr", label: "Français" },
 ] as const;
-export type LangCode = (typeof LANGUAGES)[number]["code"];
+type LangCode = (typeof LANGUAGES)[number]["code"];
 /** Réglage : suivre le système, ou une langue précise. */
 export type LangPref = "system" | LangCode;
 
@@ -37,13 +37,14 @@ void i18next.use(initReactI18next).init({
   initAsync: false, // textes embarqués : prêt avant le premier rendu
   returnNull: false,
 });
-if (typeof document !== "undefined") document.documentElement.lang = i18next.language;
+const syncDocumentLang = () => { if (typeof document !== "undefined") document.documentElement.lang = i18next.language; };
+syncDocumentLang();
 
 /** Change la langue de l'interface et la mémorise. */
 export async function setLanguage(p: LangPref): Promise<void> {
   pref.set("lang", p);
   await i18next.changeLanguage(resolveLanguage(p));
-  if (typeof document !== "undefined") document.documentElement.lang = i18next.language;
+  syncDocumentLang();
 }
 
 /** Langue active, au format attendu par `Intl` (« fr », « en »). */

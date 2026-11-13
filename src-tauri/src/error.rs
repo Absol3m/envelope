@@ -116,23 +116,26 @@ impl AppError {
     /// que le front traduit à l'affichage.
     pub fn to_wire(&self) -> String {
         let (code, args) = self.parts();
-        let wire = Wire {
+        serde_json::to_string(&Self::wire(code, &args, self.to_string()))
+            .unwrap_or_else(|_| self.to_string())
+    }
+
+    fn wire<'a>(
+        code: &'static str,
+        args: &'a [(&'static str, String)],
+        message: String,
+    ) -> Wire<'a> {
+        Wire {
             code,
             args: args.iter().map(|(k, v)| (*k, v.as_str())).collect(),
-            message: self.to_string(),
-        };
-        serde_json::to_string(&wire).unwrap_or_else(|_| self.to_string())
+            message,
+        }
     }
 }
 
 impl Serialize for AppError {
     fn serialize<S: Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         let (code, args) = self.parts();
-        Wire {
-            code,
-            args: args.iter().map(|(k, v)| (*k, v.as_str())).collect(),
-            message: self.to_string(),
-        }
-        .serialize(s)
+        Self::wire(code, &args, self.to_string()).serialize(s)
     }
 }

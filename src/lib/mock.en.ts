@@ -59,7 +59,6 @@ export const DEMO_EN_HTML: [string, string][] = [
   ["Abonnement Atelier Pro (mensuel)", "Atelier Pro subscription (monthly)"],
   ["TVA (20 %)", "VAT (20%)"],
   [">inclus<", ">included<"],
-  [">Total<", ">Total<"],
   ["Carte Visa se terminant par 4242 · Reçu n° 2184-9031", "Visa card ending in 4242 · Receipt no. 2184-9031"],
   ["L'IA dans la boîte mail : gadget ou vraie révolution ?", "AI in the mailbox: gimmick or real revolution?"],
   ["Lundi 9 novembre · 6 min de lecture", "Monday, November 9 · 6 min read"],

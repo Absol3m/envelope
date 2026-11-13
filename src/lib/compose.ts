@@ -1,4 +1,5 @@
-import { locale, t } from "./i18n";
+import { t } from "./i18n";
+import { fullDateTime, weekdayTimeOf } from "./format";
 import { sanitizeFragment } from "./sanitize";
 import type { Account, Addr, DetailMessage, DraftData, OutgoingMessage, ThreadDetail } from "./api";
 
@@ -252,14 +253,14 @@ export function isNeutralColor(value: string): boolean {
 const bodyHtmlOf = (m: DetailMessage) => (m.bodyHtml?.trim() ? sanitizeFragment(m.bodyHtml) : m.bodyText?.trim() ? textToHtml(m.bodyText) : "");
 
 const who = (name: string | null | undefined, address: string) => (name ? `${name} <${address}>` : address);
-const when = (iso: string) => new Date(iso).toLocaleString(locale(), { dateStyle: "full", timeStyle: "short" });
+const when = fullDateTime;
 const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const toRecipient = (a: Addr): Recipient => ({ address: a.address, name: a.name });
 
 /** Heures proposées par « Envoyer plus tard » (le lundi n'est pas répété quand demain en est un). */
 export function scheduleOptions(now: Date): { label: string; at: Date }[] {
   const at = (days: number, hour: number) => { const d = new Date(now); d.setDate(d.getDate() + days); d.setHours(hour, 0, 0, 0); return d; };
-  const fmt = (d: Date) => d.toLocaleString(locale(), { weekday: "long", hour: "numeric", minute: "2-digit" });
+  const fmt = weekdayTimeOf;
   const out = [{ label: t("composer:inOneHour"), at: new Date(now.getTime() + 3600_000) }, { label: t("composer:tomorrowMorning", { when: fmt(at(1, 8)) }), at: at(1, 8) }];
   const toMonday = (8 - now.getDay()) % 7 || 7;
   if (toMonday > 1) out.push({ label: t("composer:mondayMorning", { when: fmt(at(toMonday, 8)) }), at: at(toMonday, 8) });

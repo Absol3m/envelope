@@ -44,7 +44,13 @@ const me = (acct: string) => ({ name: "Alex Morel", address: ACCOUNTS.find((a) =
 /** Le jeu de données est écrit en français ; en anglais, chaque texte est remplacé par sa version de `mock.en.ts`. */
 const english = () => locale() === "en";
 const tx = (text: string) => (english() ? DEMO_EN[text] ?? text : text);
-const txHtml = (html: string) => (english() ? DEMO_EN_HTML.reduce((h, [fr, en]) => h.split(fr).join(en), html) : html);
+const htmlCache = new Map<string, string>();
+const txHtml = (html: string) => {
+  if (!english()) return html;
+  let out = htmlCache.get(html);
+  if (out === undefined) htmlCache.set(html, (out = DEMO_EN_HTML.reduce((h, [fr, en]) => h.split(fr).join(en), html)));
+  return out;
+};
 
 function msg(p: { from: [string | null, string]; to?: [string | null, string][]; cc?: [string | null, string][]; at: number; text?: string; html?: string; read?: boolean; subject: string; folder?: number; unsubscribe?: DetailMessage["unsubscribe"]; authFail?: DetailMessage["authFail"] }): DetailMessage {
   return {
