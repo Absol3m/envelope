@@ -163,14 +163,9 @@ pub struct ThreadQuery {
     pub offset: Option<i64>,
 }
 
+/// Le résumé vient des colonnes de `threads`, tenues à jour par `refresh_threads` (src-tauri/src/mail/ingest.rs).
 const SUMMARY_SELECT: &str = "SELECT t.id, t.account_id, t.subject, t.snippet, t.last_message_at, t.message_count, \
-    t.unread_count, t.is_starred, \
-    EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.has_attachments = 1) AS has_attachments, \
-    (SELECT from_name FROM messages WHERE thread_id = t.id ORDER BY date DESC, id DESC LIMIT 1) AS from_name, \
-    (SELECT from_addr FROM messages WHERE thread_id = t.id ORDER BY date DESC, id DESC LIMIT 1) AS from_addr, \
-    (SELECT group_concat(n, ', ') FROM (SELECT DISTINCT COALESCE(NULLIF(from_name, ''), from_addr) AS n \
-        FROM messages WHERE thread_id = t.id ORDER BY date LIMIT 4)) AS participants, \
-    (SELECT m.folder_id FROM messages m WHERE m.thread_id = t.id ORDER BY m.date DESC, m.id DESC LIMIT 1) AS folder_id, \
+    t.unread_count, t.is_starred, t.has_attachments, t.from_name, t.from_addr, t.participants, t.folder_id, \
     r.kind AS reminder_kind, r.due_at AS reminder_due, r.fired_at AS reminder_fired \
     FROM threads t LEFT JOIN reminders r ON r.thread_id = t.id WHERE 1 = 1";
 
@@ -208,7 +203,7 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<Thre
         qb.push(" AND t.unread_count > 0");
     }
     if q.with_attachments {
-        qb.push(" AND EXISTS (SELECT 1 FROM messages m WHERE m.thread_id = t.id AND m.has_attachments = 1)");
+        qb.push(" AND t.has_attachments = 1");
     }
     if let Some(input) = q.query.as_deref().filter(|t| !t.trim().is_empty()) {
         let spec = parse_search(input);

@@ -418,16 +418,32 @@ async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<Fo
         paths.push(path);
     }
     if !paths.is_empty() {
-        // Dossiers supprimés côté serveur (les messages partent en cascade).
-        let mut qb: QueryBuilder<Sqlite> =
-            QueryBuilder::new("DELETE FROM folders WHERE account_id = ");
-        qb.push_bind(&ctx.account_id).push(" AND path NOT IN (");
-        let mut sep = qb.separated(", ");
-        for p in &paths {
-            sep.push_bind(p);
-        }
-        qb.push(")");
-        qb.build().execute(&ctx.pool).await?;
+        // Dossiers supprimés côté serveur (les messages partent en cascade) : on relève avant les conversations
+        // qui en perdent, pour recalculer leurs agrégats (compteurs, résumé de la liste) une fois les messages partis.
+        let gone = |mut qb: QueryBuilder<Sqlite>| {
+            qb.push_bind(&ctx.account_id).push(" AND path NOT IN (");
+            let mut sep = qb.separated(", ");
+            for p in &paths {
+                sep.push_bind(p);
+            }
+            qb.push(")");
+            qb
+        };
+        let threads: HashSet<i64> = gone(QueryBuilder::new(
+            "SELECT DISTINCT thread_id FROM messages WHERE thread_id IS NOT NULL AND folder_id IN \
+             (SELECT id FROM folders WHERE account_id = ",
+        ))
+        .push(")")
+        .build_query_scalar::<i64>()
+        .fetch_all(&ctx.pool)
+        .await?
+        .into_iter()
+        .collect();
+        gone(QueryBuilder::new("DELETE FROM folders WHERE account_id = "))
+            .build()
+            .execute(&ctx.pool)
+            .await?;
+        ingest::refresh_threads(&ctx.pool, &threads).await?;
     }
     // « Tous les messages » (Gmail) dupliquerait tout : non synchronisé.
     Ok(sqlx::query_as(

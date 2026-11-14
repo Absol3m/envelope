@@ -557,7 +557,9 @@ pub async fn refresh_folder_unread(pool: &SqlitePool, folder_id: i64) -> Result<
     Ok(())
 }
 
-/// Recalcule les agrégats des conversations touchées ; supprime celles devenues vides.
+/// Recalcule les agrégats des conversations touchées ; supprime celles devenues vides. Le résumé de la liste
+/// (dernier expéditeur, participants, dossier, pièces jointes) y est tenu à jour : mêmes expressions que le
+/// remplissage de la migration 0030, à garder alignées ; tout code qui écrit dans `messages` doit passer ici.
 pub async fn refresh_threads(pool: &SqlitePool, ids: &HashSet<i64>) -> Result<()> {
     let mut tx = pool.begin().await?;
     for id in ids {
@@ -567,7 +569,13 @@ pub async fn refresh_threads(pool: &SqlitePool, ids: &HashSet<i64>) -> Result<()
                unread_count    = (SELECT COUNT(*) FROM messages WHERE thread_id = ?1 AND is_read = 0), \
                is_starred      = COALESCE((SELECT MAX(is_starred) FROM messages WHERE thread_id = ?1), 0), \
                last_message_at = COALESCE((SELECT MAX(date) FROM messages WHERE thread_id = ?1), last_message_at), \
-               snippet         = COALESCE((SELECT snippet FROM messages WHERE thread_id = ?1 ORDER BY date DESC LIMIT 1), snippet) \
+               snippet         = COALESCE((SELECT snippet FROM messages WHERE thread_id = ?1 ORDER BY date DESC, id DESC LIMIT 1), snippet), \
+               has_attachments = EXISTS (SELECT 1 FROM messages WHERE thread_id = ?1 AND has_attachments = 1), \
+               from_name       = (SELECT from_name FROM messages WHERE thread_id = ?1 ORDER BY date DESC, id DESC LIMIT 1), \
+               from_addr       = (SELECT from_addr FROM messages WHERE thread_id = ?1 ORDER BY date DESC, id DESC LIMIT 1), \
+               participants    = (SELECT group_concat(n, ', ') FROM (SELECT DISTINCT COALESCE(NULLIF(from_name, ''), from_addr) AS n \
+                                   FROM messages WHERE thread_id = ?1 ORDER BY date LIMIT 4)), \
+               folder_id       = (SELECT folder_id FROM messages WHERE thread_id = ?1 ORDER BY date DESC, id DESC LIMIT 1) \
              WHERE id = ?1",
         )
         .bind(id)
@@ -855,6 +863,85 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Le résumé de la liste (dernier expéditeur, participants, dossier, pièces jointes) est lu dans `threads` : il suit
+    /// l'arrivée d'un message, un déplacement et une suppression dès que `refresh_threads` est passé.
+    #[tokio::test]
+    async fn thread_summary_follows_messages() {
+        use envelope_core::thread::{list_threads, ThreadQuery};
+        let (pool, folder) = setup().await;
+        let dir = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let other = sqlx::query(
+            "INSERT INTO folders (account_id,path,name,role) VALUES ('a','Clients','Clients',NULL)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_rowid();
+        let put = |folder_id, uid, raw: &'static str| {
+            let (pool, dir) = (pool.clone(), dir.clone());
+            async move {
+                store(
+                    &pool,
+                    &dir,
+                    MessageLoc {
+                        account_id: "a",
+                        folder_id,
+                        uid,
+                        size: None,
+                    },
+                    Flags::default(),
+                    parse(raw.as_bytes(), None).unwrap(),
+                )
+                .await
+                .unwrap()
+            }
+        };
+        let thread = put(folder, 1, MSG1).await;
+        assert_eq!(put(folder, 2, MSG2).await, thread);
+        let summary = || async {
+            refresh_threads(&pool, &HashSet::from([thread]))
+                .await
+                .unwrap();
+            list_threads(&pool, &ThreadQuery::default())
+                .await
+                .unwrap()
+                .into_iter()
+                .find(|t| t.id == thread)
+                .unwrap()
+        };
+
+        let s = summary().await;
+        assert_eq!(s.from_addr.as_deref(), Some("bob@example.com")); // le plus récent
+        assert_eq!(s.participants.as_deref(), Some("Alice, Bob"));
+        assert_eq!((s.folder_id, s.has_attachments), (Some(folder), false));
+
+        // Le dernier message change de dossier.
+        sqlx::query("UPDATE messages SET folder_id = ? WHERE uid = 2")
+            .bind(other)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(summary().await.folder_id, Some(other));
+
+        // Un message plus récent avec pièce jointe rejoint la conversation, puis disparaît.
+        put(folder, 3, MSG_ATT).await;
+        sqlx::query("UPDATE messages SET thread_id = ? WHERE uid = 3")
+            .bind(thread)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let s = summary().await;
+        assert!(s.has_attachments);
+        assert_eq!(s.from_addr.as_deref(), Some("carol@example.com"));
+        sqlx::query("DELETE FROM messages WHERE uid = 3")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let s = summary().await;
+        assert!(!s.has_attachments);
+        assert_eq!(s.from_addr.as_deref(), Some("bob@example.com"));
+    }
+
     #[tokio::test]
     async fn search_operators_filter_threads() {
         use envelope_core::thread::{list_threads, ThreadQuery};
@@ -991,6 +1078,14 @@ mod tests {
             .await
             .unwrap();
         }
+        // Comme la synchro : les agrégats des conversations touchées sont recalculés après l'écriture.
+        let touched: HashSet<i64> = sqlx::query_scalar("SELECT id FROM threads")
+            .fetch_all(&pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .collect();
+        refresh_threads(&pool, &touched).await.unwrap();
         let find = |q: &str| {
             let (pool, q) = (pool.clone(), q.to_string());
             async move {
