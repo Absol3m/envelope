@@ -12,20 +12,21 @@ use serde_json::{json, Value};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::SqlitePool;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use tempfile::TempDir;
 
-fn temp_db() -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    std::env::temp_dir().join(format!(
-        "envelope-mcp-test-{}-{}.db",
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ))
+/// Base de test dans un dossier temporaire, supprimé (avec -wal et -shm) quand le test se termine.
+struct TestDb(TempDir);
+
+impl TestDb {
+    fn path(&self) -> PathBuf {
+        self.0.path().join("envelope.db")
+    }
 }
 
-/// Base de test : 2 conversations, dont une avec pièce jointe et citations.
-async fn database() -> PathBuf {
-    let path = temp_db();
+/// Base de test : 2 conversations, dont une avec pièce jointe et citations, plus un second compte.
+async fn database() -> TestDb {
+    let dir = TestDb(tempfile::tempdir().unwrap());
+    let path = dir.path();
     let rw = SqlitePool::connect_with(
         SqliteConnectOptions::new()
             .filename(&path)
@@ -48,12 +49,17 @@ async fn database() -> PathBuf {
            VALUES (3,'a',1,2,3,'m3','Facture','carol@x.fr','[]','2026-03-03T09:00:00Z','Voir pièce jointe.','Voir pièce jointe.',0,1)",
         "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
            VALUES (4,'a',1,2,4,'m4','Facture','carol@x.fr','[]','2026-03-03T10:00:00Z','long',replace(hex(zeroblob(1500)),'0','é'),1)",
+        "INSERT INTO accounts (id,email,username,imap_host,smtp_host,provider) VALUES ('b','autre@x.fr','autre','i','s','imap')",
+        "INSERT INTO folders (id,account_id,path,name,role,unread_count,total_count) VALUES (2,'b','INBOX','INBOX','inbox',1,1)",
+        "INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (3,'b','Secret autre compte','2026-03-04T09:00:00Z')",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
+           VALUES (5,'b',2,3,1,'m5','Secret autre compte','dan@x.fr','[]','2026-03-04T09:00:00Z','confidentiel','confidentiel',0)",
         "INSERT INTO attachments (message_id,filename,mime_type,size,storage_path) VALUES (3,'facture.pdf','application/pdf',5,'/secret/chemin/facture.pdf')",
     ] {
         sqlx::query(sql).execute(&rw).await.unwrap();
     }
     rw.close().await;
-    path
+    dir
 }
 
 #[derive(Clone, Default)]
@@ -63,15 +69,24 @@ impl ClientHandler for TestClient {}
 type Client = RunningService<RoleClient, TestClient>;
 
 /// Serveur et client reliés en mémoire ; le serveur ouvre la base en lecture seule, comme en production.
-async fn connect() -> (Client, PathBuf) {
-    let path = database().await;
-    let ro = open_readonly(&path).await.unwrap();
+async fn connect() -> (Client, TestDb) {
+    connect_as(None).await
+}
+
+/// Comme `connect`, mais le serveur est limité à un compte (`--account`).
+async fn connect_as(account: Option<&str>) -> (Client, TestDb) {
+    let db = database().await;
+    let ro = open_readonly(&db.path()).await.unwrap();
+    let mut tools = EnvelopeTools::new(ro);
+    if let Some(id) = account {
+        tools = tools.scoped_to(id.to_string());
+    }
     let (server_io, client_io) = tokio::io::duplex(1 << 16);
     tokio::spawn(async move {
-        let running = EnvelopeTools::new(ro).serve(server_io).await.unwrap();
+        let running = tools.serve(server_io).await.unwrap();
         let _ = running.waiting().await;
     });
-    (TestClient.serve(client_io).await.unwrap(), path)
+    (TestClient.serve(client_io).await.unwrap(), db)
 }
 
 fn args(v: Value) -> serde_json::Map<String, Value> {
@@ -100,7 +115,7 @@ fn block_text(r: &CallToolResult, i: usize) -> String {
 
 #[tokio::test]
 async fn initialize_and_tool_list() {
-    let (c, _) = connect().await;
+    let (c, _db) = connect().await;
     let info = c.peer_info().expect("informations du serveur");
     assert_eq!(
         info.server_info.as_ref().map(|i| i.name.as_str()),
@@ -133,7 +148,7 @@ async fn initialize_and_tool_list() {
 
 #[tokio::test]
 async fn search_is_compact_and_flags_untrusted_content() {
-    let (c, _) = connect().await;
+    let (c, _db) = connect().await;
     let (r, text) = call(&c, "search_emails", json!({"query": "budg"})).await;
     assert_ne!(r.is_error, Some(true));
     assert!(
@@ -175,7 +190,7 @@ async fn search_is_compact_and_flags_untrusted_content() {
 
 #[tokio::test]
 async fn get_thread_truncates_and_hides_attachment_paths() {
-    let (c, _) = connect().await;
+    let (c, _db) = connect().await;
     let (_, text) = call(&c, "get_thread", json!({"thread_id": 2})).await;
     assert!(text.contains("facture.pdf") && text.contains("application/pdf"));
     assert!(!text.contains("/secret"), "jamais de chemin disque");
@@ -213,7 +228,7 @@ async fn get_thread_truncates_and_hides_attachment_paths() {
 
 #[tokio::test]
 async fn summarize_strips_quotes_and_orders_chronologically() {
-    let (c, _) = connect().await;
+    let (c, _db) = connect().await;
     let (_, text) = call(&c, "summarize_thread", json!({"thread_id": 1})).await;
     assert!(text.contains("2 message(s)"));
     assert!(text.contains("À 10h ?") && text.contains("Oui, demain."));
@@ -229,7 +244,7 @@ async fn summarize_strips_quotes_and_orders_chronologically() {
 
 #[tokio::test]
 async fn accounts_and_folders() {
-    let (c, _) = connect().await;
+    let (c, _db) = connect().await;
     let (_, acc) = call(&c, "list_accounts", json!({})).await;
     assert!(acc.contains("me@x.fr") && !acc.contains("imap_host") && !acc.contains("imapHost"));
     let (_, f) = call(&c, "list_folders", json!({})).await;
@@ -239,7 +254,7 @@ async fn accounts_and_folders() {
 /// Les paramètres invalides sont refusés par le SDK (schéma de l'outil) avant d'atteindre notre code.
 #[tokio::test]
 async fn invalid_calls_never_reach_a_tool() {
-    let (c, _) = connect().await;
+    let (c, _db) = connect().await;
     for (name, arguments) in [
         ("nope", json!({})),
         ("search_emails", json!({})), // `query` manquant
@@ -269,7 +284,7 @@ async fn invalid_calls_never_reach_a_tool() {
 /// Aucun outil n'écrit : même avec des arguments hostiles, la base ne change pas (ouverte en lecture seule).
 #[tokio::test]
 async fn hostile_arguments_never_write() {
-    let (c, path) = connect().await;
+    let (c, db) = connect().await;
     for q in [
         "'; DELETE FROM messages; --",
         "\"\" OR 1=1",
@@ -280,17 +295,18 @@ async fn hostile_arguments_never_write() {
     ] {
         let _ = call(&c, "search_emails", json!({"query": q})).await;
     }
-    let ro = open_readonly(&path).await.unwrap();
+    let ro = open_readonly(&db.path()).await.unwrap();
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
         .fetch_one(&ro)
         .await
         .unwrap();
-    assert_eq!(n, 4);
+    assert_eq!(n, 5);
 }
 
 #[tokio::test]
 async fn database_is_read_only() {
-    let path = database().await;
+    let db = database().await;
+    let path = db.path();
     let ro = open_readonly(&path).await.unwrap();
     let err = sqlx::query("DELETE FROM messages")
         .execute(&ro)
@@ -301,4 +317,42 @@ async fn database_is_read_only() {
         .await
         .unwrap_err()
         .contains("not found"));
+}
+
+/// `--account` : l'agent ne voit que ce compte ; les autres n'existent pas pour lui (liste, dossiers, recherche, lecture).
+#[tokio::test]
+async fn restricted_server_hides_other_accounts() {
+    let (c, _db) = connect_as(Some("a")).await;
+    let (_, accounts) = call(&c, "list_accounts", json!({})).await;
+    assert!(
+        accounts.contains("me@x.fr") && !accounts.contains("autre@x.fr"),
+        "{accounts}"
+    );
+    let (_, folders) = call(&c, "list_folders", json!({})).await;
+    assert!(!folders.contains("\"b\""), "{folders}");
+    // Une recherche sans filtre reste dans le compte autorisé.
+    let (_, found) = call(&c, "search_emails", json!({"query": "confidentiel"})).await;
+    assert!(
+        found.contains("\"count\":0") || found.contains("\"count\": 0"),
+        "{found}"
+    );
+    // Demander explicitement un autre compte, ou lire sa conversation : refusé comme inexistant.
+    for (tool, a) in [
+        (
+            "search_emails",
+            json!({"query": "confidentiel", "account_id": "b"}),
+        ),
+        ("list_folders", json!({"account_id": "b"})),
+        ("get_thread", json!({"thread_id": 3})),
+        ("summarize_thread", json!({"thread_id": 3})),
+    ] {
+        let (r, text) = call(&c, tool, a).await;
+        assert_eq!(r.is_error, Some(true), "{tool} : {text}");
+        assert!(!text.contains("confidentiel"), "{tool} : {text}");
+    }
+    // Sans restriction, le même contenu est lisible.
+    let (open, _db2) = connect().await;
+    let (r, text) = call(&open, "get_thread", json!({"thread_id": 3})).await;
+    assert_ne!(r.is_error, Some(true));
+    assert!(text.contains("confidentiel"));
 }

@@ -23,5 +23,6 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util"] }
 
 [dev-dependencies]
+tempfile = "3"
 rmcp = { version = "3.9", default-features = false, features = ["client", "server", "macros", "schemars", "transport-io", "transport-async-rw"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }

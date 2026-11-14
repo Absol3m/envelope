@@ -32,6 +32,16 @@ pub async fn open_readonly(path: &Path) -> Result<SqlitePool, String> {
         .map_err(|e| format!("ouverture de {} : {e}", path.display()))
 }
 
+/// Identifiant du compte désigné par `--account` : son identifiant ou son adresse (casse ignorée).
+pub async fn resolve_account(pool: &SqlitePool, key: &str) -> Option<String> {
+    sqlx::query_scalar("SELECT id FROM accounts WHERE id = ?1 OR lower(email) = lower(?1)")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+}
+
 /// Le verrouillage de l'application est-il actif ? (réglage `lock.method` ≠ `off`). Le serveur MCP lit le fichier de
 /// la base directement, sans passer par l'application : il ne connaît pas l'état « verrouillé » et ne peut pas
 /// l'imposer. Il refuse donc de démarrer tant qu'un verrouillage est configuré, sauf demande explicite.

@@ -91,6 +91,7 @@ claude mcp add envelope -- /path/to/envelope-mcp   # add --db PATH (or set ENVEL
 
 - **Read-only**: no tool modifies the database or sends mail.
 - **Prompt-injection aware**: email content is always flagged to the agent as untrusted input.
+- **One account only, if you want**: `--account <id or address>` hides every other account from the agent.
 - **Respects the app lock**: it refuses to start while Envelope is locked, unless you pass `--allow-locked`.
 
 Shipping `envelope-mcp` inside the installers is tracked in [#21](https://github.com/Absol3m/envelope/issues/21).

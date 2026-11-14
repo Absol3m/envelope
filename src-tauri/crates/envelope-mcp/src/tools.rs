@@ -43,6 +43,8 @@ const SUMMARY_TOTAL_BYTES: usize = 12_000;
 #[derive(Clone)]
 pub struct EnvelopeTools {
     pool: SqlitePool,
+    /// `--account` : le seul compte que l'agent voit (les autres n'existent pas pour lui).
+    account: Option<String>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -50,7 +52,27 @@ impl EnvelopeTools {
     pub fn new(pool: SqlitePool) -> Self {
         Self {
             pool,
+            account: None,
             tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Limite tous les outils à un compte.
+    pub fn scoped_to(mut self, account_id: String) -> Self {
+        self.account = Some(account_id);
+        self
+    }
+
+    /// Compte à interroger : celui demandé, forcé au compte autorisé quand le serveur est limité ; un autre compte
+    /// est refusé comme s'il n'existait pas.
+    fn scope(&self, requested: Option<&str>) -> Result<Option<String>, CallToolResult> {
+        match (&self.account, requested) {
+            (None, r) => Ok(r.map(str::to_owned)),
+            (Some(a), None) => Ok(Some(a.clone())),
+            (Some(a), Some(r)) if r == a => Ok(Some(a.clone())),
+            _ => Err(tool_error(
+                "unknown account (see list_accounts)".to_string(),
+            )),
         }
     }
 }
@@ -253,6 +275,8 @@ impl EnvelopeTools {
         thread::get_thread(&self.pool, id, body_chars)
             .await
             .map_err(db_error)?
+            // Une conversation d'un autre compte : même réponse que si elle n'existait pas.
+            .filter(|t| self.account.as_ref().is_none_or(|a| *a == t.account_id))
             .ok_or_else(|| tool_error(format!("conversation {id} not found (see search_emails)")))
     }
 }
@@ -272,7 +296,10 @@ impl EnvelopeTools {
     )]
     async fn list_accounts(&self, _: Parameters<NoArgs>) -> Result<CallToolResult, McpError> {
         Ok(match thread::list_accounts(&self.pool).await {
-            Ok(accounts) => json_result(&accounts),
+            Ok(mut accounts) => {
+                accounts.retain(|a| self.account.as_ref().is_none_or(|id| *id == a.id));
+                json_result(&accounts)
+            }
             Err(e) => db_error(e),
         })
     }
@@ -292,8 +319,12 @@ impl EnvelopeTools {
         &self,
         Parameters(args): Parameters<FoldersArgs>,
     ) -> Result<CallToolResult, McpError> {
+        let account = match self.scope(args.account_id.as_deref()) {
+            Ok(a) => a,
+            Err(e) => return Ok(e),
+        };
         Ok(
-            match search::list_folders(&self.pool, args.account_id.as_deref()).await {
+            match search::list_folders(&self.pool, account.as_deref()).await {
                 Ok(folders) => json_result(&folders),
                 Err(e) => db_error(e),
             },
@@ -316,8 +347,12 @@ impl EnvelopeTools {
         Parameters(args): Parameters<SearchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let page = Page::new(args.limit, None, 20);
+        let account = match self.scope(args.account_id.as_deref()) {
+            Ok(a) => a,
+            Err(e) => return Ok(e),
+        };
         Ok(
-            match search::search(&self.pool, &args.query, args.account_id.as_deref(), page).await {
+            match search::search(&self.pool, &args.query, account.as_deref(), page).await {
                 Ok(rows) => mail_result(
                     json!({"count": rows.len(), "results": rows.iter().map(summary_json).collect::<Vec<_>>()}),
                 ),

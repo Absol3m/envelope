@@ -7,7 +7,7 @@
 - Mesure de la liste (DOM, mémoire JS, défilement) : `pnpm dev --port 5199` puis `node scripts/bench-list.mjs 10000` (Edge ; mode `?bench=N`, voir `src/dev.ts`). Démarrage et mémoire de l'app construite (macOS) : `pnpm tauri build --bundles app` puis `scripts/bench-startup.sh <Envelope.app> <base.db>`. Perf du moteur : `cargo run --release --example seed_local -- <db> 20000` (avec `CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true`).
 - Base d'essai en dev : `ENVELOPE_DATA_DIR=<dossier> [ENVELOPE_NO_SYNC=1] pnpm tauri dev` (builds debug uniquement ; ne pas changer `HOME` : le trousseau du système en dépend) ; `cargo run --example seed_photos -- <dossier> <images>` y dépose une conversation avec images jointes.
 - Essai IMAP réel (APPEND, doublon, quota) : `scripts/imap-test-server.sh start` (Dovecot dans Docker, sans TLS) puis `ENVELOPE_TEST_IMAP=127.0.0.1:3143 cargo test -p envelope -- --ignored` (dans src-tauri/), `stop` ensuite.
-- Serveur MCP : `cargo run -p envelope-mcp -- --db <chemin>` (stdio ; lecture seule)
+- Serveur MCP : `cargo run -p envelope-mcp -- --db <chemin> [--account <id|adresse>]` (stdio ; lecture seule ; `--account` n'expose qu'un compte à l'agent)
 
 ## Workflow
 - Après chaque développement (fonctionnalité, correctif, refactor), lancer le skill `simplify` sur les changements avant de conclure, puis relancer les vérifications ci-dessus.

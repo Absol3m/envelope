@@ -21,7 +21,8 @@ pub struct AccountSummary {
     pub last_sync_at: Option<String>,
 }
 
-/// Comptes, sans configuration serveur ni secret.
+/// Comptes, sans configuration serveur ni secret. Projection réduite voulue, distincte de `mail::account::list` de l'application
+/// (serveurs, identités, état des copies) : le serveur MCP n'a pas à voir ce qui n'aide pas un agent.
 pub async fn list_accounts(pool: &SqlitePool) -> Result<Vec<AccountSummary>> {
     sqlx::query_as("SELECT id, email, display_name, provider, sync_status, last_sync_at FROM accounts ORDER BY created_at")
         .fetch_all(pool)
