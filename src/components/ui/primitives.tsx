@@ -128,3 +128,14 @@ export function DialogFrame({ open = true, onOpenChange, className, dim = "bg-bl
     </Dialog.Root>
   );
 }
+
+/** Bloc de réglages : titre, aide facultative, contenu. */
+export function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <section className="mb-7">
+      <h3 className="text-[13px] font-semibold">{title}</h3>
+      {hint && <p className="mt-0.5 text-[12.5px] text-muted">{hint}</p>}
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}

@@ -249,6 +249,7 @@ const find = (id: number) => {
 
 export const demoBackend: Backend = {
   demo: true,
+  can: { manageAccounts: false, serverDrafts: false },
   listAccounts: () => delay(structuredClone(ACCOUNTS), 60),
   listFolders: () => delay(folders(), 60),
   listThreads: (q) => delay(listThreads(q)),

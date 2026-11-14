@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Backend, OutgoingMessage } from "../api";
+import { FULL_CAPABILITIES, type Backend, OutgoingMessage } from "../api";
 import { draftFromQueued, emptyDraft, scheduleOptions } from "../compose";
 import { useComposer } from "../composer";
 import { demoBackend } from "../mock";
@@ -13,7 +13,7 @@ const queued: OutgoingMessage = { to: ["Bob <bob@x.fr>"], cc: [], bcc: [], subje
 beforeEach(() => {
   scheduleSend = vi.fn(() => Promise.resolve(42));
   cancelScheduled = vi.fn(() => Promise.resolve(queued));
-  useMail.setState({ backend: { ...demoBackend, demo: false, scheduleSend, cancelScheduled, listScheduled: () => Promise.resolve([]) } as Backend, toasts: [] });
+  useMail.setState({ backend: { ...demoBackend, demo: false, can: FULL_CAPABILITIES, scheduleSend, cancelScheduled, listScheduled: () => Promise.resolve([]) } as Backend, toasts: [] });
   useComposer.setState({ draft: { ...emptyDraft("a"), to: [{ address: "bob@x.fr", name: null }], subject: "Devis", html: "<p>Bonjour</p>" } });
 });
 

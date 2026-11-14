@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Backend, ThreadSummary } from "../api";
+import { FULL_CAPABILITIES, type Backend, ThreadSummary } from "../api";
 import { followupOptions } from "../compose";
 import { demoBackend } from "../mock";
 import { useMail } from "../store";
@@ -13,7 +13,7 @@ beforeEach(() => {
   setReminder = vi.fn(() => Promise.resolve());
   clearReminder = vi.fn(() => Promise.resolve());
   useMail.setState({
-    backend: { ...demoBackend, demo: false, setReminder, clearReminder, listFolders: () => Promise.resolve([]) } as Backend,
+    backend: { ...demoBackend, demo: false, can: FULL_CAPABILITIES, setReminder, clearReminder, listFolders: () => Promise.resolve([]) } as Backend,
     threads: [thread(1), thread(2), thread(3, { reminderKind: "followup", reminderDue: 5, reminderFired: 9 })],
     selectedId: null, toasts: [], view: { kind: "role", role: "inbox" },
   });

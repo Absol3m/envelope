@@ -343,7 +343,7 @@ export const useMail = create<State>((set, get) => {
       const b = get().backend;
       try {
         const accounts = await b.listAccounts();
-        set({ accounts, needsOnboarding: !b.demo && accounts.length === 0 });
+        set({ accounts, needsOnboarding: b.can.manageAccounts && accounts.length === 0 });
       } catch { /* conservé */ }
       await loadFolders();
       await fetchThreads(true, opts?.silent);
@@ -358,6 +358,7 @@ export const useMail = create<State>((set, get) => {
     },
     async unlocked() {
       set({ lock: await get().backend.lockStatus(), threadsLoading: true });
+      // Démarrage, pas une permission : on relance le mode en cours (voir `Backend.demo`).
       await (get().backend.demo ? get().enterDemo() : get().init());
     },
     setScheduledOpen: (scheduledOpen) => set({ scheduledOpen }),

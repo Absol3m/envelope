@@ -109,7 +109,7 @@ function deleteFromServer(id: string) {
 async function saveToServer(draft: Draft) {
   const backend = useMail.getState().backend;
   const sig = signature(draft);
-  if (!serverDraftsEnabled() || backend.demo || isBlank(draft) || lastSig.get(draft.id) === sig) return;
+  if (!serverDraftsEnabled() || !backend.can.serverDrafts || isBlank(draft) || lastSig.get(draft.id) === sig) return;
   if (saving) {
     waiting = draft;
     return;

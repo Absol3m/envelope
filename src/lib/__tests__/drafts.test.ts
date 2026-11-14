@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Backend, DraftData } from "../api";
+import { FULL_CAPABILITIES, type Backend, DraftData } from "../api";
 import { emptyDraft } from "../compose";
 import { SAVE_DELAY_MS, setServerDrafts, useComposer } from "../composer";
 import { demoBackend } from "../mock";
@@ -16,7 +16,7 @@ let release: (() => void) | null;
 function fakeBackend(opts: { hold?: boolean; remote?: DraftData } = {}) {
   saveDraft = vi.fn(() => (opts.hold ? new Promise<void>((r) => { release = r; }) : Promise.resolve()));
   deleteDraft = vi.fn(() => Promise.resolve());
-  useMail.setState({ backend: { ...demoBackend, demo: false, saveDraft, deleteDraft, openDraft: () => Promise.resolve(opts.remote!) } as Backend });
+  useMail.setState({ backend: { ...demoBackend, demo: false, can: FULL_CAPABILITIES, saveDraft, deleteDraft, openDraft: () => Promise.resolve(opts.remote!) } as Backend });
 }
 const open = (over: Partial<ReturnType<typeof emptyDraft>> = {}) => {
   const id = `brouillon-${++n}`;

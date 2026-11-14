@@ -72,8 +72,15 @@ import type { ThreadSummary } from "./bindings/ThreadSummary";
 export type ThreadQuery = Partial<ThreadQueryFull>;
 
 /** Tout ce dont l'interface a besoin du « serveur » : l'implémentation réelle (Tauri) ou la démo. */
+/** Ce qu'une implémentation du `Backend` sait faire (la démo : rien de ce qui touche à un vrai serveur). */
+export interface Capabilities { manageAccounts: boolean; serverDrafts: boolean }
+export const FULL_CAPABILITIES: Capabilities = { manageAccounts: true, serverDrafts: true };
+
 export interface Backend {
+  /** Boîte de démonstration : sert à l'afficher (badge, bandeau) et à choisir quoi démarrer, pas à décider ce qui est possible (voir `can`). */
   readonly demo: boolean;
+  /** Ce que cette implémentation sait faire : l'interface teste une capacité, pas `demo`, pour tout ce qui n'est ni l'affichage du mode ni le démarrage. */
+  readonly can: Capabilities;
   listAccounts(): Promise<Account[]>;
   listFolders(): Promise<FolderRow[]>;
   listThreads(q: ThreadQuery): Promise<ThreadSummary[]>;
@@ -189,6 +196,7 @@ export const pushNativeTexts = () => {
 
 export const tauriBackend: Backend = {
   demo: false,
+  can: FULL_CAPABILITIES,
   listAccounts: () => invoke("list_accounts"),
   listFolders: () => invoke("list_folders", {}),
   listThreads: (query) => invoke("list_threads", { query }),

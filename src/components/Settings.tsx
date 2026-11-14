@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { Bot, Check, Download, Filter, Copy, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { LANGUAGES, parseLangPref, setLanguage, type LangPref } from "@/lib/i18n";
 import { pref } from "@/lib/pref";
@@ -19,50 +19,14 @@ import { ShortcutList } from "./Shortcuts";
 import { AddAccountForm } from "./AddAccountForm";
 import { RulesPanel } from "./RulesPanel";
 import { isMac, isWindows, settingsLabel } from "@/lib/platform";
-import { Avatar, btnGhost, btnPrimary, DialogFrame, IconButton, inputCls, Spinner } from "./ui/primitives";
+import { Segmented, Switch } from "./ui/controls";
+import { Avatar, btnGhost, btnPrimary, DialogFrame, IconButton, inputCls, Section, Spinner } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
 import { describeStored } from "@/lib/backendError";
 
 const tab = (id: SettingsTab, icon: ComponentType<{ size?: number }>) => ({ id, icon, get label() { return tr(`settings:tabs.${id}`); } });
 const TABS = [tab("accounts", UserRound), tab("rules", Filter), tab("security", ShieldCheck), tab("agent", Bot), tab("appearance", Palette), tab("shortcuts", Keyboard), tab("about", Info)];
 
-
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <section className="mb-7">
-      <h3 className="text-[13px] font-semibold">{title}</h3>
-      {hint && <p className="mt-0.5 text-[12.5px] text-muted">{hint}</p>}
-      <div className="mt-3">{children}</div>
-    </section>
-  );
-}
-
-function Segmented<T extends string>({ value, onChange, options }: { value: T; onChange(v: T): void; options: { value: T; label: string; icon?: ComponentType<{ size?: number }> }[] }) {
-  return (
-    <div role="radiogroup" className="inline-flex rounded-lg bg-hover p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          role="radio"
-          aria-checked={value === o.value}
-          onClick={() => onChange(o.value)}
-          className={cn("press flex h-8 items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium", value === o.value ? "bg-bg shadow-card" : "text-muted hover:text-fg")}
-        >
-          {o.icon && <o.icon size={14} />}
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Switch({ checked, onChange, label }: { checked: boolean; onChange(v: boolean): void; label: string }) {
-  return (
-    <button role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} className={cn("relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors", checked ? "bg-accent" : "bg-active")}>
-      <span className={cn("absolute top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-transform", checked ? "translate-x-[18px]" : "translate-x-[2px]")} />
-    </button>
-  );
-}
 
 function CopyButton({ text, label = tr("settings:copy") }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -219,10 +183,10 @@ function AccountsPanel() {
                 {a.pendingCopies > 0 && <p className="text-[11.5px] text-warn" title={describeStored(a.pendingCopyError) ?? undefined}>{tr("settings:pendingCopies", { count: a.pendingCopies })}</p>}
               </div>
               {a.authKind === "oauth2" && a.syncStatus === "error" && (
-                <button className={btnGhost} disabled={backend.demo} onClick={() => void backend.reconnectOAuthAccount(a.id).then(() => toast({ message: tr("settings:reconnected") })).catch((e) => toast({ message: String(e) }))}>{tr("settings:reconnect")}</button>
+                <button className={btnGhost} disabled={!backend.can.manageAccounts} onClick={() => void backend.reconnectOAuthAccount(a.id).then(() => toast({ message: tr("settings:reconnected") })).catch((e) => toast({ message: String(e) }))}>{tr("settings:reconnect")}</button>
               )}
               <IconButton label={tr("settings:sync")} onClick={() => void backend.syncNow(a.id).then(() => toast({ message: tr("settings:syncStarted") }))}><RefreshCw size={15} /></IconButton>
-              <IconButton label={tr("settings:removeAccount")} disabled={backend.demo || removing !== null} onClick={() => void remove(a.id, a.email)}><Trash2 size={15} /></IconButton>
+              <IconButton label={tr("settings:removeAccount")} disabled={!backend.can.manageAccounts || removing !== null} onClick={() => void remove(a.id, a.email)}><Trash2 size={15} /></IconButton>
             </li>
           ))}
           {accounts.length === 0 && <li className="px-3.5 py-6 text-center text-[13px] text-muted">{tr("settings:noAccounts")}</li>}
@@ -253,7 +217,7 @@ function AccountsPanel() {
         </Section>
       )}
 
-      {!backend.demo && (
+      {backend.can.manageAccounts && (
         <Section title={tr("settings:addAccount")} hint={tr("settings:addAccountHint")}>
           <AddAccountForm />
         </Section>
