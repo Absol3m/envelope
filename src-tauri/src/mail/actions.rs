@@ -12,7 +12,7 @@ use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::error::{AppError, Result};
 use crate::mail::imap::ImapSession;
-use crate::mail::{account, imap, ingest};
+use crate::mail::{account, imap, ingest, sessions};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Action {
@@ -149,9 +149,7 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
         if account_id == account::LOCAL_ID {
             continue; // dossiers locaux : pas de serveur, la base suffit
         }
-        let acct = account::get(pool, account_id).await?;
-        let cred = account::resolve_credential(&acct).await?;
-        let mut session = imap::connect(&acct, &cred).await?;
+        let mut session = sessions::acquire(pool, account_id).await?;
         for (path, uids) in folders {
             let set = uids
                 .iter()
@@ -160,7 +158,7 @@ pub async fn apply(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<
                 .join(",");
             propagate(&mut session, pool, account_id, path, &set, action).await?;
         }
-        let _ = session.logout().await;
+        session.release();
     }
     apply_local(pool, thread_id, &targets, action).await?;
     Ok(accounts)
@@ -329,15 +327,13 @@ pub async fn empty_folder(pool: &SqlitePool, folder_id: i64) -> Result<()> {
     .fetch_all(pool)
     .await?;
 
-    let acct = account::get(pool, &account_id).await?;
-    let cred = account::resolve_credential(&acct).await?;
-    let mut session = imap::connect(&acct, &cred).await?;
+    let mut session = sessions::acquire(pool, &account_id).await?;
     let status = session.select(&path).await?;
     if status.exists > 0 {
         store_flag(&mut session, "1:*", "\\Deleted", true).await?;
         expunge(&mut session, "1:*").await?;
     }
-    let _ = session.logout().await;
+    session.release();
 
     sqlx::query("DELETE FROM messages WHERE folder_id = ?")
         .bind(folder_id)

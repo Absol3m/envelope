@@ -20,7 +20,7 @@ use sqlx::SqlitePool;
 use crate::error::{AppError, Result};
 use crate::mail::account::{Account, Credential};
 use crate::mail::smtp::{self, OutgoingMessage};
-use crate::mail::{actions, imap, ingest, rawstore};
+use crate::mail::{actions, imap, ingest, rawstore, sessions};
 use envelope_core::role::FolderRole;
 
 /// Version d'un brouillon connue de la base (donc déjà synchronisée depuis le serveur).
@@ -126,7 +126,7 @@ pub async fn save(
     // Versions connues avant le dépôt, pour ne jamais supprimer la nouvelle.
     let known = copies(pool, &account.id, draft_id).await?;
     let last = recorded(pool, &account.id, draft_id).await?;
-    let mut session = imap::connect(account, cred).await?;
+    let mut session = sessions::acquire_with(account, cred).await?;
     let result = async {
         let path = imap::find_or_create(&mut session, FolderRole::Drafts, "Drafts").await?;
         let uid_validity = session.select(&path).await?.uid_validity.map(i64::from);
@@ -158,7 +158,9 @@ pub async fn save(
         remove_versions(pool, &mut session, &server, &known).await
     }
     .await;
-    let _ = session.logout().await;
+    if result.is_ok() {
+        session.release();
+    }
     result
 }
 
@@ -193,7 +195,7 @@ pub async fn remove(
     if known.is_empty() && last.is_none() {
         return Ok(());
     }
-    let mut session = imap::connect(account, cred).await?;
+    let mut session = sessions::acquire_with(account, cred).await?;
     let result = async {
         // La validité du dossier se lit en le sélectionnant : un UID mémorisé d'avant un changement ne vaut plus rien.
         let (path, uid_validity) = match &last {
@@ -213,7 +215,9 @@ pub async fn remove(
         Ok(())
     }
     .await;
-    let _ = session.logout().await;
+    if result.is_ok() {
+        session.release();
+    }
     result
 }
 

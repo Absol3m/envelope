@@ -43,6 +43,7 @@ pub mod oauth;
 pub mod rawstore;
 pub mod secrets;
 pub mod sentcopy;
+pub mod sessions;
 pub mod smtp;
 pub mod sync;
 pub mod unsubscribe;

@@ -100,6 +100,7 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }  # application factice : test de la barrière de verrouillage
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }  # certificat de test (STARTTLS)
+tokio = { version = "1", features = ["test-util"] }  # horloge simulée (expiration des sessions IMAP gardées)
 
 # Authentification native de l'utilisateur : Touch ID / mot de passe du Mac, Windows Hello. (Linux : pas de
 # dispositif commun sans règle polkit installée en administrateur → mot de passe d'application.)

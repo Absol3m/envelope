@@ -10,7 +10,7 @@ use sqlx::SqlitePool;
 use crate::error::{AppError, Result};
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::secrets::{self, Secret};
-use crate::mail::{imap, smtp};
+use crate::mail::{imap, sessions, smtp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[serde(rename_all = "lowercase")]
@@ -629,6 +629,7 @@ pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
 /// Supprime un compte : sa ligne (et ce qui en dépend) puis ses secrets du trousseau.
 pub async fn remove(pool: &SqlitePool, id: &str) -> Result<()> {
     delete(pool, id).await?;
+    sessions::forget(id);
     secrets::delete(id).await
 }
 

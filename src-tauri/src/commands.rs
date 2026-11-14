@@ -15,6 +15,7 @@ use crate::mail::mbox;
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::secrets::{self, Secret};
 use crate::mail::sentcopy;
+use crate::mail::sessions;
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
 use crate::picks;
@@ -81,6 +82,7 @@ pub async fn reset_app(
     }
     for a in account::list(&state.db).await? {
         state.sync.stop(&a.id);
+        sessions::forget(&a.id);
         secrets::delete(&a.id).await?;
     }
     lock.reset(&state.db).await?;
@@ -200,6 +202,7 @@ pub async fn reconnect_oauth_account(
     })?;
     let tokens = authorize_in_browser(&app, provider, &acc.email).await?;
     secrets::store(&id, Secret::OAuth(tokens)).await?;
+    sessions::forget(&id); // la session gardée date de l'ancienne autorisation
     state.sync.trigger(&id);
     Ok(())
 }

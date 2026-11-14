@@ -16,9 +16,9 @@ use futures::TryStreamExt;
 use sqlx::SqlitePool;
 
 use crate::error::{AppError, Result};
-use crate::mail::account::{self, LOCAL_ID};
+use crate::mail::account::LOCAL_ID;
 use crate::mail::actions;
-use crate::mail::{imap, ingest, rawstore};
+use crate::mail::{imap, ingest, rawstore, sessions};
 
 const MAX_NAME: usize = 80;
 
@@ -180,9 +180,7 @@ async fn fetch_missing_raw(pool: &SqlitePool, raw_dir: &Path, rows: &mut [Source
             .push(r.uid);
     }
     for ((account_id, path), uids) in wanted {
-        let acct = account::get(pool, &account_id).await?;
-        let cred = account::resolve_credential(&acct).await?;
-        let mut session = imap::connect(&acct, &cred).await?;
+        let mut session = sessions::acquire(pool, &account_id).await?;
         session.select(&path).await?;
         let set = imap::uid_set(&uids);
         let mut hashes: HashMap<i64, String> = HashMap::new();
@@ -194,7 +192,7 @@ async fn fetch_missing_raw(pool: &SqlitePool, raw_dir: &Path, rows: &mut [Source
                 }
             }
         }
-        let _ = session.logout().await;
+        session.release();
         for r in rows
             .iter_mut()
             .filter(|r| r.account_id == account_id && r.path == path)
@@ -348,9 +346,7 @@ pub async fn archive(
             .push(s.uid);
     }
     for (account_id, folders) in &by_account {
-        let acct = account::get(pool, account_id).await?;
-        let cred = account::resolve_credential(&acct).await?;
-        let mut session = imap::connect(&acct, &cred).await?;
+        let mut session = sessions::acquire(pool, account_id).await?;
         for (path, uids) in folders {
             actions::delete_on_server(&mut session, path, uids)
                 .await
@@ -362,7 +358,7 @@ pub async fn archive(
                     ))
                 })?;
         }
-        let _ = session.logout().await;
+        session.release();
     }
 
     // Phase 3 : le cache.
@@ -440,6 +436,7 @@ pub async fn delete_messages(pool: &SqlitePool, thread_id: i64, folder_id: i64) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mail::account;
     use crate::mail::ingest::{parse, store_with, Flags, MessageLoc, StoreOpts};
     use envelope_core::role::FolderRole;
 

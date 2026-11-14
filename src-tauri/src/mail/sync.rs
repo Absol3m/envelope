@@ -191,6 +191,7 @@ async fn session_loop(ctx: &Ctx, failures: &mut u32) -> Result<()> {
     ctx.set_status(SyncStatus::Syncing, None).await;
     let acct = account::get(&ctx.pool, &ctx.account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
+    // Session longue (IDLE), propre à la synchro : pas celle, courte et partagée, de `sessions`.
     let mut session = imap::connect(&acct, &cred).await?;
     *failures = 0; // connexion OK
     let caps = session.capabilities().await?;

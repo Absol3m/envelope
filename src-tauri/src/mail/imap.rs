@@ -328,7 +328,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod starttls_tests {
+pub(crate) mod starttls_tests {
     use super::*;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpListener;
@@ -355,7 +355,7 @@ mod starttls_tests {
     }
 
     /// Autorité de test : certificat auto-signé pour `localhost`, côté serveur et côté client.
-    fn tls_pair() -> (TlsAcceptor, Arc<ClientConfig>) {
+    pub(crate) fn tls_pair() -> (TlsAcceptor, Arc<ClientConfig>) {
         let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
         let ck = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
         let cert: CertificateDer<'static> = ck.cert.der().clone();
