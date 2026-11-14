@@ -441,6 +441,7 @@ pub async fn delete_messages(pool: &SqlitePool, thread_id: i64, folder_id: i64) 
 mod tests {
     use super::*;
     use crate::mail::ingest::{parse, store_with, Flags, MessageLoc, StoreOpts};
+    use envelope_core::role::FolderRole;
 
     const RAW: &str = "From: Zoé <z@x.fr>\r\nTo: a@x.fr\r\nSubject: Contrat\r\nDate: Mon, 2 Mar 2026 10:00:00 +0000\r\nMessage-ID: <c1@x>\r\n\r\nclauses du contrat\r\n";
 
@@ -524,7 +525,8 @@ mod tests {
         rename_folder(&pool, id, "Clients").await.unwrap();
         assert!(rename_folder(&pool, id, "Archives").await.is_err());
         // Un dossier de compte n'est pas un dossier local.
-        let inbox: i64 = sqlx::query_scalar("SELECT id FROM folders WHERE role = 'inbox'")
+        let inbox: i64 = sqlx::query_scalar("SELECT id FROM folders WHERE role = ?")
+            .bind(FolderRole::Inbox)
             .fetch_one(&pool)
             .await
             .unwrap();

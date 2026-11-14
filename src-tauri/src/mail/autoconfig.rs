@@ -10,6 +10,7 @@ use std::time::Duration;
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Discovered, Security, ServerConfig};
 use crate::mail::oauth::OAuthProvider;
+use envelope_core::kinds::Provider;
 
 const ISPDB: &str = "https://autoconfig.thunderbird.net/v1.1";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -82,13 +83,13 @@ fn with_source(mut d: Discovered, source: &'static str) -> Discovered {
 }
 
 fn builtin(domain: &str, email: &str, source: &'static str) -> Option<Discovered> {
-    let (provider, imap, smtp, oauth) = account::known_provider(domain)?;
+    let (provider, imap, smtp) = account::known_provider(domain)?;
     Some(Discovered {
-        provider: provider.into(),
+        provider,
         imap,
         smtp,
         username: email.into(),
-        oauth,
+        oauth: OAuthProvider::of(provider),
         source,
     })
 }
@@ -180,7 +181,8 @@ pub fn parse_config(xml: &str, domain: &str, email: &str) -> Option<Discovered> 
         .then(|| oauth_provider_for_host(&imap.host))
         .flatten();
     Some(Discovered {
-        provider: "imap".into(),
+        // Un domaine perso hébergé chez Google ou Microsoft est un compte Gmail / Outlook (copie dans « Envoyés »…).
+        provider: oauth.map_or(Provider::Generic, OAuthProvider::provider),
         imap,
         smtp,
         username,

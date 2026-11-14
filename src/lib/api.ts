@@ -9,6 +9,12 @@ import type { ServerDestination } from "./views";
 
 /** Types miroirs des structures Rust (src-tauri/src/commands.rs, crates/envelope-core). */
 /** Adresse d'envoi supplémentaire (alias) d'un compte ; l'authentification reste celle du compte. */
+/** Rôle d'un dossier (`folders.role`, voir `envelope-core/src/role.rs`). */
+export type FolderRole = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "all" | "flagged";
+
+/** Fournisseur d'un compte (`accounts.provider`, voir `envelope-core/src/kinds.rs`) ; `imap` : serveur générique. */
+export type Provider = "gmail" | "outlook" | "icloud" | "yahoo" | "fastmail" | "infomaniak" | "ovh" | "gandi" | "local" | "imap";
+
 export interface Identity {
   id: number;
   name: string;
@@ -19,7 +25,7 @@ export interface Account {
   id: string;
   email: string;
   displayName: string | null;
-  provider: string;
+  provider: Provider;
   authKind: "password" | "oauth2";
   syncStatus: "idle" | "syncing" | "error";
   syncError: string | null;
@@ -73,7 +79,7 @@ export interface FolderRow {
   accountId: string;
   path: string;
   name: string;
-  role: string | null;
+  role: FolderRole | null;
   unreadCount: number;
   totalCount: number;
 }
@@ -149,7 +155,7 @@ export interface ThreadDetail {
 }
 export interface ThreadQuery {
   folderId?: number;
-  role?: string;
+  role?: FolderRole;
   accountId?: string;
   starredOnly?: boolean;
   unreadOnly?: boolean;
@@ -174,7 +180,7 @@ export interface ServerConfig {
 }
 /** Serveurs détectés pour une adresse (`source` : builtin | autoconfig | ispdb | mx | guess). */
 export interface Detected {
-  provider: string;
+  provider: Provider;
   imap: ServerConfig;
   smtp: ServerConfig;
   username: string;

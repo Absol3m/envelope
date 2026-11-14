@@ -7,6 +7,7 @@
 use std::borrow::Cow;
 
 use envelope_core::addr::{self, mailbox};
+use envelope_core::page::Page;
 use envelope_core::search::{self, MessageSummary};
 use envelope_core::thread::{self, Thread, ThreadMessage};
 use rmcp::handler::server::router::tool::ToolRouter;
@@ -314,9 +315,9 @@ impl EnvelopeTools {
         &self,
         Parameters(args): Parameters<SearchArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let limit = args.limit.unwrap_or(20);
+        let page = Page::new(args.limit, None, 20);
         Ok(
-            match search::search(&self.pool, &args.query, args.account_id.as_deref(), limit).await {
+            match search::search(&self.pool, &args.query, args.account_id.as_deref(), page).await {
                 Ok(rows) => mail_result(
                     json!({"count": rows.len(), "results": rows.iter().map(summary_json).collect::<Vec<_>>()}),
                 ),

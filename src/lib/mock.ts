@@ -287,7 +287,7 @@ export const demoBackend: Backend = {
     const oauth = domain === "gmail.com" ? ("google" as const) : domain === "outlook.com" ? ("microsoft" as const) : null;
     return delay<Detected>(
       oauth
-        ? { provider: oauth, imap: tls(`imap.${domain}`, 993), smtp: tls(`smtp.${domain}`, 465), username: email, oauth, source: "builtin" }
+        ? { provider: oauth === "google" ? "gmail" : "outlook", imap: tls(`imap.${domain}`, 993), smtp: tls(`smtp.${domain}`, 465), username: email, oauth, source: "builtin" }
         : { provider: "imap", imap: tls(`imap.${domain}`, 993), smtp: tls(`smtp.${domain}`, 465), username: email, oauth: null, source: "guess" },
       150,
     );

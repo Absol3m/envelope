@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use envelope_core::role::FolderRole;
 use futures::TryStreamExt;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
@@ -43,12 +44,12 @@ pub enum Destination {
 impl Destination {
     /// Rôles acceptés, par ordre de préférence ; Gmail n'a pas d'archive : « Tous les messages »
     /// en tient lieu.
-    fn roles(self) -> &'static [&'static str] {
+    fn roles(self) -> &'static [FolderRole] {
         match self {
-            Self::Inbox => &["inbox"],
-            Self::Archive => &["archive", "all"],
-            Self::Trash => &["trash"],
-            Self::Junk => &["junk"],
+            Self::Inbox => &[FolderRole::Inbox],
+            Self::Archive => &[FolderRole::Archive, FolderRole::All],
+            Self::Trash => &[FolderRole::Trash],
+            Self::Junk => &[FolderRole::Junk],
         }
     }
 
@@ -87,7 +88,11 @@ async fn targets(pool: &SqlitePool, thread_id: i64, action: Action) -> Result<Ve
         Action::SetStarred(on) => qb.push(" AND m.is_starred <> ").push_bind(on),
         Action::Move { folder_id, .. } => qb.push(" AND m.folder_id = ").push_bind(folder_id),
         Action::Delete { folder_id } => qb
-            .push(" AND f.role IN ('trash','junk') AND m.folder_id = ")
+            .push(" AND f.role IN (")
+            .push_bind(FolderRole::Trash)
+            .push(", ")
+            .push_bind(FolderRole::Junk)
+            .push(") AND m.folder_id = ")
             .push_bind(folder_id),
     };
     qb.push(" ORDER BY m.account_id, f.path, m.uid");
@@ -299,7 +304,7 @@ async fn apply_local(
 
 /// Vide la corbeille ou le spam d'un compte : serveur d'abord, base ensuite.
 pub async fn empty_folder(pool: &SqlitePool, folder_id: i64) -> Result<()> {
-    let (account_id, path, role): (String, String, Option<String>) =
+    let (account_id, path, role): (String, String, Option<FolderRole>) =
         sqlx::query_as("SELECT account_id, path, role FROM folders WHERE id = ?")
             .bind(folder_id)
             .fetch_optional(pool)
@@ -311,7 +316,7 @@ pub async fn empty_folder(pool: &SqlitePool, folder_id: i64) -> Result<()> {
                     id = folder_id
                 ))
             })?;
-    if !matches!(role.as_deref(), Some("trash" | "junk")) {
+    if !matches!(role, Some(FolderRole::Trash | FolderRole::Junk)) {
         return Err(AppError::Invalid(msg!(
             "actions.only_trash_spam",
             "only trash and spam can be emptied"

@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 
+use envelope_core::role::FolderRole;
 use envelope_core::search::{parse_search, push_message_filters, SearchSpec};
 use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
@@ -195,9 +196,10 @@ async fn matches(pool: &SqlitePool, thread_id: i64, spec: &SearchSpec) -> Result
 async fn inbox_folder(pool: &SqlitePool, thread_id: i64) -> Result<Option<i64>> {
     Ok(sqlx::query_scalar(
         "SELECT m.folder_id FROM messages m JOIN folders f ON f.id = m.folder_id \
-         WHERE m.thread_id = ? AND f.role = 'inbox' LIMIT 1",
+         WHERE m.thread_id = ? AND f.role = ? LIMIT 1",
     )
     .bind(thread_id)
+    .bind(FolderRole::Inbox)
     .fetch_optional(pool)
     .await?)
 }
@@ -276,10 +278,11 @@ pub async fn run_recent(pool: &SqlitePool, lock: &tokio::sync::Mutex<()>) -> Res
         let threads: Vec<i64> = sqlx::query_scalar(
             "SELECT t.id FROM threads t WHERE t.account_id = ? AND t.id IN \
              (SELECT m.thread_id FROM messages m JOIN folders f ON f.id = m.folder_id \
-              WHERE f.role = 'inbox' AND m.is_read = 0) \
+              WHERE f.role = ? AND m.is_read = 0) \
              ORDER BY t.last_message_at DESC LIMIT 200",
         )
         .bind(&account)
+        .bind(FolderRole::Inbox)
         .fetch_all(pool)
         .await?;
         total += apply(pool, lock, &account, &threads).await?.len();

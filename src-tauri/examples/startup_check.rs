@@ -7,6 +7,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
+use envelope_core::role::FolderRole;
 use envelope_core::thread::{list_threads, ThreadQuery};
 
 #[tokio::main]
@@ -26,7 +27,7 @@ async fn main() {
     let rows = list_threads(
         &pool,
         &ThreadQuery {
-            role: Some("inbox".into()),
+            role: Some(FolderRole::Inbox),
             limit: Some(100),
             ..Default::default()
         },

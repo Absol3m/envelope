@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
+use envelope_core::role::FolderRole;
 use envelope_core::thread::{list_threads, ThreadQuery};
 
 #[tokio::main]
@@ -42,22 +43,22 @@ async fn main() {
         }
         println!("{label:<46} {best:>8.1} ms  ({rows} lignes)");
     }
-    let q = |query: Option<&str>, role: Option<&str>, offset: i64| ThreadQuery {
-        role: role.map(Into::into),
+    let q = |query: Option<&str>, role: Option<FolderRole>, offset: i64| ThreadQuery {
+        role,
         query: query.map(Into::into),
         offset: Some(offset),
         limit: Some(100),
         ..Default::default()
     };
     time("boîte de réception, page 1", || async {
-        list_threads(&pool, &q(None, Some("inbox"), 0))
+        list_threads(&pool, &q(None, Some(FolderRole::Inbox), 0))
             .await
             .unwrap()
             .len()
     })
     .await;
     time("boîte de réception, page 20", || async {
-        list_threads(&pool, &q(None, Some("inbox"), 2000))
+        list_threads(&pool, &q(None, Some(FolderRole::Inbox), 2000))
             .await
             .unwrap()
             .len()

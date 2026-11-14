@@ -9,6 +9,7 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use envelope_core::kinds::Provider;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -35,18 +36,19 @@ struct ProviderConfig {
 }
 
 impl OAuthProvider {
-    /// Valeur stockée dans `accounts.provider`.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            OAuthProvider::Google => "gmail",
-            OAuthProvider::Microsoft => "outlook",
+    /// Fournisseur OAuth2 d'un compte, s'il en a un (source de vérité : `Provider`, `accounts.provider`).
+    pub fn of(provider: Provider) -> Option<Self> {
+        match provider {
+            Provider::Gmail => Some(Self::Google),
+            Provider::Outlook => Some(Self::Microsoft),
+            _ => None,
         }
     }
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "gmail" | "google" => Some(Self::Google),
-            "outlook" | "microsoft" => Some(Self::Microsoft),
-            _ => None,
+    /// Valeur à stocker dans `accounts.provider`.
+    pub fn provider(self) -> Provider {
+        match self {
+            Self::Google => Provider::Gmail,
+            Self::Microsoft => Provider::Outlook,
         }
     }
     fn config(self) -> ProviderConfig {

@@ -565,6 +565,8 @@ pub async fn refresh_threads(pool: &SqlitePool, ids: &HashSet<i64>) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use envelope_core::page::Page;
+    use envelope_core::role::FolderRole;
     use envelope_core::search;
 
     const MSG1: &str = "From: Alice <alice@example.com>\r\nTo: bob@example.com\r\nSubject: Réunion budget\r\nMessage-ID: <m1@example.com>\r\nDate: Mon, 02 Mar 2026 10:00:00 +0000\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nBonjour Bob, peut-on parler du budget trimestriel ?\r\n";
@@ -583,6 +585,37 @@ mod tests {
         .unwrap()
         .last_insert_rowid();
         (pool, f)
+    }
+
+    /// Dossiers triés par compte, puis rang du rôle (boîte de réception d'abord), puis nom.
+    #[tokio::test]
+    async fn dossiers_tries_par_role_puis_nom() {
+        let pool = crate::db::init_memory().await.unwrap();
+        sqlx::query("INSERT INTO accounts (id,email,username,imap_host,smtp_host) VALUES ('a','a@x.fr','a','i','s')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        for (path, role) in [
+            ("Zèbre", None),
+            ("Trash", Some(FolderRole::Trash)),
+            ("Clients", None),
+            ("Sent", Some(FolderRole::Sent)),
+            ("INBOX", Some(FolderRole::Inbox)),
+        ] {
+            sqlx::query("INSERT INTO folders (account_id,path,name,role) VALUES ('a',?1,?1,?2)")
+                .bind(path)
+                .bind(role)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let folders = search::list_folders(&pool, Some("a")).await.unwrap();
+        assert_eq!(
+            folders.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+            ["INBOX", "Sent", "Trash", "Clients", "Zèbre"]
+        );
+        assert_eq!(folders[0].role, Some(FolderRole::Inbox));
+        assert_eq!(folders[4].role, None);
     }
 
     #[tokio::test]
@@ -673,25 +706,28 @@ mod tests {
 
         // Plein texte : accents ignorés, préfixes.
         assert_eq!(
-            search::search(&pool, "reunion", None, 10)
+            search::search(&pool, "reunion", None, Page::first(10))
                 .await
                 .unwrap()
                 .len(),
             2
         ); // sujet des 2 messages
         assert_eq!(
-            search::search(&pool, "budg", None, 10).await.unwrap().len(),
+            search::search(&pool, "budg", None, Page::first(10))
+                .await
+                .unwrap()
+                .len(),
             2
         );
         assert_eq!(
-            search::search(&pool, "carol", None, 10)
+            search::search(&pool, "carol", None, Page::first(10))
                 .await
                 .unwrap()
                 .len(),
             1
         );
         assert_eq!(
-            search::search(&pool, "\"; DROP TABLE messages; --", None, 10)
+            search::search(&pool, "\"; DROP TABLE messages; --", None, Page::first(10))
                 .await
                 .unwrap()
                 .len(),
@@ -767,7 +803,7 @@ mod tests {
             list_threads(
                 &pool,
                 &ThreadQuery {
-                    role: Some("inbox".into()),
+                    role: Some(FolderRole::Inbox),
                     ..Default::default()
                 }
             )
@@ -780,7 +816,7 @@ mod tests {
             list_threads(
                 &pool,
                 &ThreadQuery {
-                    role: Some("sent".into()),
+                    role: Some(FolderRole::Sent),
                     ..Default::default()
                 }
             )
@@ -1663,7 +1699,7 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
         let found = |q: &'static str| {
             let pool = pool.clone();
             async move {
-                envelope_core::search::search(&pool, q, None, 10)
+                envelope_core::search::search(&pool, q, None, Page::first(10))
                     .await
                     .unwrap()
                     .len()

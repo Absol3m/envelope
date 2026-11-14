@@ -21,6 +21,7 @@ use crate::error::{AppError, Result};
 use crate::mail::account::{Account, Credential};
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::{actions, imap, ingest, rawstore};
+use envelope_core::role::FolderRole;
 
 /// Version d'un brouillon connue de la base (donc déjà synchronisée depuis le serveur).
 #[derive(Debug, sqlx::FromRow)]
@@ -127,7 +128,7 @@ pub async fn save(
     let last = recorded(pool, &account.id, draft_id).await?;
     let mut session = imap::connect(account, cred).await?;
     let result = async {
-        let path = imap::find_or_create(&mut session, "drafts", "Drafts").await?;
+        let path = imap::find_or_create(&mut session, FolderRole::Drafts, "Drafts").await?;
         let uid_validity = session.select(&path).await?.uid_validity.map(i64::from);
         session
             .append(&path, Some("(\\Draft \\Seen)"), None, &raw)
@@ -284,9 +285,10 @@ pub fn parse_draft(raw: &[u8], id: String, account_id: String) -> Result<DraftDa
 pub async fn open(pool: &SqlitePool, raw_dir: &Path, thread_id: i64) -> Result<DraftData> {
     let row: Option<(i64, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT m.id, m.account_id, m.raw_hash, m.draft_id FROM messages m JOIN folders f ON f.id = m.folder_id \
-         WHERE m.thread_id = ? AND f.role = 'drafts' ORDER BY m.date DESC, m.id DESC LIMIT 1",
+         WHERE m.thread_id = ? AND f.role = ? ORDER BY m.date DESC, m.id DESC LIMIT 1",
     )
     .bind(thread_id)
+    .bind(FolderRole::Drafts)
     .fetch_optional(pool)
     .await?;
     let (message_id, account_id, raw_hash, draft_id) = row.ok_or_else(|| {
@@ -320,28 +322,7 @@ mod tests {
     use crate::mail::ingest::{parse, store_with, Flags, MessageLoc, StoreOpts};
 
     fn account() -> Account {
-        Account {
-            id: "a".into(),
-            email: "me@x.fr".into(),
-            display_name: Some("Moi".into()),
-            provider: "imap".into(),
-            auth_kind: "password".into(),
-            username: "me".into(),
-            imap_host: "i".into(),
-            imap_port: 993,
-            imap_security: "tls".into(),
-            smtp_host: "s".into(),
-            smtp_port: 465,
-            smtp_security: "tls".into(),
-            last_sync_at: None,
-            sync_status: "idle".into(),
-            sync_error: None,
-            signature: String::new(),
-            copy_sent: true,
-            pending_copies: 0,
-            pending_copy_error: None,
-            identities: vec![],
-        }
+        Account::fixture()
     }
 
     fn outgoing(draft_id: &str) -> OutgoingMessage {

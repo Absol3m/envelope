@@ -15,6 +15,8 @@ use std::time::{Duration, Instant};
 
 use async_imap::extensions::idle::IdleResponse;
 use async_imap::types::{Fetch, Flag, NameAttribute};
+use envelope_core::kinds::SyncStatus;
+use envelope_core::role::FolderRole;
 use futures::{FutureExt, TryStreamExt};
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
@@ -90,7 +92,7 @@ const MAX_FRESH: usize = 3;
 #[serde(rename_all = "camelCase")]
 struct StatusEvent {
     account_id: String,
-    status: &'static str,
+    status: SyncStatus,
     error: Option<String>,
 }
 
@@ -151,13 +153,9 @@ impl SyncManager {
 }
 
 impl Ctx {
-    async fn set_status(&self, status: &'static str, error: Option<String>) {
-        let _ = sqlx::query(
-            "UPDATE accounts SET sync_status = ?1, sync_error = ?2, \
-             last_sync_at = CASE WHEN ?1 = 'idle' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE last_sync_at END \
-             WHERE id = ?3",
-        )
-        .bind(status).bind(&error).bind(&self.account_id).execute(&self.pool).await;
+    async fn set_status(&self, status: SyncStatus, error: Option<String>) {
+        let _ =
+            account::set_sync_state(&self.pool, &self.account_id, status, error.as_deref()).await;
         let _ = self.app.emit(
             "mail:status",
             StatusEvent {
@@ -176,7 +174,7 @@ async fn run_account(ctx: Ctx) {
             Err(AppError::NotFound(_)) => return, // compte supprimé
             Err(e) => {
                 tracing::warn!(account = %ctx.account_id, "sync interrupted: {e}");
-                ctx.set_status("error", Some(e.to_wire())).await; // codé : le front le traduit à l'affichage
+                ctx.set_status(SyncStatus::Error, Some(e.to_wire())).await; // codé : le front le traduit à l'affichage
             }
             Ok(()) => {}
         }
@@ -190,7 +188,7 @@ async fn run_account(ctx: Ctx) {
 }
 
 async fn session_loop(ctx: &Ctx, failures: &mut u32) -> Result<()> {
-    ctx.set_status("syncing", None).await;
+    ctx.set_status(SyncStatus::Syncing, None).await;
     let acct = account::get(&ctx.pool, &ctx.account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
     let mut session = imap::connect(&acct, &cred).await?;
@@ -203,7 +201,7 @@ async fn session_loop(ctx: &Ctx, failures: &mut u32) -> Result<()> {
     let mut last_full = Instant::now();
     let mut folders = Vec::new();
     loop {
-        ctx.set_status("syncing", None).await;
+        ctx.set_status(SyncStatus::Syncing, None).await;
         // Copies d'envoyés en attente : avant la synchro des dossiers, pour qu'elles apparaissent dans la même passe.
         sentcopy::drain(
             &ctx.app,
@@ -222,7 +220,7 @@ async fn session_loop(ctx: &Ctx, failures: &mut u32) -> Result<()> {
         let mut fresh = Vec::new();
         for f in folders
             .iter()
-            .filter(|f| full || f.role.as_deref() == Some("inbox"))
+            .filter(|f| full || f.role == Some(FolderRole::Inbox))
         {
             new_messages += sync_folder(
                 &mut session,
@@ -253,7 +251,7 @@ async fn session_loop(ctx: &Ctx, failures: &mut u32) -> Result<()> {
         if full {
             last_full = Instant::now();
         }
-        ctx.set_status("idle", None).await;
+        ctx.set_status(SyncStatus::Idle, None).await;
         // Application verrouillée : ni expéditeur ni objet dans l'événement (le nombre suffit à une notification).
         let locked = ctx
             .app
@@ -283,7 +281,7 @@ async fn session_loop(ctx: &Ctx, failures: &mut u32) -> Result<()> {
 
         let inbox = folders
             .iter()
-            .find(|f| f.role.as_deref() == Some("inbox"))
+            .find(|f| f.role == Some(FolderRole::Inbox))
             .map(|f| f.path.clone())
             .unwrap_or_else(|| "INBOX".into());
         let forced;
@@ -334,7 +332,7 @@ async fn polling_wait(mut session: ImapSession, notify: &Notify) -> Result<(Imap
 struct FolderRec {
     id: i64,
     path: String,
-    role: Option<String>,
+    role: Option<FolderRole>,
     uid_validity: Option<i64>,
 }
 
@@ -432,10 +430,12 @@ async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<Fo
     }
     // « Tous les messages » (Gmail) dupliquerait tout : non synchronisé.
     Ok(sqlx::query_as(
-        "SELECT id, path, role, uid_validity FROM folders WHERE account_id = ? AND COALESCE(role,'') <> 'all' \
-         ORDER BY (role = 'inbox') DESC, path",
+        "SELECT id, path, role, uid_validity FROM folders WHERE account_id = ? AND COALESCE(role,'') <> ? \
+         ORDER BY (role = ?) DESC, path",
     )
     .bind(&ctx.account_id)
+    .bind(FolderRole::All)
+    .bind(FolderRole::Inbox)
     .fetch_all(&ctx.pool)
     .await?)
 }
@@ -443,7 +443,7 @@ async fn sync_folder_list(session: &mut ImapSession, ctx: &Ctx) -> Result<Vec<Fo
 /// Synchronise un dossier ; retourne le nombre de nouveaux messages.
 /// Lignes provisoires de « Envoyés » (voir `sentcopy`) : seul ce dossier peut en contenir, inutile d'écrire ailleurs.
 async fn sweep_provisional(ctx: &Ctx, f: &FolderRec, touched: &mut HashSet<i64>) -> Result<()> {
-    if f.role.as_deref() == Some("sent") {
+    if f.role == Some(FolderRole::Sent) {
         touched.extend(sentcopy::sweep(&ctx.pool, f.id).await?);
     }
     Ok(())
@@ -544,7 +544,7 @@ async fn sync_folder(
             };
             // Notifier seulement l'arrivée d'un nouveau message dans la boîte de réception : pas la
             // première synchro (last_uid = 0), qui rapatrie l'historique.
-            if last_uid > 0 && f.role.as_deref() == Some("inbox") && !stored.seen {
+            if last_uid > 0 && f.role == Some(FolderRole::Inbox) && !stored.seen {
                 fresh.push(FreshMail {
                     from: stored.from,
                     subject: stored.subject,
@@ -677,9 +677,10 @@ async fn backfill(session: &mut ImapSession, ctx: &Ctx, folders: &[FolderRec]) -
     let (remaining, total): (i64, i64) = sqlx::query_as(
         "SELECT COALESCE(SUM(MAX(f.total_count - (SELECT COUNT(*) FROM messages m WHERE m.folder_id = f.id), 0)), 0), \
                 COALESCE(SUM(f.total_count), 0) \
-         FROM folders f WHERE f.account_id = ? AND COALESCE(f.role, '') <> 'all'",
+         FROM folders f WHERE f.account_id = ? AND COALESCE(f.role, '') <> ?",
     )
     .bind(&ctx.account_id)
+    .bind(FolderRole::All)
     .fetch_one(&ctx.pool)
     .await?;
     let _ = ctx.app.emit(

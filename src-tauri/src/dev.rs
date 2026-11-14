@@ -15,6 +15,7 @@ use sqlx::SqlitePool;
 
 use crate::error::{AppError, Result};
 use crate::mail::{account, imap};
+use envelope_core::role::FolderRole;
 
 /// 1 pixel PNG (base64) : pièce jointe minuscule mais réelle.
 const PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -102,7 +103,7 @@ pub async fn seed_inbox(db_path: &Path, email: &str) -> Result<usize> {
     let acct = account::get(&pool, &id).await?;
     let cred = account::resolve_credential(&acct).await?;
     let mut session = imap::connect(&acct, &cred).await?;
-    let inbox = imap::find_or_create(&mut session, "inbox", "INBOX").await?;
+    let inbox = imap::find_or_create(&mut session, FolderRole::Inbox, "INBOX").await?;
     let to: Mailbox = acct.email.parse().map_err(invalid)?;
     for seed in SEEDS {
         let raw = build(seed, &to)?;
@@ -470,9 +471,10 @@ pub async fn archive_local_by_subject(data_dir: &Path, subject: &str) -> Result<
     let pool = crate::db::init(&crate::db::db_path(data_dir)).await?;
     let (thread_id, folder_id, title): (i64, i64, String) = sqlx::query_as(
         "SELECT m.thread_id, m.folder_id, m.subject FROM messages m JOIN folders f ON f.id = m.folder_id \
-         WHERE f.role = 'inbox' AND m.thread_id IS NOT NULL AND m.subject LIKE ?1 ESCAPE '\\' ORDER BY m.date DESC LIMIT 1",
+         WHERE f.role = ?2 AND m.thread_id IS NOT NULL AND m.subject LIKE ?1 ESCAPE '\\' ORDER BY m.date DESC LIMIT 1",
     )
     .bind(envelope_core::search::like_contains(subject))
+    .bind(FolderRole::Inbox)
     .fetch_optional(&pool)
     .await?
     .ok_or_else(|| AppError::NotFound((format!("aucun message « {subject} » dans la boîte de réception")).into()))?;

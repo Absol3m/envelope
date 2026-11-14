@@ -3,6 +3,7 @@
 //! Les secrets (mot de passe ou jetons OAuth2) vivent dans le trousseau de l'OS,
 //! sous le service `dev.envelope.app`, clés `<account_id>:password` / `<account_id>:oauth`.
 
+use envelope_core::kinds::{AuthKind, Provider, SyncStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
@@ -13,31 +14,15 @@ const KEYRING_SERVICE: &str = "dev.envelope.app";
 const PASSWORD: &str = "password";
 const OAUTH: &str = "oauth";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum Security {
     /// TLS implicite (IMAP 993, SMTP 465).
     Tls,
     /// Connexion claire puis STARTTLS (SMTP 587).
     Starttls,
     None,
-}
-
-impl Security {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Security::Tls => "tls",
-            Security::Starttls => "starttls",
-            Security::None => "none",
-        }
-    }
-    pub fn parse(s: &str) -> Security {
-        match s {
-            "starttls" => Security::Starttls,
-            "none" => Security::None,
-            _ => Security::Tls,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,17 +49,17 @@ pub struct Account {
     pub id: String,
     pub email: String,
     pub display_name: Option<String>,
-    pub provider: String,
-    pub auth_kind: String,
+    pub provider: Provider,
+    pub auth_kind: AuthKind,
     pub username: String,
     pub imap_host: String,
     pub imap_port: i64,
-    pub imap_security: String,
+    pub imap_security: Security,
     pub smtp_host: String,
     pub smtp_port: i64,
-    pub smtp_security: String,
+    pub smtp_security: Security,
     pub last_sync_at: Option<String>,
-    pub sync_status: String,
+    pub sync_status: SyncStatus,
     pub sync_error: Option<String>,
     pub signature: String,
     /// Déposer une copie des messages envoyés dans « Envoyés » (réglage du compte ; voir `keeps_sent_copy`).
@@ -93,12 +78,42 @@ pub struct Account {
 impl Account {
     /// Le serveur range lui-même un message envoyé dans « Envoyés » (Gmail) : y déposer une copie ferait un doublon.
     pub fn server_files_sent(&self) -> bool {
-        self.provider == "gmail"
+        self.provider.files_sent_itself()
     }
 
     /// Faut-il déposer nous-mêmes une copie de chaque message envoyé : voulu par l'utilisateur, et le serveur ne le fait pas.
     pub fn keeps_sent_copy(&self) -> bool {
         self.copy_sent && !self.server_files_sent()
+    }
+}
+
+#[cfg(test)]
+impl Account {
+    /// Compte de test : mot de passe, serveurs `i` / `s` en TLS, aucun alias ; les essais ajustent ce qui compte
+    /// (`Account { imap_port: 143, ..Account::fixture() }`).
+    pub fn fixture() -> Account {
+        Account {
+            id: "a".into(),
+            email: "me@x.fr".into(),
+            display_name: Some("Moi".into()),
+            provider: Provider::Generic,
+            auth_kind: AuthKind::Password,
+            username: "me".into(),
+            imap_host: "i".into(),
+            imap_port: 993,
+            imap_security: Security::Tls,
+            smtp_host: "s".into(),
+            smtp_port: 465,
+            smtp_security: Security::Tls,
+            last_sync_at: None,
+            sync_status: SyncStatus::Idle,
+            sync_error: None,
+            signature: String::new(),
+            copy_sent: true,
+            pending_copies: 0,
+            pending_copy_error: None,
+            identities: vec![],
+        }
     }
 }
 
@@ -136,7 +151,7 @@ pub struct NewAccount {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Discovered {
-    pub provider: String,
+    pub provider: Provider,
     pub imap: ServerConfig,
     pub smtp: ServerConfig,
     /// Identifiant de connexion IMAP/SMTP (souvent l'adresse complète).
@@ -155,79 +170,61 @@ fn srv(host: &str, port: u16, security: Security) -> ServerConfig {
     }
 }
 
-/// Table de fournisseurs connus : (fournisseur, IMAP, SMTP, OAuth2).
-pub fn known_provider(
-    domain: &str,
-) -> Option<(
-    &'static str,
-    ServerConfig,
-    ServerConfig,
-    Option<OAuthProvider>,
-)> {
+/// Table de fournisseurs connus : (fournisseur, IMAP, SMTP). L'OAuth2 à proposer se déduit du fournisseur
+/// (`OAuthProvider::of`).
+pub fn known_provider(domain: &str) -> Option<(Provider, ServerConfig, ServerConfig)> {
     use Security::{Starttls, Tls};
-    let g = Some(OAuthProvider::Google);
-    let m = Some(OAuthProvider::Microsoft);
     Some(match domain {
         "gmail.com" | "googlemail.com" | "google.com" => (
-            "gmail",
+            Provider::Gmail,
             srv("imap.gmail.com", 993, Tls),
             srv("smtp.gmail.com", 465, Tls),
-            g,
         ),
         "outlook.com" | "hotmail.com" | "hotmail.fr" | "live.com" | "live.fr" | "msn.com" => (
-            "outlook",
+            Provider::Outlook,
             srv("outlook.office365.com", 993, Tls),
             srv("smtp-mail.outlook.com", 587, Starttls),
-            m,
         ),
         "icloud.com" | "me.com" | "mac.com" => (
-            "icloud",
+            Provider::Icloud,
             srv("imap.mail.me.com", 993, Tls),
             srv("smtp.mail.me.com", 587, Starttls),
-            None,
         ),
         "yahoo.com" | "yahoo.fr" => (
-            "yahoo",
+            Provider::Yahoo,
             srv("imap.mail.yahoo.com", 993, Tls),
             srv("smtp.mail.yahoo.com", 465, Tls),
-            None,
         ),
         "fastmail.com" => (
-            "fastmail",
+            Provider::Fastmail,
             srv("imap.fastmail.com", 993, Tls),
             srv("smtp.fastmail.com", 465, Tls),
-            None,
         ),
         "orange.fr" => (
-            "imap",
+            Provider::Generic,
             srv("imap.orange.fr", 993, Tls),
             srv("smtp.orange.fr", 465, Tls),
-            None,
         ),
         "free.fr" => (
-            "imap",
+            Provider::Generic,
             srv("imap.free.fr", 993, Tls),
             srv("smtp.free.fr", 465, Tls),
-            None,
         ),
         // Hébergeurs courants, absents de l'ISPDB : reconnus aussi via le MX d'un domaine perso.
         "infomaniak.com" | "infomaniak.ch" => (
-            "infomaniak",
+            Provider::Infomaniak,
             srv("mail.infomaniak.com", 993, Tls),
             srv("mail.infomaniak.com", 465, Tls),
-            None,
         ),
         "ovh.net" | "ovh.com" => (
-            "ovh",
+            Provider::Ovh,
             srv("ssl0.ovh.net", 993, Tls),
             srv("ssl0.ovh.net", 465, Tls),
-            None,
         ),
         "gandi.net" => (
-            "gandi",
+            Provider::Gandi,
             srv("mail.gandi.net", 993, Tls),
             srv("mail.gandi.net", 465, Tls),
-            None,
         ),
         _ => return None,
     })
@@ -240,7 +237,7 @@ pub fn oauth_servers(provider: OAuthProvider) -> Result<(ServerConfig, ServerCon
         OAuthProvider::Microsoft => "outlook.com",
     };
     known_provider(domain)
-        .map(|(_, imap, smtp, _)| (imap, smtp))
+        .map(|(_, imap, smtp)| (imap, smtp))
         .ok_or_else(|| {
             AppError::Invalid(msg!(
                 "account.no_known_servers",
@@ -253,7 +250,7 @@ pub fn oauth_servers(provider: OAuthProvider) -> Result<(ServerConfig, ServerCon
 /// Dernier recours : `imap.<domaine>` / `smtp.<domaine>`.
 pub fn guess(domain: &str, email: &str) -> Discovered {
     Discovered {
-        provider: "imap".into(),
+        provider: Provider::Generic,
         imap: srv(&format!("imap.{domain}"), 993, Security::Tls),
         smtp: srv(&format!("smtp.{domain}"), 465, Security::Tls),
         username: email.into(),
@@ -327,7 +324,7 @@ pub fn delete_app_secret(kind: &str) {
 
 /// Identifiants d'application OAuth2 (par fournisseur, partagés par tous les comptes).
 fn client_entry(provider: OAuthProvider) -> Result<keyring::Entry> {
-    entry("oauth-client", provider.as_str())
+    entry("oauth-client", provider.provider().as_str())
 }
 pub fn store_client(provider: OAuthProvider, creds: &oauth::ClientCreds) -> Result<()> {
     Ok(client_entry(provider)?.set_password(&serde_json::to_string(creds)?)?)
@@ -371,12 +368,12 @@ pub async fn blocking_keychain<T: Send + 'static>(
 
 /// Résout les identifiants d'un compte (rafraîchit le jeton OAuth2 si besoin).
 pub async fn resolve_credential(account: &Account) -> Result<Credential> {
-    if account.auth_kind == "oauth2" {
-        let provider = OAuthProvider::parse(&account.provider).ok_or_else(|| {
+    if account.auth_kind == AuthKind::OAuth2 {
+        let provider = OAuthProvider::of(account.provider).ok_or_else(|| {
             AppError::Auth(msg!(
                 "oauth.unknown_provider",
                 "unknown OAuth2 provider: {provider}",
-                provider = account.provider
+                provider = account.provider.as_str()
             ))
         })?;
         let access_token = oauth::fresh_access_token(provider, &account.id).await?;
@@ -404,8 +401,8 @@ pub struct NewAccountRow<'a> {
     pub id: &'a str,
     pub email: &'a str,
     pub display_name: Option<&'a str>,
-    pub provider: &'a str,
-    pub auth_kind: &'a str,
+    pub provider: Provider,
+    pub auth_kind: AuthKind,
     pub username: &'a str,
     pub imap: &'a ServerConfig,
     pub smtp: &'a ServerConfig,
@@ -426,10 +423,30 @@ pub async fn insert(pool: &SqlitePool, r: &NewAccountRow<'_>) -> Result<()> {
     .bind(r.username)
     .bind(&imap.host)
     .bind(imap.port as i64)
-    .bind(imap.security.as_str())
+    .bind(imap.security)
     .bind(&smtp.host)
     .bind(smtp.port as i64)
-    .bind(smtp.security.as_str())
+    .bind(smtp.security)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// État de synchro d'un compte (et dernière erreur, codée) ; `Idle` date aussi la dernière synchro réussie.
+pub async fn set_sync_state(
+    pool: &SqlitePool,
+    id: &str,
+    status: SyncStatus,
+    error: Option<&str>,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE accounts SET sync_status = ?1, sync_error = ?2, \
+         last_sync_at = CASE WHEN ?1 = 'idle' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE last_sync_at END \
+         WHERE id = ?3",
+    )
+    .bind(status)
+    .bind(error)
+    .bind(id)
     .execute(pool)
     .await?;
     Ok(())
@@ -643,6 +660,89 @@ mod tests {
             .await
             .unwrap();
         pool
+    }
+
+    /// Les colonnes fermées se relisent en types forts (compte local compris) ; une valeur inconnue est refusée à
+    /// l'écriture (déclencheurs de la migration 0028) au lieu de casser la relecture.
+    #[tokio::test]
+    async fn colonnes_fermees_typees_et_protegees() {
+        let pool = crate::db::init_memory().await.unwrap();
+        let (imap, smtp) = oauth_servers(OAuthProvider::Google).unwrap();
+        insert(
+            &pool,
+            &NewAccountRow {
+                id: "g",
+                email: "me@gmail.com",
+                display_name: None,
+                provider: Provider::Gmail,
+                auth_kind: AuthKind::OAuth2,
+                username: "me@gmail.com",
+                imap: &imap,
+                smtp: &smtp,
+            },
+        )
+        .await
+        .unwrap();
+        let g = get(&pool, "g").await.unwrap();
+        assert_eq!(
+            (
+                g.provider,
+                g.auth_kind,
+                g.sync_status,
+                g.imap_security,
+                g.smtp_security
+            ),
+            (
+                Provider::Gmail,
+                AuthKind::OAuth2,
+                SyncStatus::Idle,
+                Security::Tls,
+                Security::Tls
+            )
+        );
+        assert!(g.server_files_sent() && !g.keeps_sent_copy());
+        assert_eq!(
+            get(&pool, LOCAL_ID).await.unwrap().provider,
+            Provider::Local
+        );
+
+        set_sync_state(&pool, "g", SyncStatus::Error, Some("boum"))
+            .await
+            .unwrap();
+        let g = get(&pool, "g").await.unwrap();
+        assert_eq!(
+            (g.sync_status, g.sync_error.as_deref(), g.last_sync_at),
+            (SyncStatus::Error, Some("boum"), None)
+        );
+        set_sync_state(&pool, "g", SyncStatus::Idle, None)
+            .await
+            .unwrap();
+        assert!(
+            get(&pool, "g").await.unwrap().last_sync_at.is_some(),
+            "Idle date la synchro réussie"
+        );
+
+        // Tout fournisseur connu est accepté par la base (concordance énumération / déclencheurs).
+        for p in Provider::ALL {
+            sqlx::query("UPDATE accounts SET provider = ? WHERE id = 'g'")
+                .bind(p)
+                .execute(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("{p:?}: {e}"));
+        }
+        assert_eq!(
+            OAuthProvider::Google.provider().as_str(),
+            "gmail",
+            "nom d'entrée du trousseau"
+        );
+        assert_eq!(OAuthProvider::Microsoft.provider().as_str(), "outlook");
+        for sql in [
+            "UPDATE accounts SET provider = 'telepathie' WHERE id = 'g'",
+            "UPDATE accounts SET sync_status = 'perdu' WHERE id = 'g'",
+            "INSERT INTO accounts (id,email,username,imap_host,smtp_host,provider) VALUES ('x','x@x.fr','x','i','s','telepathie')",
+        ] {
+            assert!(sqlx::query(sql).execute(&pool).await.is_err(), "{sql}");
+        }
     }
 
     #[tokio::test]

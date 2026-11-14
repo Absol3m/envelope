@@ -26,6 +26,7 @@ use crate::clock::now;
 use crate::error::{AppError, Result};
 use crate::mail::account::{Account, LOCAL_ID};
 use crate::mail::{imap, ingest, local, rawstore};
+use envelope_core::role::FolderRole;
 
 /// Refus du serveur (`NO`) avant de ranger le message en local.
 const MAX_REFUSALS: i64 = 3;
@@ -123,9 +124,10 @@ pub async fn show_now(
     raw: &[u8],
 ) -> Result<()> {
     let Some(folder_id) = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM folders WHERE account_id = ? AND role = 'sent' LIMIT 1",
+        "SELECT id FROM folders WHERE account_id = ? AND role = ? LIMIT 1",
     )
     .bind(account_id)
+    .bind(FolderRole::Sent)
     .fetch_optional(pool)
     .await?
     else {
@@ -224,15 +226,15 @@ async fn append(
     let path = match sent {
         Some(path) => path,
         None => {
-            let known: Option<String> = sqlx::query_scalar(
-                "SELECT path FROM folders WHERE account_id = ? AND role = 'sent'",
-            )
-            .bind(account_id)
-            .fetch_optional(pool)
-            .await?;
+            let known: Option<String> =
+                sqlx::query_scalar("SELECT path FROM folders WHERE account_id = ? AND role = ?")
+                    .bind(account_id)
+                    .bind(FolderRole::Sent)
+                    .fetch_optional(pool)
+                    .await?;
             let path = match known {
                 Some(path) => path,
-                None => imap::find_or_create(session, "sent", "Sent").await?,
+                None => imap::find_or_create(session, FolderRole::Sent, "Sent").await?,
             };
             sent.insert(path)
         }
@@ -592,7 +594,7 @@ mod tests {
         assert_eq!(session.uid_search("ALL").await.unwrap().len(), 1);
 
         // 4. Dossier absent (boîte neuve) : créé et abonné sous le nom par défaut.
-        let path = imap::find_or_create(&mut session, "trash", "Trash")
+        let path = imap::find_or_create(&mut session, FolderRole::Trash, "Trash")
             .await
             .unwrap();
         assert_eq!(path, "Trash");

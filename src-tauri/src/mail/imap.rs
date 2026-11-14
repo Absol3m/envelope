@@ -16,6 +16,8 @@ use tokio_rustls::TlsConnector;
 use async_imap::types::NameAttribute;
 use futures::TryStreamExt;
 
+use envelope_core::role::FolderRole;
+
 use crate::error::{AppError, Result};
 use crate::mail::account::{Account, Credential, Security};
 
@@ -53,7 +55,7 @@ pub(crate) async fn connect_with(
     cred: &Credential,
     tls: Arc<ClientConfig>,
 ) -> Result<ImapSession> {
-    let security = Security::parse(&account.imap_security);
+    let security = account.imap_security;
     if security == Security::None {
         return Err(AppError::Invalid(msg!(
             "imap.unencrypted",
@@ -152,30 +154,32 @@ pub fn folder_role(
     path: &str,
     delimiter: Option<&str>,
     attrs: &[NameAttribute],
-) -> Option<&'static str> {
+) -> Option<FolderRole> {
     if path.eq_ignore_ascii_case("INBOX") {
-        return Some("inbox");
+        return Some(FolderRole::Inbox);
     }
     let by_attr = attrs.iter().find_map(|a| match a {
-        NameAttribute::Sent => Some("sent"),
-        NameAttribute::Drafts => Some("drafts"),
-        NameAttribute::Trash => Some("trash"),
-        NameAttribute::Junk => Some("junk"),
-        NameAttribute::Archive => Some("archive"),
-        NameAttribute::All => Some("all"),
-        NameAttribute::Flagged => Some("flagged"),
+        NameAttribute::Sent => Some(FolderRole::Sent),
+        NameAttribute::Drafts => Some(FolderRole::Drafts),
+        NameAttribute::Trash => Some(FolderRole::Trash),
+        NameAttribute::Junk => Some(FolderRole::Junk),
+        NameAttribute::Archive => Some(FolderRole::Archive),
+        NameAttribute::All => Some(FolderRole::All),
+        NameAttribute::Flagged => Some(FolderRole::Flagged),
         _ => None,
     });
     by_attr.or_else(|| match leaf(path, delimiter).to_lowercase().as_str() {
         "sent" | "sent items" | "sent messages" | "envoyés" | "envoyes" | "éléments envoyés" => {
-            Some("sent")
+            Some(FolderRole::Sent)
         }
-        "drafts" | "draft" | "brouillons" => Some("drafts"),
+        "drafts" | "draft" | "brouillons" => Some(FolderRole::Drafts),
         "trash" | "deleted items" | "deleted messages" | "corbeille" | "éléments supprimés" => {
-            Some("trash")
+            Some(FolderRole::Trash)
         }
-        "junk" | "spam" | "junk e-mail" | "courrier indésirable" | "indésirables" => Some("junk"),
-        "archive" | "archives" => Some("archive"),
+        "junk" | "spam" | "junk e-mail" | "courrier indésirable" | "indésirables" => {
+            Some(FolderRole::Junk)
+        }
+        "archive" | "archives" => Some(FolderRole::Archive),
         _ => None,
     })
 }
@@ -184,7 +188,7 @@ pub fn folder_role(
 /// n'existe pas encore, ce qui arrive sur une boîte neuve (ni « Envoyés » ni « Corbeille »).
 pub async fn find_or_create(
     session: &mut ImapSession,
-    role: &str,
+    role: FolderRole,
     default_name: &str,
 ) -> Result<String> {
     let names: Vec<_> = session
@@ -305,17 +309,20 @@ mod tests {
 
     #[test]
     fn roles_from_attribute_or_name() {
-        assert_eq!(folder_role("inbox", None, &[]), Some("inbox"));
+        assert_eq!(folder_role("inbox", None, &[]), Some(FolderRole::Inbox));
         assert_eq!(
             folder_role("Whatever", Some("/"), &[NameAttribute::Sent]),
-            Some("sent")
+            Some(FolderRole::Sent)
         );
         assert_eq!(
             folder_role("INBOX.Éléments envoyés", Some("."), &[]),
-            Some("sent")
+            Some(FolderRole::Sent)
         );
-        assert_eq!(folder_role("Sent", Some("/"), &[]), Some("sent"));
-        assert_eq!(folder_role("Brouillons", None, &[]), Some("drafts"));
+        assert_eq!(folder_role("Sent", Some("/"), &[]), Some(FolderRole::Sent));
+        assert_eq!(
+            folder_role("Brouillons", None, &[]),
+            Some(FolderRole::Drafts)
+        );
         assert_eq!(folder_role("Projets/Sent-2024", Some("/"), &[]), None);
     }
 }
@@ -330,28 +337,13 @@ mod starttls_tests {
     use tokio_rustls::rustls::ServerConfig;
     use tokio_rustls::TlsAcceptor;
 
-    fn account(port: u16, security: &str) -> Account {
+    fn account(port: u16, security: Security) -> Account {
         Account {
-            id: "a".into(),
-            email: "me@x.fr".into(),
             display_name: None,
-            provider: "imap".into(),
-            auth_kind: "password".into(),
-            username: "me".into(),
             imap_host: "localhost".into(),
             imap_port: i64::from(port),
-            imap_security: security.into(),
-            smtp_host: "s".into(),
-            smtp_port: 465,
-            smtp_security: "tls".into(),
-            last_sync_at: None,
-            sync_status: "idle".into(),
-            sync_error: None,
-            signature: String::new(),
-            copy_sent: true,
-            pending_copies: 0,
-            pending_copy_error: None,
-            identities: vec![],
+            imap_security: security,
+            ..Account::fixture()
         }
     }
 
@@ -446,7 +438,7 @@ mod starttls_tests {
     async fn starttls_negocie_puis_authentifie_sous_tls() {
         let (acceptor, client_cfg) = tls_pair();
         let (port, server) = mock_server(true, acceptor).await;
-        connect_with(&account(port, "starttls"), &cred(), client_cfg)
+        connect_with(&account(port, Security::Starttls), &cred(), client_cfg)
             .await
             .expect("connexion STARTTLS");
         let seen = server.await.unwrap();
@@ -466,7 +458,7 @@ mod starttls_tests {
     async fn starttls_refuse_pas_de_repli_en_clair() {
         let (acceptor, client_cfg) = tls_pair();
         let (port, server) = mock_server(false, acceptor).await;
-        let err = connect_with(&account(port, "starttls"), &cred(), client_cfg)
+        let err = connect_with(&account(port, Security::Starttls), &cred(), client_cfg)
             .await
             .expect_err("doit échouer")
             .to_string();
@@ -485,7 +477,7 @@ mod starttls_tests {
     async fn certificat_inconnu_refuse_et_mot_de_passe_protege() {
         let (acceptor, _own_roots) = tls_pair();
         let (port, server) = mock_server(true, acceptor).await;
-        let err = connect(&account(port, "starttls"), &cred())
+        let err = connect(&account(port, Security::Starttls), &cred())
             .await
             .expect_err("certificat inconnu")
             .to_string();
@@ -499,7 +491,7 @@ mod starttls_tests {
     async fn sans_chiffrement_refuse_sans_se_connecter() {
         let (_, client_cfg) = tls_pair();
         // Aucun serveur n'écoute : l'erreur vient de la politique, pas du réseau.
-        let err = connect_with(&account(1, "none"), &cred(), client_cfg)
+        let err = connect_with(&account(1, Security::None), &cred(), client_cfg)
             .await
             .expect_err("doit échouer");
         assert!(

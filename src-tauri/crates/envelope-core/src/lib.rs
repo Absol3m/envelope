@@ -5,6 +5,9 @@ pub mod addr;
 pub mod attachment;
 pub mod contacts;
 pub mod db;
+pub mod kinds;
+pub mod page;
+pub mod role;
 pub mod search;
 pub mod thread;
 

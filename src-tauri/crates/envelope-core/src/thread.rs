@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::addr::{self, Addr};
+use crate::kinds::{Provider, SyncStatus};
+use crate::page::Page;
+use crate::role::FolderRole;
 use crate::search::{parse_search, push_message_filters};
 use crate::Result;
 
@@ -13,8 +16,8 @@ pub struct AccountSummary {
     pub id: String,
     pub email: String,
     pub display_name: Option<String>,
-    pub provider: String,
-    pub sync_status: String,
+    pub provider: Provider,
+    pub sync_status: SyncStatus,
     pub last_sync_at: Option<String>,
 }
 
@@ -138,7 +141,7 @@ pub struct ThreadSummary {
 #[serde(rename_all = "camelCase", default)]
 pub struct ThreadQuery {
     pub folder_id: Option<i64>,
-    pub role: Option<String>,
+    pub role: Option<FolderRole>,
     pub account_id: Option<String>,
     pub starred_only: bool,
     pub unread_only: bool,
@@ -208,10 +211,11 @@ pub async fn list_threads(pool: &SqlitePool, q: &ThreadQuery) -> Result<Vec<Thre
         qb.push(")");
     }
     // Les conversations revenues (rappel échu) passent en tête, puis ordre chronologique.
+    let page = Page::new(q.limit, q.offset, 100);
     qb.push(" ORDER BY r.fired_at IS NOT NULL DESC, t.last_message_at DESC, t.id DESC LIMIT ")
-        .push_bind(q.limit.unwrap_or(100).clamp(1, 500))
+        .push_bind(page.limit)
         .push(" OFFSET ")
-        .push_bind(q.offset.unwrap_or(0).max(0));
+        .push_bind(page.offset);
     qb.build_query_as().fetch_all(pool).await
 }
 

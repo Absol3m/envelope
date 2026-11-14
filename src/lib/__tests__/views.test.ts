@@ -19,7 +19,7 @@ describe("dossiers locaux", () => {
     expect(isEmptiableView({ kind: "role", role: "trash" })).toBe(true);
   });
   it("une conversation est placée dans le dossier de son dernier message, d'après la liste des dossiers", () => {
-    const f = (id: number, accountId: string, name: string, role: string | null): FolderRow => ({ id, accountId, path: name, name, role, unreadCount: 0, totalCount: 0 });
+    const f = (id: number, accountId: string, name: string, role: FolderRow["role"]): FolderRow => ({ id, accountId, path: name, name, role, unreadCount: 0, totalCount: 0 });
     const folders = [f(1, "a", "INBOX", "inbox"), f(4, "a", "Pro", null), f(9, LOCAL_ACCOUNT, "Clients", null)];
     expect(placeOf({ folderId: 9 }, folders)).toEqual(localFolder);
     expect(placeOf({ folderId: 1 }, folders)).toEqual(inbox);

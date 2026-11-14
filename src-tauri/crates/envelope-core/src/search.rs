@@ -3,6 +3,8 @@
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
+use crate::page::Page;
+use crate::role::FolderRole;
 use crate::Result;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -86,14 +88,14 @@ fn fold(s: &str) -> String {
 }
 
 /// Rôle de dossier désigné par un mot courant (« archives », « envoyés », « spam »…).
-fn folder_role(word: &str) -> Option<&'static str> {
+fn folder_role(word: &str) -> Option<FolderRole> {
     Some(match fold(word).as_str() {
-        "inbox" | "reception" | "boite" => "inbox",
-        "archive" | "archives" => "archive",
-        "sent" | "envoye" | "envoyes" => "sent",
-        "drafts" | "brouillon" | "brouillons" => "drafts",
-        "trash" | "corbeille" => "trash",
-        "junk" | "spam" | "indesirable" | "indesirables" => "junk",
+        "inbox" | "reception" | "boite" => FolderRole::Inbox,
+        "archive" | "archives" => FolderRole::Archive,
+        "sent" | "envoye" | "envoyes" => FolderRole::Sent,
+        "drafts" | "brouillon" | "brouillons" => FolderRole::Drafts,
+        "trash" | "corbeille" => FolderRole::Trash,
+        "junk" | "spam" | "indesirable" | "indesirables" => FolderRole::Junk,
         _ => return None,
     })
 }
@@ -209,9 +211,11 @@ pub fn push_message_filters(qb: &mut QueryBuilder<Sqlite>, spec: &SearchSpec) ->
     // `dans:tout` inclut tout.
     if spec.folders.is_empty() {
         if !spec.anywhere {
-            qb.push(
-                " AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN ('trash', 'junk'))",
-            );
+            qb.push(" AND m.folder_id NOT IN (SELECT id FROM folders WHERE role IN (")
+                .push_bind(FolderRole::Trash)
+                .push(", ")
+                .push_bind(FolderRole::Junk)
+                .push("))");
         }
     } else {
         qb.push(" AND m.folder_id IN (SELECT id FROM folders WHERE 0 = 1");
@@ -273,7 +277,7 @@ pub async fn search(
     pool: &SqlitePool,
     query: &str,
     account_id: Option<&str>,
-    limit: i64,
+    page: Page,
 ) -> Result<Vec<MessageSummary>> {
     let Some(fts) = build_fts_query(query) else {
         return Ok(vec![]);
@@ -281,11 +285,12 @@ pub async fn search(
     sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SUMMARY_COLS} FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid \
          WHERE messages_fts MATCH ?1 AND (?2 IS NULL OR m.account_id = ?2) \
-         ORDER BY rank LIMIT ?3"
+         ORDER BY rank LIMIT ?3 OFFSET ?4"
     )))
     .bind(fts)
     .bind(account_id)
-    .bind(limit.clamp(1, 200))
+    .bind(page.limit)
+    .bind(page.offset)
     .fetch_all(pool)
     .await
 }
@@ -293,15 +298,14 @@ pub async fn search(
 pub async fn list_messages(
     pool: &SqlitePool,
     folder_id: i64,
-    limit: i64,
-    offset: i64,
+    page: Page,
 ) -> Result<Vec<MessageSummary>> {
     sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SUMMARY_COLS} FROM messages m WHERE m.folder_id = ? ORDER BY m.date DESC LIMIT ? OFFSET ?"
     )))
     .bind(folder_id)
-    .bind(limit.clamp(1, 500))
-    .bind(offset.max(0))
+    .bind(page.limit)
+    .bind(page.offset)
     .fetch_all(pool)
     .await
 }
@@ -313,21 +317,23 @@ pub struct FolderRow {
     pub account_id: String,
     pub path: String,
     pub name: String,
-    pub role: Option<String>,
+    pub role: Option<FolderRole>,
     pub unread_count: i64,
     pub total_count: i64,
 }
 
 pub async fn list_folders(pool: &SqlitePool, account_id: Option<&str>) -> Result<Vec<FolderRow>> {
-    sqlx::query_as(
+    let mut folders: Vec<FolderRow> = sqlx::query_as(
         "SELECT id, account_id, path, name, role, unread_count, total_count FROM folders \
-         WHERE (?1 IS NULL OR account_id = ?1) \
-         ORDER BY account_id, CASE role WHEN 'inbox' THEN 0 WHEN 'drafts' THEN 1 WHEN 'sent' THEN 2 \
-         WHEN 'archive' THEN 3 WHEN 'junk' THEN 4 WHEN 'trash' THEN 5 ELSE 6 END, name",
+         WHERE (?1 IS NULL OR account_id = ?1) ORDER BY account_id, name",
     )
     .bind(account_id)
     .fetch_all(pool)
-    .await
+    .await?;
+    // Tri stable : par compte, puis rang du rôle, puis nom (déjà l'ordre du SELECT).
+    let rank = |f: &FolderRow| f.role.map_or(FolderRole::UNRANKED, FolderRole::rank);
+    folders.sort_by(|a, b| a.account_id.cmp(&b.account_id).then(rank(a).cmp(&rank(b))));
+    Ok(folders)
 }
 
 #[cfg(test)]
@@ -379,8 +385,8 @@ mod tests {
         let s = parse_search(r#"dans:archives budget dans:"Mes Projets" in:tout"#);
         assert_eq!(s.folders, ["archives", "Mes Projets"]);
         assert!(s.anywhere);
-        assert_eq!(folder_role("Envoyés"), Some("sent"));
-        assert_eq!(folder_role("Corbeille"), Some("trash"));
+        assert_eq!(folder_role("Envoyés"), Some(FolderRole::Sent));
+        assert_eq!(folder_role("Corbeille"), Some(FolderRole::Trash));
         assert_eq!(folder_role("clients"), None);
     }
 

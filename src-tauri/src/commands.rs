@@ -26,6 +26,8 @@ use crate::templates::{self, Template};
 use crate::AppState;
 use envelope_core::addr::Addr;
 use envelope_core::contacts;
+use envelope_core::kinds::AuthKind;
+use envelope_core::page::Page;
 use envelope_core::search::{self, FolderRow, MessageSummary};
 use envelope_core::thread::{self, ThreadDetail, ThreadQuery, ThreadSummary};
 
@@ -167,8 +169,8 @@ pub async fn add_account(state: State<'_, AppState>, input: NewAccount) -> Resul
             id: &id,
             email: &email,
             display_name: input.display_name.as_deref(),
-            provider: &found.provider,
-            auth_kind: "password",
+            provider: found.provider,
+            auth_kind: AuthKind::Password,
             username: &username,
             imap: &imap_cfg,
             smtp: &smtp_cfg,
@@ -222,7 +224,7 @@ pub async fn reconnect_oauth_account(
     id: String,
 ) -> Result<()> {
     let acc = account::get(&state.db, &id).await?;
-    let provider = OAuthProvider::parse(&acc.provider).ok_or_else(|| {
+    let provider = OAuthProvider::of(acc.provider).ok_or_else(|| {
         AppError::Invalid(msg!("account.not_oauth", "this account doesn't use OAuth2"))
     })?;
     let tokens = authorize_in_browser(&app, provider, &acc.email).await?;
@@ -254,8 +256,8 @@ pub async fn add_oauth_account(
             id: &id,
             email: &email,
             display_name: display_name.as_deref(),
-            provider: provider.as_str(),
-            auth_kind: "oauth2",
+            provider: provider.provider(),
+            auth_kind: AuthKind::OAuth2,
             username: &email,
             imap: &imap_cfg,
             smtp: &smtp_cfg,
@@ -445,13 +447,7 @@ pub async fn list_messages(
     limit: Option<i64>,
     offset: Option<i64>,
 ) -> Result<Vec<MessageSummary>> {
-    Ok(search::list_messages(
-        &state.db,
-        folder_id,
-        limit.unwrap_or(50),
-        offset.unwrap_or(0),
-    )
-    .await?)
+    Ok(search::list_messages(&state.db, folder_id, Page::new(limit, offset, 50)).await?)
 }
 
 #[tauri::command]
@@ -465,7 +461,7 @@ pub async fn search_emails(
         &state.db,
         &query,
         account_id.as_deref(),
-        limit.unwrap_or(50),
+        Page::new(limit, None, 50),
     )
     .await?)
 }

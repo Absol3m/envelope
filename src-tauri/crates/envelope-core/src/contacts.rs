@@ -3,6 +3,7 @@
 use sqlx::SqlitePool;
 
 use crate::addr::Addr;
+use crate::page::Page;
 use crate::Result;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -33,7 +34,7 @@ pub async fn suggest(
     )
     .bind(account_id)
     .bind(like)
-    .bind(limit)
+    .bind(Page::first(limit).limit)
     .fetch_all(pool)
     .await?;
     Ok(rows

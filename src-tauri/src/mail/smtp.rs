@@ -234,7 +234,7 @@ fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Messag
 
 fn transport(account: &Account, cred: &Credential) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
     let host = account.smtp_host.as_str();
-    let builder = match Security::parse(&account.smtp_security) {
+    let builder = match account.smtp_security {
         Security::Tls => AsyncSmtpTransport::<Tokio1Executor>::relay(host).map_err(smtp_err)?,
         Security::Starttls => {
             AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(host).map_err(smtp_err)?
@@ -293,26 +293,8 @@ mod tests {
 
     fn account() -> Account {
         Account {
-            id: "a".into(),
-            email: "me@x.fr".into(),
-            display_name: Some("Moi".into()),
-            provider: "imap".into(),
-            auth_kind: "password".into(),
             username: "me@x.fr".into(),
-            imap_host: "i".into(),
-            imap_port: 993,
-            imap_security: "tls".into(),
-            smtp_host: "s".into(),
-            smtp_port: 465,
-            smtp_security: "tls".into(),
-            last_sync_at: None,
-            sync_status: "idle".into(),
-            sync_error: None,
-            signature: String::new(),
-            copy_sent: true,
-            pending_copies: 0,
-            pending_copy_error: None,
-            identities: vec![],
+            ..Account::fixture()
         }
     }
 
@@ -341,7 +323,7 @@ mod tests {
         let acct = Account {
             smtp_host: "127.0.0.1".into(),
             smtp_port: i64::from(port),
-            smtp_security: "starttls".into(),
+            smtp_security: Security::Starttls,
             ..account()
         };
         let cred = Credential::Password {
