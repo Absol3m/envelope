@@ -1,6 +1,6 @@
 import { ChevronDown, Download, File, FileArchive, FileImage, FileText, ImageOff, Mail, MailOpen, Paperclip, ShieldAlert, ShieldCheck, Star, Trash2 } from "lucide-react";
 import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
-import { Fragment, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import type { Account, DetailAttachment, DetailMessage, ThreadDetail, ThreadSummary } from "@/lib/api";
 import { displayName, fileSize, fullDate, listDate } from "@/lib/format";
@@ -97,6 +97,22 @@ function TextBody({ text }: { text: string }) {
   );
 }
 
+const BodySkeleton = () => <div className="skeleton h-24 rounded-xl" aria-busy />;
+
+/** Monte ses enfants quand ils approchent de l'écran, puis les garde : une longue conversation dépliée ne crée pas toutes ses iframes d'un coup. */
+function NearViewport({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(typeof IntersectionObserver === "undefined"); // jsdom (tests) n'en a pas
+  useEffect(() => {
+    const el = ref.current;
+    if (near || !el) return;
+    const io = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting)) setNear(true); }, { rootMargin: "600px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+  return near ? <>{children}</> : <div ref={ref}><BodySkeleton /></div>;
+}
+
 function MessageBody({ m }: { m: DetailMessage }) {
   const backend = useMail((s) => s.backend);
   const [allow, setAllow] = useState(() => trustedSenders().has(m.fromAddr.toLowerCase()));
@@ -112,7 +128,7 @@ function MessageBody({ m }: { m: DetailMessage }) {
   const ready = !needsCid || cid !== undefined;
   const prepared = useMemo(() => (html && ready ? prepareHtml(html, { allowRemote: allow, cid }) : null), [html, ready, allow, cid]);
 
-  if (html && !ready) return <div className="skeleton h-24 rounded-xl" aria-busy />;
+  if (html && !ready) return <BodySkeleton />;
 
   if (prepared) {
     return (
@@ -248,7 +264,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
         </dl>
       )}
 
-      <div className="mt-3 border-t border-border pt-3"><MessageBody m={m} /></div>
+      <div className="mt-3 border-t border-border pt-3"><NearViewport><MessageBody m={m} /></NearViewport></div>
       <Attachments items={files} />
     </article>
   );
