@@ -95,15 +95,40 @@ fn iso(ts: i64) -> String {
         .to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
-/// Sujet de base de la conversation (RFC 5256 §2.1, par mail-parser) : sans préfixes de réponse ou de transfert dans la
-/// plupart des langues (« Re: », « Fwd: », « AW: », « SV: », « Re[2]: »…), ni balises de liste (« [liste] ») ni « (fwd) ».
-/// Un sujet réduit à ces éléments reste tel quel : une conversation n'a jamais de titre vide.
+/// Titre de conversation : sujet de base RFC 5256 (mail-parser : préfixes de réponse/transfert dans la plupart des
+/// langues, « Re[2]: », « (fwd) »), mais en gardant les balises de liste « [liste] » comme Thunderbird, qui ne retire que
+/// les préfixes de réponse (`StripSubjectReplyPrefixes`) : on sait ainsi de quelle liste vient la conversation.
+/// `thread_name` ne sait pas les garder (ses ensembles de préfixes sont privés) : on le laisse retirer tout le début,
+/// puis on remet les balises qu'il a retirées. Jamais de titre vide.
 pub fn normalize_subject(s: &str) -> String {
     let s = s.trim();
-    match mail_parser::parsers::fields::thread::thread_name(s) {
-        "" => s.to_string(),
-        base => base.to_string(),
+    let base = mail_parser::parsers::fields::thread::thread_name(s);
+    if base.is_empty() {
+        return s.to_string();
     }
+    // `base` est une tranche de `s` : tout ce qui précède est le début retiré.
+    let cut = (base.as_ptr() as usize).saturating_sub(s.as_ptr() as usize);
+    let mut out = String::new();
+    let mut rest = s.get(..cut).unwrap_or_default();
+    while let Some(open) = rest.find('[') {
+        let Some(len) = rest[open..].find(']') else {
+            break;
+        };
+        let tag = &rest[open..=open + len];
+        let counter = tag[1..tag.len() - 1].bytes().all(|b| b.is_ascii_digit());
+        // « Re[2]: » : le crochet colle au préfixe, c'est un compteur, pas une balise.
+        let glued = rest[..open]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphabetic);
+        if !counter && !glued {
+            out.push_str(tag);
+            out.push(' ');
+        }
+        rest = &rest[open + len + 1..];
+    }
+    out.push_str(base);
+    out
 }
 
 /// `fallback_ts` : INTERNALDATE du serveur, utilisée si l'en-tête Date est absent/invalide.
@@ -1751,6 +1776,12 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
         assert_eq!(normalize_subject("  TR: facture (fwd)"), "facture");
         // Un « : » du vrai sujet n'est pas un préfixe ; sujet vide ou réduit à un préfixe : jamais de titre vide.
         assert_eq!(normalize_subject("Réunion: demain"), "Réunion: demain");
+        // Balises de liste conservées, où qu'elles soient par rapport aux préfixes (comme Thunderbird).
+        assert_eq!(normalize_subject("[rust-lang] Foo"), "[rust-lang] Foo");
+        assert_eq!(normalize_subject("Re: [rust-lang] Foo"), "[rust-lang] Foo");
+        assert_eq!(normalize_subject("[rust-lang] Re: Foo"), "[rust-lang] Foo");
+        assert_eq!(normalize_subject("Re[2]: [l] Foo"), "[l] Foo");
+        assert_eq!(normalize_subject("[l1] Re: [l2] Foo"), "[l1] [l2] Foo");
         assert_eq!(normalize_subject("Re:"), "Re:");
         assert_eq!(normalize_subject(""), "");
     }
