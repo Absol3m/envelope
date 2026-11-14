@@ -95,18 +95,14 @@ fn iso(ts: i64) -> String {
         .to_rfc3339_opts(SecondsFormat::Secs, true)
 }
 
-/// Retire les préfixes « Re: », « Fwd: »… pour le sujet de conversation.
+/// Sujet de base de la conversation (RFC 5256 §2.1, par mail-parser) : sans préfixes de réponse ou de transfert dans la
+/// plupart des langues (« Re: », « Fwd: », « AW: », « SV: », « Re[2]: »…), ni balises de liste (« [liste] ») ni « (fwd) ».
+/// Un sujet réduit à ces éléments reste tel quel : une conversation n'a jamais de titre vide.
 pub fn normalize_subject(s: &str) -> String {
-    let mut s = s.trim();
-    loop {
-        let lower = s.to_lowercase();
-        let stripped = ["re:", "fwd:", "fw:", "tr:", "rv:"]
-            .iter()
-            .find(|p| lower.starts_with(**p));
-        match stripped {
-            Some(p) => s = s[p.len()..].trim_start(),
-            None => return s.to_string(),
-        }
+    let s = s.trim();
+    match mail_parser::parsers::fields::thread::thread_name(s) {
+        "" => s.to_string(),
+        base => base.to_string(),
     }
 }
 
@@ -1748,6 +1744,15 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
     #[test]
     fn subject_normalization() {
         assert_eq!(normalize_subject("Re: RE: Fwd: Hello"), "Hello");
+        // Préfixes d'autres langues et formes numérotées, qu'une liste maison oubliait.
+        assert_eq!(normalize_subject("AW: Angebot"), "Angebot");
+        assert_eq!(normalize_subject("SV: Re: Möte"), "Möte");
+        assert_eq!(normalize_subject("Re[2]: devis"), "devis");
+        assert_eq!(normalize_subject("  TR: facture (fwd)"), "facture");
+        // Un « : » du vrai sujet n'est pas un préfixe ; sujet vide ou réduit à un préfixe : jamais de titre vide.
+        assert_eq!(normalize_subject("Réunion: demain"), "Réunion: demain");
+        assert_eq!(normalize_subject("Re:"), "Re:");
+        assert_eq!(normalize_subject(""), "");
     }
     #[tokio::test]
     async fn reply_headers_and_contact_suggestions() {
