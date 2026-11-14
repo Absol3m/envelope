@@ -24,7 +24,7 @@ const ROLES = ["inbox", "drafts", "sent", "archive", "junk", "trash"] as const;
 const roleName = (role: string) => t(`nav:views.${role}`);
 const folderId = (acct: string, role: string) => (acct === "pro" ? 1 : 101) + ROLES.indexOf(role as (typeof ROLES)[number]);
 
-interface MockThread {
+export interface MockThread {
   id: number;
   accountId: string;
   role: (typeof ROLES)[number];
@@ -33,6 +33,9 @@ interface MockThread {
   attachments: DetailAttachment[];
   reminder?: { kind: ReminderKind; due: number; fired?: number };
 }
+
+/** Test de contrat (`__tests__/listContract.test.ts`) : remplace les conversations de la démo par un scénario. */
+export const setDemoThreads = (threads: MockThread[]) => { T.splice(0, T.length, ...threads); };
 
 const RULES: Rule[] = [{ id: 1, name: "Newsletters", enabled: true, accountId: null, query: "de:newsletter", markRead: true, star: false, moveTo: "archive" }];
 
@@ -209,7 +212,7 @@ const folders = (): FolderRow[] =>
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-function listThreads(q: ThreadQuery): ThreadSummary[] {
+export function listThreads(q: ThreadQuery): ThreadSummary[] {
   const words = q.query ? norm(q.query).split(/\s+/).filter(Boolean) : [];
   return T.filter((t) => {
     if (q.folderId !== undefined && folderId(t.accountId, t.role) !== q.folderId) return false;
@@ -223,13 +226,18 @@ function listThreads(q: ThreadQuery): ThreadSummary[] {
     if (!q.remindersOnly && !words.length && pending && t.reminder?.kind === "snooze") return false;
     if (words.length) {
       if (t.role === "trash" || t.role === "junk") return false; // la recherche ignore corbeille et spam par défaut
-      const hay = norm(t.messages.map((m) => `${m.subject} ${m.fromName} ${m.fromAddr} ${m.bodyText ?? htmlToText(m.bodyHtml ?? "")}`).join(" "));
-      if (!words.every((w) => hay.includes(w))) return false;
+      // Comme le moteur : un seul message doit satisfaire tous les mots.
+      const matches = (m: DetailMessage) => {
+        const hay = norm(`${m.subject} ${m.fromName} ${m.fromAddr} ${m.bodyText ?? htmlToText(m.bodyHtml ?? "")}`);
+        return words.every((w) => hay.includes(w));
+      };
+      if (!t.messages.some(matches)) return false;
     }
     return true;
   })
     .map(summarize)
-    .sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
+    // Comme le moteur : les conversations revenues (rappel échu) d'abord, puis la plus récente, à égalité l'identifiant le plus grand.
+    .sort((a, b) => Number(b.reminderFired !== null) - Number(a.reminderFired !== null) || b.lastMessageAt.localeCompare(a.lastMessageAt) || b.id - a.id)
     .slice(q.offset ?? 0, (q.offset ?? 0) + (q.limit ?? 100));
 }
 

@@ -37,6 +37,8 @@ pub mod drafts;
 pub mod export;
 pub mod imap;
 pub mod ingest;
+#[cfg(test)]
+mod list_contract;
 pub mod local;
 pub mod mbox;
 pub mod oauth;

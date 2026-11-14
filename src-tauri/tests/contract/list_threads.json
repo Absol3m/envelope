@@ -1,0 +1,69 @@
+{
+  "_": "Contrat de la liste des conversations : le moteur Rust (src-tauri/src/mail/list_contract.rs) et la démo (src/lib/__tests__/listContract.test.ts) doivent donner les mêmes réponses à ces requêtes. « starred » et « attachments » portent sur le dernier message de la conversation.",
+  "accounts": ["pro", "perso"],
+  "folders": [
+    {"id": 1, "account": "pro", "role": "inbox"},
+    {"id": 2, "account": "pro", "role": "drafts"},
+    {"id": 3, "account": "pro", "role": "sent"},
+    {"id": 4, "account": "pro", "role": "archive"},
+    {"id": 5, "account": "pro", "role": "junk"},
+    {"id": 6, "account": "pro", "role": "trash"},
+    {"id": 101, "account": "perso", "role": "inbox"},
+    {"id": 102, "account": "perso", "role": "drafts"},
+    {"id": 103, "account": "perso", "role": "sent"},
+    {"id": 104, "account": "perso", "role": "archive"},
+    {"id": 105, "account": "perso", "role": "junk"},
+    {"id": 106, "account": "perso", "role": "trash"}
+  ],
+  "threads": [
+    {"id": 1, "account": "pro", "starred": true, "attachments": false, "folder": 1, "messages": [
+      {"from": ["Alice", "alice@x.fr"], "subject": "Budget Q3", "date": "2026-03-05T10:00:00Z", "read": false, "text": "point sur le budget trimestriel"}]},
+    {"id": 2, "account": "pro", "starred": false, "attachments": true, "folder": 1, "messages": [
+      {"from": ["Bob", "bob@x.fr"], "subject": "Réunion équipe", "date": "2026-03-04T10:00:00Z", "read": true, "text": "agenda de lundi"}]},
+    {"id": 3, "account": "pro", "starred": false, "attachments": true, "folder": 4, "messages": [
+      {"from": ["Carol", "carol@x.fr"], "subject": "Facture mars", "date": "2026-03-03T10:00:00Z", "read": true, "text": "facture jointe"}]},
+    {"id": 4, "account": "pro", "starred": false, "attachments": false, "folder": 6, "messages": [
+      {"from": ["Dave", "dave@x.fr"], "subject": "Budget ancien", "date": "2026-03-02T08:00:00Z", "read": true, "text": "ancien budget"}]},
+    {"id": 5, "account": "perso", "starred": false, "attachments": false, "folder": 101, "messages": [
+      {"from": ["Eve", "eve@x.fr"], "subject": "Voyage été", "date": "2026-03-06T10:00:00Z", "read": false, "text": "billets de train"}]},
+    {"id": 6, "account": "perso", "starred": false, "attachments": false, "reminder": {"kind": "snooze", "due": 4102444800}, "folder": 101, "messages": [
+      {"from": ["Frank", "frank@x.fr"], "subject": "Rappel dentiste", "date": "2026-03-01T10:00:00Z", "read": true, "text": "rendez-vous"}]},
+    {"id": 7, "account": "pro", "starred": false, "attachments": false, "folder": 3, "messages": [
+      {"from": ["Alice", "alice@x.fr"], "subject": "Re: Budget Q3", "date": "2026-03-01T10:00:00Z", "read": false, "text": "premier message"},
+      {"from": ["Bob", "bob@x.fr"], "subject": "Re: Budget Q3", "date": "2026-03-07T10:00:00Z", "read": true, "text": "réponse sur le budget"}]},
+    {"id": 8, "account": "perso", "starred": false, "attachments": false, "reminder": {"kind": "followup", "due": 4102444800}, "folder": 101, "messages": [
+      {"from": ["Gina", "gina@x.fr"], "subject": "Suivi devis", "date": "2026-03-02T09:00:00Z", "read": true, "text": "devis envoyé"}]},
+    {"id": 9, "account": "perso", "starred": false, "attachments": false, "reminder": {"kind": "snooze", "due": 1700000000, "fired": 1700000100}, "folder": 101, "messages": [
+      {"from": ["Hugo", "hugo@x.fr"], "subject": "Retour de report", "date": "2026-02-20T10:00:00Z", "read": true, "text": "revenu"}]},
+    {"id": 10, "account": "pro", "starred": false, "attachments": false, "folder": 5, "messages": [
+      {"from": ["Ivy", "ivy@x.fr"], "subject": "Promo budget", "date": "2026-03-08T10:00:00Z", "read": true, "text": "promo budget"}]},
+    {"id": 11, "account": "pro", "folder": 1, "starred": false, "attachments": false, "messages": [
+      {"from": ["Jo", "jo@x.fr"], "subject": "Notes de réunion", "date": "2026-03-04T10:00:00Z", "read": true, "text": "notes"}]},
+    {"id": 12, "account": "perso", "folder": 101, "starred": false, "attachments": false, "reminder": {"kind": "snooze", "due": 1700000000, "fired": 1700000200}, "messages": [
+      {"from": ["Kim", "kim@x.fr"], "subject": "Autre retour", "date": "2026-02-10T10:00:00Z", "read": true, "text": "revenu aussi"}]}
+  ],
+  "queries": [
+    {"name": "tout, rappel revenu en tête, report en cours masqué", "query": {}, "ids": [9, 12, 10, 7, 5, 1, 11, 2, 3, 8, 4]},
+    {"name": "boîte de réception, tous comptes", "query": {"role": "inbox"}, "ids": [9, 12, 5, 1, 11, 2, 8]},
+    {"name": "un dossier", "query": {"folderId": 1}, "ids": [1, 11, 2]},
+    {"name": "un compte", "query": {"accountId": "perso"}, "ids": [9, 12, 5, 8]},
+    {"name": "suivis", "query": {"starredOnly": true}, "ids": [1]},
+    {"name": "non lus", "query": {"unreadOnly": true}, "ids": [7, 5, 1]},
+    {"name": "avec pièces jointes", "query": {"withAttachments": true}, "ids": [2, 3]},
+    {"name": "rappels en attente", "query": {"remindersOnly": true}, "ids": [8, 6]},
+    {"name": "corbeille", "query": {"role": "trash"}, "ids": [4]},
+    {"name": "recherche : ignore corbeille et spam", "query": {"query": "budget"}, "ids": [7, 1]},
+    {"name": "recherche : sans accents ni casse", "query": {"query": "REUNION"}, "ids": [11, 2]},
+    {"name": "recherche : plusieurs mots", "query": {"query": "billets train"}, "ids": [5]},
+    {"name": "recherche : retrouve un report en cours", "query": {"query": "dentiste"}, "ids": [6]},
+    {"name": "page", "query": {"limit": 2, "offset": 1}, "ids": [12, 10]},
+    {"name": "égalité de date : id décroissant (dans la page)", "query": {"folderId": 1, "limit": 2}, "ids": [1, 11]},
+    {"name": "recherche : tous les mots dans un même message", "query": {"query": "premier reponse"}, "ids": []},
+    {"name": "recherche : un mot", "query": {"query": "premier"}, "ids": [7]}
+  ],
+  "summaries": {
+    "7": {"messageCount": 2, "unreadCount": 1, "isStarred": false, "hasAttachments": false, "fromAddr": "bob@x.fr", "participants": "Alice, Bob", "folderId": 3},
+    "2": {"messageCount": 1, "unreadCount": 0, "isStarred": false, "hasAttachments": true, "fromAddr": "bob@x.fr", "participants": "Bob", "folderId": 1},
+    "1": {"messageCount": 1, "unreadCount": 1, "isStarred": true, "hasAttachments": false, "fromAddr": "alice@x.fr", "participants": "Alice", "folderId": 1}
+  }
+}
