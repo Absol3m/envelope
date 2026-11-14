@@ -40,6 +40,12 @@ describe("fichiers de langue", () => {
       expect(bad, lang).toEqual([]);
     }
   });
+  it("Info.plist déclare les langues de src/locales (menu natif de la vue web sous macOS)", () => {
+    const plist = readFileSync(join(SRC, "../src-tauri/Info.plist"), "utf8");
+    const declared = [...(/CFBundleLocalizations<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(plist)?.[1] ?? "").matchAll(/<string>(\w+)<\/string>/g)].map((m) => m[1]);
+    const shipped = readdirSync(ROOT).filter((l) => statSync(join(ROOT, l)).isDirectory());
+    expect(declared.sort()).toEqual(shipped.sort());
+  });
   it("le contexte des textes ambigus ne désigne que des textes qui existent", () => {
     const ctx = JSON.parse(readFileSync(join(SRC, "../docs/translations/context.json"), "utf8")) as Record<string, string>;
     expect(Object.keys(ctx).filter((k) => !(k in enKeys) && !(`${k}_one` in enKeys))).toEqual([]);

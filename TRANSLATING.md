@@ -18,6 +18,7 @@ Envelope's interface is available in **French** and **English**, both maintained
 2. Copy `src/locales/en/` to `src/locales/<code>/` (a two-letter [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) code, e.g. `de`, `es`).
 3. Translate the **values** in every file. Never change the keys.
 4. Register the language in `LANGUAGES` in `src/lib/i18n.ts` (code and name written in that language, e.g. `{ code: "de", label: "Deutsch" }`).
+   Also add the code to `CFBundleLocalizations` in `src-tauri/Info.plist` (`pnpm test` checks it).
 5. Try it: `pnpm install && pnpm dev`, then open `http://localhost:1420/?lang=<code>` (the demo mailbox needs no account).
 6. Run `pnpm i18n:status -- --accept <code>` (it marks your translation as up to date with the current English) and commit the updated `docs/translations/STATUS.md` and `docs/translations/reviewed/<code>.json`.
 7. Open a pull request. Mention the system(s) you tested on.
