@@ -128,7 +128,7 @@ function MessageBody({ m }: { m: DetailMessage }) {
         {prepared.trackers > 0 && (
           <p className="mb-2 flex items-center gap-1.5 px-1 text-[12px] text-muted"><ShieldCheck size={13} className="shrink-0 text-success" />{tr("reader:trackers", { count: prepared.trackers })}</p>
         )}
-        <div className="overflow-hidden rounded-xl shadow-card"><HtmlFrame srcDoc={prepared.srcDoc} /></div>
+        <div className="overflow-hidden"><HtmlFrame srcDoc={prepared.srcDoc} /></div>
       </div>
     );
   }
@@ -201,7 +201,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
 
   if (!expanded) {
     return (
-      <button onClick={onToggle} className="press flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-hover" aria-expanded={false}>
+      <button onClick={onToggle} className="press flex w-full items-center gap-3 rounded-[10px] bg-hover px-4 py-2.5 text-left hover:bg-active" aria-expanded={false}>
         <Avatar name={m.fromName} address={m.fromAddr} size={28} />
         <span className="w-32 shrink-0 truncate text-[13px] font-medium">{sender}</span>
         <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{preview || tr("reader:noText")}</span>
@@ -211,7 +211,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
     );
   }
   return (
-    <article className="anim-fade-up rounded-2xl bg-bg px-4 pb-4 pt-3.5 shadow-card" aria-label={tr("reader:messageFrom", { sender })}>
+    <article className="anim-fade-up rounded-[10px] bg-hover px-4 pb-4 pt-3.5" aria-label={tr("reader:messageFrom", { sender })}>
       <header className="flex items-start gap-3">
         <Avatar name={m.fromName} address={m.fromAddr} size={36} />
         <div className="min-w-0 flex-1">
@@ -243,7 +243,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
         </dl>
       )}
 
-      <div className="mt-3.5"><MessageBody m={m} /></div>
+      <div className="mt-3 border-t border-border pt-3"><MessageBody m={m} /></div>
       <Attachments items={files} />
     </article>
   );
@@ -253,11 +253,11 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
 
 function Skeleton({ summary }: { summary?: ThreadSummary }) {
   return (
-    <div className="mx-auto max-w-[780px] px-8 pt-8" aria-busy>
+    <div className="px-4 pt-6" aria-busy>
       <h2 className="text-[22px] font-semibold tracking-tight">{summary?.subject ?? <span className="skeleton block h-7 w-2/3" />}</h2>
       <div className="mt-8 space-y-3">
         {[0.9, 0.7].map((o, i) => (
-          <div key={i} className="rounded-2xl bg-bg p-4 shadow-card" style={{ opacity: o }}>
+          <div key={i} className="rounded-[10px] bg-hover p-4" style={{ opacity: o }}>
             <div className="flex gap-3"><div className="skeleton h-9 w-9 rounded-full" /><div className="flex-1 space-y-2"><div className="skeleton h-3 w-40" /><div className="skeleton h-3 w-24" /></div></div>
             <div className="mt-4 space-y-2"><div className="skeleton h-3 w-full" /><div className="skeleton h-3 w-11/12" /><div className="skeleton h-3 w-3/5" /></div>
           </div>
@@ -316,14 +316,14 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
   }, [draftFolders, d.messages]);
 
   return (
-    <div className="mx-auto max-w-[780px] px-8 pb-24 pt-7">
+    <div className="px-4 pb-24 pt-5">
       {hasDraft && (
         <div className="anim-fade-up mb-4 flex items-center gap-3 rounded-xl bg-accent-soft px-4 py-2.5 text-[13px]">
           <span className="flex-1">{tr("reader:hasDraft")}</span>
           <button className={btnPrimary} onClick={() => void useComposer.getState().openDraft(d.id)}>{tr("reader:editDraft")}</button>
         </div>
       )}
-      <div className="anim-fade-up">
+      <div className="anim-fade-up px-1">
         <h2 className="selectable text-[22px] font-semibold leading-tight tracking-tight">{d.subject || tr("list:noSubject")}</h2>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-muted">
           <span className="tnum">{tr("reader:messageCount", { count: d.messages.length })}</span>
@@ -337,7 +337,7 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
           )}
         </div>
       </div>
-      <div className="mt-6 space-y-2">
+      <div className="mt-4 space-y-1.5">
         {d.messages.map((m) => (
           <MessageCard key={m.id} m={m} atts={d.attachments.filter((a) => a.messageId === m.id)} me={account?.email ?? ""} expanded={expanded.has(m.id)} onToggle={() => toggle(m.id)} />
         ))}
