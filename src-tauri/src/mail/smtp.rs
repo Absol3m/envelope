@@ -1,7 +1,7 @@
 //! Envoi SMTP via lettre (TLS implicite, STARTTLS ou clair ; mot de passe ou XOAUTH2).
 
 use base64::{engine::general_purpose::STANDARD, Engine};
-use lettre::message::{header, Attachment, Mailbox, MultiPart, SinglePart};
+use lettre::message::{header, Attachment, Mailbox, MessageBuilder, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::{Deserialize, Serialize};
@@ -151,20 +151,10 @@ impl header::Header for DraftId {
     }
 }
 
-/// Contrôles d'un envoi à venir (envoi programmé) sans construire le message, pièces jointes comprises : expéditeur
-/// autorisé, au moins un destinataire, adresses valides.
+/// Contrôles d'un envoi à venir (envoi programmé) : ceux de `build` (expéditeur autorisé, destinataire, adresses) sans
+/// construire le corps ni les pièces jointes.
 pub fn check_sendable(account: &Account, out: &OutgoingMessage) -> Result<()> {
-    account::sender(account, out.from_email.as_deref())?;
-    if out.to.is_empty() {
-        return Err(AppError::Invalid(msg!(
-            "smtp.no_recipient",
-            "at least one recipient is required"
-        )));
-    }
-    for a in out.to.iter().chain(&out.cc).chain(&out.bcc) {
-        mailbox(a)?;
-    }
-    Ok(())
+    headers(account, out, false).map(drop)
 }
 
 pub fn build_message(account: &Account, out: &OutgoingMessage) -> Result<Message> {
@@ -177,7 +167,8 @@ pub fn build_draft(account: &Account, out: &OutgoingMessage) -> Result<Message> 
     build(account, out, true)
 }
 
-fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Message> {
+/// En-têtes du message et contrôles de l'envoi ; le corps et les pièces jointes s'ajoutent dans `build`.
+fn headers(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<MessageBuilder> {
     let from = account::sender(account, out.from_email.as_deref())?;
     let me = from.email.clone();
     let mut b = Message::builder().from(from).subject(out.subject.clone());
@@ -227,6 +218,11 @@ fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Messag
                 .join(" "),
         );
     }
+    Ok(b)
+}
+
+fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Message> {
+    let b = headers(account, out, draft)?;
     let attachments = attachment_parts(&out.attachments)?;
     let text = SinglePart::builder()
         .header(header::ContentType::TEXT_PLAIN)

@@ -35,17 +35,18 @@ export function Composer() {
 
   const senders = useMemo(() => senderOptions(accounts), [accounts]); // avant le retour anticipé : l'ordre des hooks ne change pas
   if (!draft) return null;
+  const accountOf = (id: string) => accounts.find((a) => a.id === id);
   const fail = (what: string) => (e: unknown) => toast({ message: tr("composer:failed", { what, error: String(e) }), tone: "error" });
   const loadTemplates = () => void backend.listTemplates().then(setTemplates).catch(fail(tr("composer:loadingTemplates")));
   const insertTemplate = (t: Template) => { update(applyTemplate(draft, t)); setRev((r) => r + 1); };
   const saveAsTemplate = async () => {
     const name = draft.subject.trim() || htmlToPlain(draft.html).slice(0, 40).trim();
     if (!name) return toast({ message: tr("composer:templateEmpty"), tone: "error" });
-    const signature = signatureOf(accounts.find((a) => a.id === draft.accountId), draft.fromEmail);
+    const signature = signatureOf(accountOf(draft.accountId), draft.fromEmail);
     await backend.saveTemplate({ name, subject: draft.subject, bodyHtml: templateBody(draft, signature) }).then(() => toast({ message: tr("composer:templateSaved", { name }) })).catch(fail(tr("composer:saving")));
   };
   const removeTemplate = (t: Template) => void backend.deleteTemplate(t.id).then(() => setTemplates((l) => l.filter((x) => x.id !== t.id))).catch(fail("Suppression"));
-  const sender = senders.find((x) => x.accountId === draft.accountId && x.alias.toLowerCase() === (knownAlias(accounts.find((a) => a.id === draft.accountId), draft.fromEmail) ?? "").toLowerCase()) ?? senders[0];
+  const sender = senders.find((x) => x.accountId === draft.accountId && x.alias.toLowerCase() === (knownAlias(accountOf(draft.accountId), draft.fromEmail) ?? "").toLowerCase()) ?? senders[0];
   const ccOpen = showCc || draft.cc.length > 0 || draft.bcc.length > 0;
   const replying = draft.mode === "reply" || draft.mode === "replyAll";
 
@@ -86,8 +87,7 @@ export function Composer() {
             onChange={(e) => {
               const next = senders.find((x) => x.key === e.target.value);
               if (!next) return;
-              const sig = (id: string, alias?: string) => signatureOf(accounts.find((a) => a.id === id), alias);
-              update({ accountId: next.accountId, fromEmail: next.alias || undefined, html: swapSignature(draft.html, sig(draft.accountId, draft.fromEmail), sig(next.accountId, next.alias)) });
+              update({ accountId: next.accountId, fromEmail: next.alias || undefined, html: swapSignature(draft.html, signatureOf(accountOf(draft.accountId), draft.fromEmail), signatureOf(accountOf(next.accountId), next.alias)) });
             }}
             className="min-w-0 flex-1 bg-transparent py-1.5 outline-none"
           >

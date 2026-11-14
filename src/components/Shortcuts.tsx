@@ -38,11 +38,11 @@ export function ShortcutsHelp() {
   const { helpOpen, setHelp } = useMail(useShallow((s) => ({ helpOpen: s.helpOpen, setHelp: s.setHelp })));
   return (
     <DialogFrame open={helpOpen} onOpenChange={setHelp} className="w-[min(640px,92vw)] p-6">
-          <div className="mb-5 flex items-center">
-            <Dialog.Title className="flex-1 text-[16px] font-semibold tracking-tight">{tr("shortcuts:title")}</Dialog.Title>
-            <Dialog.Close asChild><IconButton label={tr("common:close")}><X size={16} /></IconButton></Dialog.Close>
-          </div>
-          <ShortcutList />
+      <div className="mb-5 flex items-center">
+        <Dialog.Title className="flex-1 text-[16px] font-semibold tracking-tight">{tr("shortcuts:title")}</Dialog.Title>
+        <Dialog.Close asChild><IconButton label={tr("common:close")}><X size={16} /></IconButton></Dialog.Close>
+      </div>
+      <ShortcutList />
     </DialogFrame>
   );
 }

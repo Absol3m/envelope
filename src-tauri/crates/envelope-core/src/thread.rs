@@ -23,8 +23,12 @@ pub struct AccountSummary {
 
 /// Comptes, sans configuration serveur ni secret. Projection réduite voulue, distincte de `mail::account::list` de l'application
 /// (serveurs, identités, état des copies) : le serveur MCP n'a pas à voir ce qui n'aide pas un agent.
-pub async fn list_accounts(pool: &SqlitePool) -> Result<Vec<AccountSummary>> {
-    sqlx::query_as("SELECT id, email, display_name, provider, sync_status, last_sync_at FROM accounts ORDER BY created_at")
+pub async fn list_accounts(
+    pool: &SqlitePool,
+    account_id: Option<&str>,
+) -> Result<Vec<AccountSummary>> {
+    sqlx::query_as("SELECT id, email, display_name, provider, sync_status, last_sync_at FROM accounts WHERE (?1 IS NULL OR id = ?1) ORDER BY created_at")
+        .bind(account_id)
         .fetch_all(pool)
         .await
 }
@@ -69,16 +73,20 @@ pub struct Thread {
 /// Une conversation, messages du plus ancien au plus récent. Une même copie présente dans deux
 /// dossiers (ex. Envoyés + Reçus) n'apparaît qu'une fois (dédoublonnage sur Message-ID).
 /// `body_chars` borne chaque corps côté SQL : un long fil ne charge pas des Mo en mémoire.
+/// `account_id` : ne rend que la conversation de ce compte (une autre est « introuvable »).
 pub async fn get_thread(
     pool: &SqlitePool,
     thread_id: i64,
     body_chars: i64,
+    account_id: Option<&str>,
 ) -> Result<Option<Thread>> {
-    let head: Option<(String, String)> =
-        sqlx::query_as("SELECT account_id, subject FROM threads WHERE id = ?")
-            .bind(thread_id)
-            .fetch_optional(pool)
-            .await?;
+    let head: Option<(String, String)> = sqlx::query_as(
+        "SELECT account_id, subject FROM threads WHERE id = ?1 AND (?2 IS NULL OR account_id = ?2)",
+    )
+    .bind(thread_id)
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await?;
     let Some((account_id, subject)) = head else {
         return Ok(None);
     };

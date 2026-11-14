@@ -555,25 +555,25 @@ export function Settings() {
   const { settingsTab, openSettings } = useMail(useShallow((s) => ({ settingsTab: s.settingsTab, openSettings: s.openSettings })));
   return (
     <DialogFrame open={settingsTab !== null} onOpenChange={(o) => !o && openSettings(null)} onOpenAutoFocus={(e) => e.preventDefault()} className="flex h-[min(640px,88vh)] w-[min(900px,94vw)] overflow-hidden">
-          <nav className="w-[196px] shrink-0 border-r border-border bg-sidebar p-3" aria-label={settingsLabel()}>
-            <Dialog.Title className="px-2.5 pb-3 pt-1 text-[15px] font-semibold tracking-tight">{settingsLabel()}</Dialog.Title>
-            {TABS.map((t) => (
-              <button key={t.id} onClick={() => openSettings(t.id)} aria-current={settingsTab === t.id} className={cn("press flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium", settingsTab === t.id ? "bg-active text-fg" : "text-muted hover:bg-hover hover:text-fg")}>
-                <t.icon size={15} /> {t.label}
-              </button>
-            ))}
-          </nav>
-          <div className="relative min-w-0 flex-1 overflow-y-auto p-7">
-            <Dialog.Close asChild><IconButton label={tr("common:close")} className="absolute right-3 top-3"><X size={16} /></IconButton></Dialog.Close>
-            <h2 className="mb-5 text-[18px] font-semibold tracking-tight">{TABS.find((t) => t.id === settingsTab)?.label}</h2>
-            {settingsTab === "accounts" && <AccountsPanel />}
-            {settingsTab === "rules" && <RulesPanel />}
-            {settingsTab === "security" && <LockSection />}
-            {settingsTab === "agent" && <AgentPanel />}
-            {settingsTab === "appearance" && <AppearancePanel />}
-            {settingsTab === "shortcuts" && <ShortcutList />}
-            {settingsTab === "about" && <AboutPanel />}
-          </div>
+      <nav className="w-[196px] shrink-0 border-r border-border bg-sidebar p-3" aria-label={settingsLabel()}>
+        <Dialog.Title className="px-2.5 pb-3 pt-1 text-[15px] font-semibold tracking-tight">{settingsLabel()}</Dialog.Title>
+        {TABS.map((t) => (
+          <button key={t.id} onClick={() => openSettings(t.id)} aria-current={settingsTab === t.id} className={cn("press flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] font-medium", settingsTab === t.id ? "bg-active text-fg" : "text-muted hover:bg-hover hover:text-fg")}>
+            <t.icon size={15} /> {t.label}
+          </button>
+        ))}
+      </nav>
+      <div className="relative min-w-0 flex-1 overflow-y-auto p-7">
+        <Dialog.Close asChild><IconButton label={tr("common:close")} className="absolute right-3 top-3"><X size={16} /></IconButton></Dialog.Close>
+        <h2 className="mb-5 text-[18px] font-semibold tracking-tight">{TABS.find((t) => t.id === settingsTab)?.label}</h2>
+        {settingsTab === "accounts" && <AccountsPanel />}
+        {settingsTab === "rules" && <RulesPanel />}
+        {settingsTab === "security" && <LockSection />}
+        {settingsTab === "agent" && <AgentPanel />}
+        {settingsTab === "appearance" && <AppearancePanel />}
+        {settingsTab === "shortcuts" && <ShortcutList />}
+        {settingsTab === "about" && <AboutPanel />}
+      </div>
     </DialogFrame>
   );
 }

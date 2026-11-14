@@ -1,6 +1,7 @@
 import { t } from "./i18n";
 import { fullDateTime, weekdayTimeOf } from "./format";
 import { sanitizeFragment } from "./sanitize";
+import { isEmail, sameAddr } from "./utils";
 import type { Account, Addr, DetailMessage, DraftData, OutgoingMessage, ThreadDetail } from "./api";
 
 export type ComposeMode = "new" | "reply" | "replyAll" | "forward";
@@ -41,8 +42,7 @@ export interface Draft {
   references: string[];
 }
 
-const EMAIL_RE = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]{2,}$/;
-export const isEmail = (s: string) => EMAIL_RE.test(s.trim());
+export { isEmail, sameAddr };
 
 /** « Nom <a@b.fr> », « a@b.fr » ou une liste séparée par , ou ; → destinataires valides + fragments rejetés. */
 export function parseRecipients(text: string): { ok: Recipient[]; rejected: string[] } {
@@ -254,7 +254,6 @@ const bodyHtmlOf = (m: DetailMessage) => (m.bodyHtml?.trim() ? sanitizeFragment(
 
 const who = (name: string | null | undefined, address: string) => (name ? `${name} <${address}>` : address);
 const when = fullDateTime;
-const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const toRecipient = (a: Addr): Recipient => ({ address: a.address, name: a.name });
 
 /** Heures proposées par « Envoyer plus tard » (le lundi n'est pas répété quand demain en est un). */
@@ -289,14 +288,12 @@ export function senderOptions(accounts: Account[]) {
 }
 
 /** L'alias de `fromEmail` s'il existe encore sur ce compte ; sinon rien (le compte lui-même écrit). */
-export const knownAlias = (account: Account | undefined, fromEmail: string | undefined) =>
-  account?.identities.find((i) => i.email.toLowerCase() === fromEmail?.toLowerCase())?.email;
+const identityOf = (account: Account | undefined, email: string | undefined) =>
+  email ? account?.identities.find((i) => sameAddr(i.email, email)) : undefined;
+export const knownAlias = (account: Account | undefined, fromEmail: string | undefined) => identityOf(account, fromEmail)?.email;
 
 /** Signature à insérer pour cet expéditeur : celle de l'alias s'il en a une, sinon celle du compte. */
-export function signatureOf(account: Account | undefined, alias?: string): string {
-  const own = alias ? account?.identities.find((i) => sameAddr(i.email, alias))?.signature : "";
-  return own || account?.signature || "";
-}
+export const signatureOf = (account: Account | undefined, alias?: string): string => identityOf(account, alias)?.signature || account?.signature || "";
 
 /** Brouillon de réponse / transfert à partir de la conversation, écrit depuis `account` (ou l'un de ses alias, si le message lui était adressé). */
 export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetail, account: Account): Draft {

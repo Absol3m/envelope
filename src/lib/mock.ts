@@ -1,4 +1,5 @@
 import { i18next, t } from "./i18n";
+import { isEmail, sameAddr } from "./utils";
 import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
@@ -345,8 +346,8 @@ export const demoBackend: Backend = {
     const a = ACCOUNTS.find((x) => x.id === accountId);
     const address = email.trim();
     // Mêmes refus que le moteur : adresse invalide, et alias déjà présent sur le compte (casse ignorée).
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return Promise.reject(new Error(t("demo:invalidAddress", { email: address })));
-    if (a?.identities.some((i) => i.email.toLowerCase() === address.toLowerCase())) return Promise.reject(new Error(t("demo:aliasExists")));
+    if (!isEmail(address)) return Promise.reject(new Error(t("demo:invalidAddress", { email: address })));
+    if (a?.identities.some((i) => sameAddr(i.email, address))) return Promise.reject(new Error(t("demo:aliasExists")));
     if (a) a.identities.push({ id: Math.max(0, ...ACCOUNTS.flatMap((x) => x.identities.map((i) => i.id))) + 1, name: name.trim(), email: address, signature: "" });
     return delay(undefined, 60);
   },

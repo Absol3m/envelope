@@ -42,6 +42,14 @@ pub struct Identity {
     pub signature: String,
 }
 
+/// Alias avec le compte auquel il appartient (lecture groupée de `list`).
+#[derive(sqlx::FromRow)]
+struct IdentityRow {
+    account_id: String,
+    #[sqlx(flatten)]
+    identity: Identity,
+}
+
 /// Compte tel que stocké en base (sans secret).
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -412,18 +420,17 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>> {
     )))
     .fetch_all(pool)
     .await?;
-    let identities: Vec<(String, i64, String, String, String)> =
+    let identities: Vec<IdentityRow> =
         sqlx::query_as("SELECT account_id, id, name, email, signature FROM identities ORDER BY id")
             .fetch_all(pool)
             .await?;
-    for (account_id, id, name, email, signature) in identities {
+    for IdentityRow {
+        account_id,
+        identity,
+    } in identities
+    {
         if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
-            a.identities.push(Identity {
-                id,
-                name,
-                email,
-                signature,
-            });
+            a.identities.push(identity);
         }
     }
     let pending: Vec<(String, i64, Option<String>)> = sqlx::query_as(

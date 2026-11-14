@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
 import type { Draft } from "../compose";
+import type { Account } from "../api";
 import { applyTemplate, knownAlias, senderOptions, signatureOf, templateBody, attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
@@ -79,7 +80,9 @@ describe("withPrefix", () => {
 });
 
 /** Compte `email` avec sa signature et des alias d'envoi, pour `draftFrom`. */
-const owner = (email: string, signature = "", aliases: string[] = []) => ({ id: "a", email, displayName: null, provider: "imap" as const, authKind: "password" as const, syncStatus: "idle" as const, syncError: null, lastSyncAt: null, signature, copySent: true, pendingCopies: 0, pendingCopyError: null, identities: aliases.map((a, i) => ({ id: i + 1, name: "", email: a, signature: "" })) });
+/** Compte de test ; `identities` : alias d'envoi (adresse seule, sans signature, ou alias complets). */
+const account = (over: Partial<Account> = {}): Account => ({ id: "a", email: "me@x.fr", displayName: "Moi", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: null, signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [], ...over });
+const owner = (email: string, signature = "", aliases: string[] = []) => account({ email, displayName: null, signature, identities: aliases.map((a, i) => ({ id: i + 1, name: "", email: a, signature: "" })) });
 
 describe("draftFrom", () => {
   it("répond à l'expéditeur avec citation et en-têtes de threading", () => {
@@ -199,7 +202,7 @@ describe("réponse depuis un alias", () => {
 });
 
 describe("expéditeurs", () => {
-  const acct = (identities: { id: number; name: string; email: string; signature: string }[]) => ({ id: "a", email: "me@x.fr", displayName: "Moi", provider: "imap" as const, authKind: "password" as const, syncStatus: "idle" as const, syncError: null, lastSyncAt: null, signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities });
+  const acct = (identities: Account["identities"]) => account({ identities });
   it("liste chaque compte puis ses alias", () => {
     const o = senderOptions([acct([{ id: 1, name: "Pro", email: "contact@x.fr", signature: "" }])]);
     expect(o.map((x) => [x.alias, x.label])).toEqual([["", "Moi <me@x.fr>"], ["contact@x.fr", "Pro <contact@x.fr>"]]);
@@ -213,7 +216,7 @@ describe("expéditeurs", () => {
 });
 
 describe("signature par alias", () => {
-  const withAlias = (aliasSignature: string) => ({ ...owner("me@x.fr", "Compte", ["contact@x.fr"]), identities: [{ id: 1, name: "", email: "contact@x.fr", signature: aliasSignature }] });
+  const withAlias = (aliasSignature: string) => account({ signature: "Compte", identities: [{ id: 1, name: "", email: "contact@x.fr", signature: aliasSignature }] });
   it("celle de l'alias si elle existe, sinon celle du compte", () => {
     expect(signatureOf(withAlias("Pro"), "Contact@x.fr")).toBe("Pro");
     expect(signatureOf(withAlias(""), "contact@x.fr")).toBe("Compte");

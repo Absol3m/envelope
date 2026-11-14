@@ -19,3 +19,9 @@ export async function openExternal(url: string) {
 
 /** Message d'une erreur venue du moteur, sans préfixes techniques (« Error: », « authentification : »). */
 export const errText = (e: unknown) => String(e).replace(/^Error: /, "").replace(/^authentification : /, "");
+
+const EMAIL_RE = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]{2,}$/;
+/** Adresse plausible (le moteur fait foi à l'envoi). */
+export const isEmail = (s: string) => EMAIL_RE.test(s.trim());
+/** Même adresse, casse ignorée. */
+export const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();

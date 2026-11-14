@@ -64,17 +64,26 @@ impl EnvelopeTools {
     }
 
     /// Compte à interroger : celui demandé, forcé au compte autorisé quand le serveur est limité ; un autre compte
-    /// est refusé comme s'il n'existait pas.
-    fn scope(&self, requested: Option<&str>) -> Result<Option<String>, CallToolResult> {
-        match (&self.account, requested) {
-            (None, r) => Ok(r.map(str::to_owned)),
-            (Some(a), None) => Ok(Some(a.clone())),
-            (Some(a), Some(r)) if r == a => Ok(Some(a.clone())),
-            _ => Err(tool_error(
+    /// est refusé comme s'il n'existait pas. Toute lecture passe par là (les requêtes de `envelope-core` filtrent en SQL).
+    fn scope<'a>(&'a self, requested: Option<&'a str>) -> Result<Option<&'a str>, CallToolResult> {
+        match (self.account.as_deref(), requested) {
+            (Some(a), r) if r.is_none_or(|r| r == a) => Ok(Some(a)),
+            (Some(_), _) => Err(tool_error(
                 "unknown account (see list_accounts)".to_string(),
             )),
+            (None, r) => Ok(r),
         }
     }
+}
+
+/// Résultat d'un outil, ou sortie anticipée avec l'erreur d'outil déjà formée.
+macro_rules! tool_try {
+    ($e:expr) => {
+        match $e {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
+        }
+    };
 }
 
 /// Texte borné à `max` caractères (suffixé de `…`) et indicateur de troncature, en un seul passage.
@@ -272,11 +281,9 @@ struct SummarizeArgs {
 impl EnvelopeTools {
     /// Une conversation, ses corps bornés à `body_chars` caractères côté SQL.
     async fn thread(&self, id: i64, body_chars: i64) -> Result<Thread, CallToolResult> {
-        thread::get_thread(&self.pool, id, body_chars)
+        thread::get_thread(&self.pool, id, body_chars, self.account.as_deref())
             .await
             .map_err(db_error)?
-            // Une conversation d'un autre compte : même réponse que si elle n'existait pas.
-            .filter(|t| self.account.as_ref().is_none_or(|a| *a == t.account_id))
             .ok_or_else(|| tool_error(format!("conversation {id} not found (see search_emails)")))
     }
 }
@@ -295,13 +302,12 @@ impl EnvelopeTools {
         )
     )]
     async fn list_accounts(&self, _: Parameters<NoArgs>) -> Result<CallToolResult, McpError> {
-        Ok(match thread::list_accounts(&self.pool).await {
-            Ok(mut accounts) => {
-                accounts.retain(|a| self.account.as_ref().is_none_or(|id| *id == a.id));
-                json_result(&accounts)
-            }
-            Err(e) => db_error(e),
-        })
+        Ok(
+            match thread::list_accounts(&self.pool, self.account.as_deref()).await {
+                Ok(accounts) => json_result(&accounts),
+                Err(e) => db_error(e),
+            },
+        )
     }
 
     #[tool(
@@ -319,16 +325,11 @@ impl EnvelopeTools {
         &self,
         Parameters(args): Parameters<FoldersArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let account = match self.scope(args.account_id.as_deref()) {
-            Ok(a) => a,
-            Err(e) => return Ok(e),
-        };
-        Ok(
-            match search::list_folders(&self.pool, account.as_deref()).await {
-                Ok(folders) => json_result(&folders),
-                Err(e) => db_error(e),
-            },
-        )
+        let account = tool_try!(self.scope(args.account_id.as_deref()));
+        Ok(match search::list_folders(&self.pool, account).await {
+            Ok(folders) => json_result(&folders),
+            Err(e) => db_error(e),
+        })
     }
 
     #[tool(
@@ -347,12 +348,9 @@ impl EnvelopeTools {
         Parameters(args): Parameters<SearchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let page = Page::new(args.limit, None, 20);
-        let account = match self.scope(args.account_id.as_deref()) {
-            Ok(a) => a,
-            Err(e) => return Ok(e),
-        };
+        let account = tool_try!(self.scope(args.account_id.as_deref()));
         Ok(
-            match search::search(&self.pool, &args.query, account.as_deref(), page).await {
+            match search::search(&self.pool, &args.query, account, page).await {
                 Ok(rows) => mail_result(
                     json!({"count": rows.len(), "results": rows.iter().map(summary_json).collect::<Vec<_>>()}),
                 ),

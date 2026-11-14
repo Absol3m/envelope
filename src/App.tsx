@@ -31,6 +31,9 @@ const ScheduledDialog = lazy(() => import("@/components/ScheduledDialog").then((
 const ImportDialog = lazy(() => import("@/components/ImportDialog").then((m) => ({ default: m.ImportDialog })));
 const ShortcutsHelp = lazy(() => import("@/components/Shortcuts").then((m) => ({ default: m.ShortcutsHelp })));
 
+/** Objet affiché dans un message d'état : « (sans objet) » quand il est vide. */
+const noSubject = (subject: string) => subject || tr("list:noSubject");
+
 export default function App() {
   const { ready, needsOnboarding, density, paletteOpen, settingsOpen, helpOpen, importOpen, scheduledOpen, locked, autoLockSecs, lockEnabled } = useMail(
     useShallow((s) => ({ locked: s.lock?.locked === true, autoLockSecs: s.lock?.timeoutSecs ?? 0, lockEnabled: (s.lock?.method ?? "off") !== "off", scheduledOpen: s.scheduledOpen && s.scheduled.length > 0, importOpen: s.importOpen, ready: s.ready, needsOnboarding: s.needsOnboarding, density: s.density, paletteOpen: s.paletteOpen, settingsOpen: s.settingsTab !== null, helpOpen: s.helpOpen })),
@@ -66,7 +69,7 @@ export default function App() {
         toast({ message: e.payload > 1 ? `${e.payload} conversations reviennent` : "Une conversation revient" });
       }));
       unlisten.push(listen<{ subject: string; error: string }>("sent-copy:failed", (e) => {
-        useMail.getState().toast({ message: tr("composer:sentNoCopy", { subject: e.payload.subject || tr("list:noSubject"), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 });
+        useMail.getState().toast({ message: tr("composer:sentNoCopy", { subject: noSubject(e.payload.subject), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 });
       }));
       unlisten.push(listen<string>("sent-copy:local", (e) => {
         useMail.getState().toast({ message: tr("composer:sentCopyLocal", { error: describeStored(e.payload) }), tone: "error", duration: 8000 });
@@ -74,7 +77,7 @@ export default function App() {
       unlisten.push(listen<{ subject: string; error: string | null; outbox: boolean } | null>("scheduled:changed", (e) => {
         const { toast, refreshScheduled } = useMail.getState();
         void refreshScheduled();
-        if (e.payload) toast(e.payload.error ? { message: tr("scheduled:sendFailedFor", { subject: e.payload.subject || tr("list:noSubject"), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 } : { message: tr(e.payload.outbox ? "scheduled:outboxSent" : "scheduled:sentFor", { subject: e.payload.subject || tr("list:noSubject") }) });
+        if (e.payload) toast(e.payload.error ? { message: tr("scheduled:sendFailedFor", { subject: noSubject(e.payload.subject), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 } : { message: tr(e.payload.outbox ? "scheduled:outboxSent" : "scheduled:sentFor", { subject: noSubject(e.payload.subject) }) });
       }));
     });
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));

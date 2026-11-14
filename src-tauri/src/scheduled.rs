@@ -21,7 +21,7 @@ use crate::mail::smtp::OutgoingMessage;
 use crate::AppState;
 
 /// Attente maximale entre deux vérifications (voir `wait_until`).
-const TICK_MAX: Duration = Duration::from_secs(300);
+const TICK_MAX_SECS: i64 = 300;
 /// Retard toléré au-delà de l'heure prévue (veille de l'ordinateur, application relancée juste après).
 const GRACE_SECS: i64 = 3600;
 const MAX_ROWS: i64 = 200;
@@ -210,11 +210,10 @@ pub struct Claimed {
 /// Prend un message pour l'envoyer ; faux s'il a déjà été pris ou retiré (jamais deux envois du même message).
 pub async fn claim(pool: &SqlitePool, id: i64) -> Result<Option<Claimed>> {
     let row: Option<(String, String, bool, i64)> = sqlx::query_as(
-        "UPDATE scheduled SET status = ?, error = NULL WHERE id = ? AND status <> ? RETURNING account_id, message, next_try_at IS NOT NULL, attempts",
+        "UPDATE scheduled SET status = ?1, error = NULL WHERE id = ?2 AND status <> ?1 RETURNING account_id, message, next_try_at IS NOT NULL, attempts",
     )
     .bind(Status::Sending)
     .bind(id)
-    .bind(Status::Sending)
     .fetch_optional(pool)
     .await?;
     row.map(|(account_id, json, outbox, attempts)| {
@@ -344,20 +343,27 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
 }
 
 /// Prochaine échéance d'un message en attente (heure choisie, ou prochain essai de la boîte d'envoi).
-pub async fn next_due(pool: &SqlitePool) -> Result<Option<i64>> {
-    Ok(sqlx::query_scalar(
-        "SELECT MIN(COALESCE(next_try_at, send_at)) FROM scheduled WHERE status = ?",
-    )
-    .bind(Status::Pending)
-    .fetch_one(pool)
-    .await?)
+/// Une erreur de lecture vaut « rien de prévu » : la boucle se réveille au plus tard dans `TICK_MAX_SECS`.
+async fn next_due(pool: &SqlitePool) -> Option<i64> {
+    sqlx::query_scalar("SELECT MIN(COALESCE(next_try_at, send_at)) FROM scheduled WHERE status = ?")
+        .bind(Status::Pending)
+        .fetch_one(pool)
+        .await
+        .ok()
+        .flatten()
 }
 
-/// Attente avant la prochaine vérification : jusqu'à la prochaine échéance, sans dépasser `TICK_MAX` (l'horloge
+/// Attente avant la prochaine vérification : jusqu'à la prochaine échéance, sans dépasser `TICK_MAX_SECS` (l'horloge
 /// monotone de tokio s'arrête pendant la veille de l'ordinateur : au réveil, l'attente restante serait trop longue).
+/// Un message encore échu alors que `tick` vient de passer n'a pas avancé (base verrouillée, erreur avant l'envoi) :
+/// on ne boucle pas dessus à la seconde, on réessaie au rythme de la boîte d'envoi.
 fn wait_until(next: Option<i64>, at: i64) -> Duration {
-    let secs = next.map_or(TICK_MAX.as_secs() as i64, |n| n - at);
-    Duration::from_secs(secs.clamp(1, TICK_MAX.as_secs() as i64) as u64)
+    let secs = match next.map(|n| n - at) {
+        None => TICK_MAX_SECS,
+        Some(s) if s <= 0 => RETRY_BASE_SECS,
+        Some(s) => s.min(TICK_MAX_SECS),
+    };
+    Duration::from_secs(secs.max(1).unsigned_abs())
 }
 
 async fn tick(app: &AppHandle, state: &AppState) {
@@ -389,7 +395,7 @@ pub async fn run(app: AppHandle) {
     }
     loop {
         tick(&app, &state).await;
-        let next = next_due(&state.db).await.unwrap_or(None);
+        let next = next_due(&state.db).await;
         tokio::select! {
             () = tokio::time::sleep(wait_until(next, now())) => {}
             () = WAKE.notified() => {}
@@ -403,10 +409,15 @@ mod tests {
 
     #[test]
     fn attente_jusqu_a_la_prochaine_echeance_bornee() {
-        assert_eq!(wait_until(None, 1000), TICK_MAX);
+        let max = Duration::from_secs(TICK_MAX_SECS.unsigned_abs());
+        assert_eq!(wait_until(None, 1000), max);
         assert_eq!(wait_until(Some(1042), 1000), Duration::from_secs(42));
-        assert_eq!(wait_until(Some(900), 1000), Duration::from_secs(1)); // échu : tout de suite
-        assert_eq!(wait_until(Some(1000 + 86_400), 1000), TICK_MAX);
+        assert_eq!(wait_until(Some(1000 + 86_400), 1000), max);
+        // Encore échu après un tour : pas de boucle à la seconde.
+        assert_eq!(
+            wait_until(Some(900), 1000),
+            Duration::from_secs(RETRY_BASE_SECS.unsigned_abs())
+        );
     }
 
     fn message(subject: &str) -> OutgoingMessage {

@@ -31,16 +31,18 @@ async fn main() {
     if !allow_locked && db::lock_enabled(&pool).await {
         return fail("Envelope's app lock is on and this server would bypass it (it reads the database directly): turn the lock off, or restart with --allow-locked if you accept that");
     }
-    let mut tools = EnvelopeTools::new(pool.clone());
-    if let Some(key) = account {
-        let Some(id) = db::resolve_account(&pool, &key).await else {
-            return fail(&format!(
-                "no account `{key}` in this database (id or address)"
-            ));
-        };
-        eprintln!("envelope-mcp: restricted to account {id}");
-        tools = tools.scoped_to(id);
-    }
+    let tools = match account {
+        Some(key) => {
+            let Some(id) = db::resolve_account(&pool, &key).await else {
+                return fail(&format!(
+                    "no account `{key}` in this database (id or address)"
+                ));
+            };
+            eprintln!("envelope-mcp: restricted to account {id}");
+            EnvelopeTools::new(pool.clone()).scoped_to(id)
+        }
+        None => EnvelopeTools::new(pool.clone()),
+    };
     eprintln!("envelope-mcp: database {} (read-only)", path.display());
 
     // Le SDK porte le protocole (JSON-RPC, cycle de vie, versions) ; on ne fournit que les outils.
