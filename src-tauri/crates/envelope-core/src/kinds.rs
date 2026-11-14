@@ -98,6 +98,18 @@ pub enum SyncStatus {
     Error,
 }
 
+/// Vérification d'identité de l'expéditeur échouée (`messages.auth_fail`, lue dans `Authentication-Results`) :
+/// possible usurpation. DMARC d'abord, sinon SPF ou DKIM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, TS)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+#[ts(export)]
+pub enum AuthFail {
+    Dmarc,
+    Spf,
+    Dkim,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

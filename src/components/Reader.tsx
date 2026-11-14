@@ -2,7 +2,7 @@ import { ChevronDown, Download, File, FileArchive, FileImage, FileText, ImageOff
 import { DESTINATIONS, destinationsFor, isPurgeView } from "@/lib/views";
 import { Fragment, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { Account, DetailAttachment, DetailMessage, ThreadDetail, ThreadSummary } from "@/lib/api";
+import type { Account, AuthFail, DetailAttachment, DetailMessage, ThreadDetail, ThreadSummary } from "@/lib/api";
 import { displayName, fileSize, fullDate, listDate } from "@/lib/format";
 import { openLink } from "@/lib/links";
 import { prepareHtml, trustedSenders, trustSender } from "@/lib/sanitize";
@@ -207,7 +207,7 @@ function recipients(m: DetailMessage, me: string): string {
   return names.length ? tr("reader:to", { names: names.join(", ") }) : "";
 }
 
-const authFailText = (kind: "dmarc" | "spf" | "dkim") => tr(`reader:authFail.${kind}`);
+const authFailText = (kind: AuthFail) => tr(`reader:authFail.${kind}`);
 
 /** Surface d'un message (replié, ouvert, squelette) : fond teinté par un voile translucide, donc valable dans les deux thèmes, sans ombre ni liseré. */
 const CARD = "rounded-[10px] bg-hover";

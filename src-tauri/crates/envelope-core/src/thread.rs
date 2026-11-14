@@ -5,7 +5,7 @@ use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use ts_rs::TS;
 
 use crate::addr::{self, Addr};
-use crate::kinds::{Provider, SyncStatus};
+use crate::kinds::{AuthFail, Provider, SyncStatus};
 use crate::page::Page;
 use crate::role::FolderRole;
 use crate::search::{parse_search, push_message_filters};
@@ -257,7 +257,7 @@ struct RawDetailMessage {
     unsub_url: Option<String>,
     unsub_mailto: Option<String>,
     unsub_one_click: bool,
-    auth_fail: Option<String>,
+    auth_fail: Option<AuthFail>,
 }
 
 /// Moyens de désabonnement d'une liste de diffusion, tirés des en-têtes List-Unsubscribe.
@@ -294,9 +294,8 @@ pub struct DetailMessage {
     pub is_read: bool,
     pub is_starred: bool,
     pub unsubscribe: Option<Unsubscribe>,
-    /// Vérification d'identité de l'expéditeur échouée (« dmarc », « spf », « dkim ») : possible usurpation.
-    #[ts(type = "\"dmarc\" | \"spf\" | \"dkim\" | null")]
-    pub auth_fail: Option<String>,
+    /// Vérification d'identité de l'expéditeur échouée (`AuthFail`) : possible usurpation.
+    pub auth_fail: Option<AuthFail>,
 }
 
 impl From<RawDetailMessage> for DetailMessage {

@@ -8,6 +8,7 @@ use std::path::Path;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use envelope_core::addr::{self, Addr};
+use envelope_core::kinds::AuthFail;
 use mail_parser::{Address, HeaderValue, MessageParser, MimeHeaders};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
@@ -53,7 +54,7 @@ pub struct ParsedMessage {
     /// `X-Envelope-Draft-Id` : ce message est un brouillon d'Envelope (voir `mail::drafts`).
     pub draft_id: Option<String>,
     /// Mécanisme (« dmarc », « spf », « dkim ») dont la vérification a échoué d'après `Authentication-Results`.
-    pub auth_fail: Option<&'static str>,
+    pub auth_fail: Option<AuthFail>,
 }
 
 fn addrs(a: Option<&Address<'_>>) -> String {
@@ -1280,7 +1281,7 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
             |headers: &str| format!("{headers}From: a@b.fr\r\nSubject: x\r\n\r\nhi").into_bytes();
         // Notre serveur (en tête) signale l'échec ; un « pass » forgé par l'expéditeur plus bas ne l'efface pas.
         let raw = mail("Authentication-Results: mx.mon-serveur.fr; dmarc=fail header.from=b.fr\r\nAuthentication-Results: faux.test; dmarc=pass\r\n");
-        assert_eq!(parse(&raw, None).unwrap().auth_fail, Some("dmarc"));
+        assert_eq!(parse(&raw, None).unwrap().auth_fail, Some(AuthFail::Dmarc));
         assert_eq!(parse(&mail(""), None).unwrap().auth_fail, None);
         assert_eq!(
             parse(&mail("Authentication-Results: mx; dmarc=pass\r\n"), None)

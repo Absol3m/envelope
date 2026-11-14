@@ -11,6 +11,7 @@ import type { ServerDestination } from "./views";
  *  échoue si le dépôt n'est pas à jour). Seuls les alias de confort sont écrits ici. */
 export type { Account } from "./bindings/Account";
 export type { Addr } from "./bindings/Addr";
+export type { AuthFail } from "./bindings/AuthFail";
 export type { DetailAttachment } from "./bindings/DetailAttachment";
 export type { DetailMessage } from "./bindings/DetailMessage";
 export type { Detected } from "./bindings/Detected";
@@ -106,6 +107,8 @@ export interface Backend {
   emptyFolder(folderId: number): Promise<void>;
   /** Confirmation native (boîte de dialogue de l'OS) avant une action irréversible. */
   confirm(message: string, okLabel: string): Promise<boolean>;
+  /** Domaine enregistrable d'un hôte (liste des suffixes publics du moteur) : « www.x.fr » → « x.fr », « a.github.io » → « a.github.io ». */
+  registrableDomain(host: string): Promise<string>;
   syncNow(accountId: string): Promise<void>;
   addAccount(input: NewAccount): Promise<Account>;
   addOAuthAccount(provider: OAuthProviderId, email: string): Promise<Account>;
@@ -218,6 +221,7 @@ export const tauriBackend: Backend = {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().setBadgeCount(count > 0 ? count : undefined);
   },
+  registrableDomain: (host) => invoke("registrable_domain", { host }),
   confirm: (message, okLabel) => ask(message, { title: "Envelope", kind: "warning", okLabel, cancelLabel: t("common:cancel") }),
   syncNow: (accountId) => invoke("sync_now", { accountId }),
   addAccount: (input) => invoke("add_account", { input }),

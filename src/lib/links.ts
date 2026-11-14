@@ -27,11 +27,21 @@ function shownHost(text: string): string | null {
   }
 }
 
-/** Deux hôtes désignent le même site : identiques, ou l'un est un sous-domaine de l'autre (« www.x.fr » / « x.fr »). */
-const sameSite = (a: string, b: string) => a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+/** Deux hôtes désignent le même site : même domaine enregistrable d'après la liste des suffixes publics (« www.x.fr » et
+ *  « x.fr » oui ; « github.io » et « monsite.github.io » non). */
+async function sameSite(a: string, b: string): Promise<boolean> {
+  if (a === b) return true;
+  const { registrableDomain } = useMail.getState().backend;
+  try {
+    const [ra, rb] = await Promise.all([registrableDomain(a), registrableDomain(b)]);
+    return ra === rb;
+  } catch {
+    return false; // moteur injoignable : on traite le lien comme douteux (confirmation), jamais comme sûr ni comme bloqué
+  }
+}
 
 /** Phrase expliquant pourquoi la destination d'un lien est douteuse ; `null` si rien à signaler. */
-export function linkRisk(href: string, text: string): string | null {
+export async function linkRisk(href: string, text: string): Promise<string | null> {
   let u: URL;
   try {
     u = new URL(href);
@@ -46,13 +56,13 @@ export function linkRisk(href: string, text: string): string | null {
   // Les IDN s'écrivent « xn-- » une fois normalisés : domaine pouvant imiter un autre par des lettres d'autres alphabets.
   if (host.split(".").some((l) => l.startsWith("xn--"))) return t("links:idn", { host });
   const shown = shownHost(text);
-  return shown && !sameSite(shown, host) ? t("links:mismatch", { shown, host }) : null;
+  return shown && !(await sameSite(shown, host)) ? t("links:mismatch", { shown, host }) : null;
 }
 
 /** Ouvre un lien dans le navigateur système ; si sa destination est douteuse, demande d'abord confirmation
  *  (boîte de dialogue native). `text` : texte affiché du lien. */
 export async function openLink(href: string, text: string): Promise<void> {
-  const risk = linkRisk(href, text);
+  const risk = await linkRisk(href, text);
   if (risk) {
     const shown = href.length > 160 ? `${href.slice(0, 160)}…` : href;
     const ok = await useMail.getState().backend.confirm(`${risk}\n\n${shown}\n\n${t("links:phishing")}`, t("links:openAnyway"));

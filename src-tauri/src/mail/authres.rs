@@ -6,9 +6,11 @@
 //! forger une plus bas dans le message ; c'est pourquoi on ne retient que les **échecs** : un faux « échec » ne
 //! trompe personne, un faux « réussi » le ferait.
 
+use envelope_core::kinds::AuthFail;
+
 /// Mécanisme dont l'échec doit alerter : DMARC d'abord (il synthétise SPF et DKIM avec l'alignement du domaine
 /// « From »), sinon SPF ou DKIM s'il n'y a pas de résultat DMARC. `None` : rien à signaler.
-pub fn failure(header: &str) -> Option<&'static str> {
+pub fn failure(header: &str) -> Option<AuthFail> {
     let cleaned = strip_comments(header);
     let (mut dmarc, mut spf, mut dkim) = (None, None, None);
     // Le premier segment est l'identifiant du serveur (« authserv-id »), pas un résultat.
@@ -35,12 +37,12 @@ pub fn failure(header: &str) -> Option<&'static str> {
     }
     let failed = |r: &Option<String>| r.as_deref() == Some("fail");
     if dmarc.is_some() {
-        return failed(&dmarc).then_some("dmarc");
+        return failed(&dmarc).then_some(AuthFail::Dmarc);
     }
     if failed(&spf) {
-        return Some("spf");
+        return Some(AuthFail::Spf);
     }
-    failed(&dkim).then_some("dkim")
+    failed(&dkim).then_some(AuthFail::Dkim)
 }
 
 /// Retire les commentaires entre parenthèses (RFC 5322), imbriqués ou non, sans jamais boucler sans fin.
@@ -64,7 +66,7 @@ mod tests {
     #[test]
     fn dmarc_en_echec_alerte() {
         let h = "mx.example.net; dkim=pass header.d=bank.fr; spf=pass smtp.mailfrom=bank.fr; dmarc=fail (p=reject) header.from=bank.fr";
-        assert_eq!(failure(h), Some("dmarc"));
+        assert_eq!(failure(h), Some(AuthFail::Dmarc));
     }
 
     #[test]
@@ -88,9 +90,9 @@ mod tests {
     fn sans_dmarc_spf_puis_dkim() {
         assert_eq!(
             failure("mx; spf=fail smtp.mailfrom=x.fr; dkim=pass"),
-            Some("spf")
+            Some(AuthFail::Spf)
         );
-        assert_eq!(failure("mx; dkim=fail header.d=x.fr"), Some("dkim"));
+        assert_eq!(failure("mx; dkim=fail header.d=x.fr"), Some(AuthFail::Dkim));
         // Deux signatures DKIM : une réussie suffit.
         assert_eq!(
             failure("mx; dkim=fail header.d=a.fr; dkim=pass header.d=b.fr"),
@@ -100,7 +102,7 @@ mod tests {
 
     #[test]
     fn casse_commentaires_et_entree_hostile() {
-        assert_eq!(failure("MX; DMARC=FAIL"), Some("dmarc"));
+        assert_eq!(failure("MX; DMARC=FAIL"), Some(AuthFail::Dmarc));
         // Le mot « fail » dans un commentaire ou dans le nom d'hôte n'est pas un résultat.
         assert_eq!(failure("mx (dmarc=fail); dmarc=pass"), None);
         assert_eq!(failure("fail.example; dmarc=pass"), None);

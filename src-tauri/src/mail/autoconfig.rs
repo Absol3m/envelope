@@ -240,7 +240,11 @@ async fn mx_registrable_domain(domain: &str) -> Option<String> {
 /// Domaine enregistrable (« mx1.mail.ovh.net » → « ovh.net », « mail.example.co.uk » → « example.co.uk »),
 /// d'après la liste des suffixes publics ; l'hôte lui-même si aucun suffixe connu ne correspond.
 pub fn registrable_domain(host: &str) -> String {
+    // Un nom d'hôte DNS tient en 253 octets : au-delà (texte venu d'un message), on ne cherche pas.
     let host = host.trim_end_matches('.').to_ascii_lowercase();
+    if host.len() > 253 {
+        return host;
+    }
     psl::domain_str(&host).unwrap_or(&host).to_string()
 }
 
@@ -318,6 +322,13 @@ mod tests {
         );
         assert_eq!(registrable_domain("a.b.exemple.asso.fr"), "exemple.asso.fr");
         assert_eq!(registrable_domain("localhost"), "localhost");
+        // Suffixes de la rubrique privée : chaque sous-domaine est un site distinct (comparaison des liens).
+        assert_eq!(registrable_domain("monsite.github.io"), "monsite.github.io");
+        assert_eq!(
+            registrable_domain("a.b.monsite.github.io"),
+            "monsite.github.io"
+        );
+        assert_eq!(registrable_domain("github.io"), "github.io");
     }
 
     #[test]

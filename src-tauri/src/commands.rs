@@ -238,6 +238,13 @@ pub async fn add_oauth_account(
     Ok(created)
 }
 
+/// Domaine enregistrable d'un hôte, d'après la liste des suffixes publics (rubriques privées comprises : `github.io`
+/// ne désigne pas un seul site). Sert à comparer le site annoncé par un lien et sa destination.
+#[tauri::command]
+pub fn registrable_domain(host: String) -> String {
+    autoconfig::registrable_domain(&host)
+}
+
 /// Détecte les serveurs d'une adresse (table intégrée, autoconfig, ISPDB, MX).
 #[tauri::command]
 pub async fn detect_servers(email: String) -> Result<account::Discovered> {

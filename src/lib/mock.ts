@@ -287,6 +287,8 @@ export const demoBackend: Backend = {
     return delay(undefined, 300);
   },
   confirm: (message) => Promise.resolve(window.confirm(message)),
+  // Approximation de la démo (deux derniers libellés) : le moteur utilise la liste des suffixes publics.
+  registrableDomain: (host) => Promise.resolve(host.split(".").slice(-2).join(".")),
   syncNow: () => delay(undefined, 600),
   addAccount: () => Promise.reject(new Error(t("demo:unavailable"))),
   addOAuthAccount: () => Promise.reject(new Error(t("demo:unavailable"))),
