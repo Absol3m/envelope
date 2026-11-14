@@ -103,7 +103,7 @@ const btnCls = "press inline-flex h-9 items-center justify-center gap-2 rounded-
 export const btnPrimary = `${btnCls} bg-accent text-accent-fg hover:bg-accent-hover shadow-card`;
 export const btnGhost = `${btnCls} border border-border bg-bg hover:bg-hover`;
 
-/** Boîte de dialogue centrée : voile, positionnement et animation communs ; `className` règle taille, disposition et marges. */
+/** Boîte de dialogue centrée : voile, positionnement et animation communs (le centrage est dans les images clés `dialog-in`, pas dans des classes : Tailwind pose `translate`, qui s'ajouterait à l'animation) ; `className` règle taille, disposition et marges. */
 export function DialogFrame({ open = true, onOpenChange, className, dim = "bg-black/35", children, ...content }: {
   open?: boolean;
   onOpenChange: (open: boolean) => void;
@@ -118,7 +118,7 @@ export function DialogFrame({ open = true, onOpenChange, className, dim = "bg-bl
         <Dialog.Overlay className={cn("anim-fade-in fixed inset-0 z-[90] backdrop-blur-[3px]", dim)} />
         <Dialog.Content
           aria-describedby={undefined}
-          className={cn("fixed left-1/2 top-1/2 z-[91] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-elevated shadow-pop", className)}
+          className={cn("fixed left-1/2 top-1/2 z-[91] rounded-2xl bg-elevated shadow-pop", className)}
           style={{ animation: "dialog-in 0.2s cubic-bezier(0.16,1,0.3,1) both" }}
           {...content}
         >
