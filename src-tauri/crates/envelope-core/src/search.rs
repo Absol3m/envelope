@@ -280,19 +280,56 @@ pub async fn search(
     account_id: Option<&str>,
     page: Page,
 ) -> Result<Vec<MessageSummary>> {
+    search_in(pool, query, account_id, page, false).await
+}
+
+/// `search` sans le spam ni la corbeille (pour l'agent MCP : ce contenu est hostile par nature).
+pub async fn search_visible(
+    pool: &SqlitePool,
+    query: &str,
+    account_id: Option<&str>,
+    page: Page,
+) -> Result<Vec<MessageSummary>> {
+    search_in(pool, query, account_id, page, true).await
+}
+
+async fn search_in(
+    pool: &SqlitePool,
+    query: &str,
+    account_id: Option<&str>,
+    page: Page,
+    hide_junk: bool,
+) -> Result<Vec<MessageSummary>> {
     let Some(fts) = build_fts_query(query) else {
         return Ok(vec![]);
     };
     sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "SELECT {SUMMARY_COLS} FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid \
          WHERE messages_fts MATCH ?1 AND (?2 IS NULL OR m.account_id = ?2) \
+         AND (?5 = 0 OR m.folder_id NOT IN (SELECT id FROM folders WHERE role IN (?6, ?7))) \
          ORDER BY rank LIMIT ?3 OFFSET ?4"
     )))
     .bind(fts)
     .bind(account_id)
     .bind(page.limit)
     .bind(page.offset)
+    .bind(hide_junk)
+    .bind(FolderRole::Junk)
+    .bind(FolderRole::Trash)
     .fetch_all(pool)
+    .await
+}
+
+/// La conversation a-t-elle au moins un message hors spam et corbeille ? (l'agent MCP n'ouvre pas les autres)
+pub async fn thread_is_visible(pool: &SqlitePool, thread_id: i64) -> Result<bool> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM messages m JOIN folders f ON f.id = m.folder_id \
+         WHERE m.thread_id = ?1 AND f.role IS NOT ?2 AND f.role IS NOT ?3)",
+    )
+    .bind(thread_id)
+    .bind(FolderRole::Junk)
+    .bind(FolderRole::Trash)
+    .fetch_one(pool)
     .await
 }
 

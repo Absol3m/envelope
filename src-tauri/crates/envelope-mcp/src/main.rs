@@ -28,7 +28,11 @@ async fn main() {
         Ok(p) => p,
         Err(e) => return fail(&e),
     };
-    if !allow_locked && db::lock_enabled(&pool).await {
+    let locked = match db::lock_enabled(&pool).await {
+        Ok(locked) => locked,
+        Err(e) => return fail(&e),
+    };
+    if !allow_locked && locked {
         return fail("Envelope's app lock is on and this server would bypass it (it reads the database directly): turn the lock off, or restart with --allow-locked if you accept that");
     }
     let tools = match account {

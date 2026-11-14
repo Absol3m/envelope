@@ -45,14 +45,26 @@ pub async fn resolve_account(pool: &SqlitePool, key: &str) -> Option<String> {
 /// Le verrouillage de l'application est-il actif ? (réglage `lock.method` ≠ `off`). Le serveur MCP lit le fichier de
 /// la base directement, sans passer par l'application : il ne connaît pas l'état « verrouillé » et ne peut pas
 /// l'imposer. Il refuse donc de démarrer tant qu'un verrouillage est configuré, sauf demande explicite.
-/// Une base sans table `settings` (ancienne version) n'a pas de verrouillage.
-pub async fn lock_enabled(pool: &SqlitePool) -> bool {
-    sqlx::query_scalar::<_, String>("SELECT value FROM settings WHERE key = 'lock.method'")
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .is_some_and(|m| m != "off")
+/// Une base sans table `settings` n'a pas de verrouillage ; toute autre erreur (base occupée, illisible) est remontée :
+/// on ne démarre pas dans le doute.
+pub async fn lock_enabled(pool: &SqlitePool) -> Result<bool, String> {
+    let read = async {
+        let has_table: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'settings')",
+        )
+        .fetch_one(pool)
+        .await?;
+        if !has_table {
+            return Ok(false);
+        }
+        let method: Option<String> =
+            sqlx::query_scalar("SELECT value FROM settings WHERE key = 'lock.method'")
+                .fetch_optional(pool)
+                .await?;
+        Ok::<_, sqlx::Error>(method.is_some_and(|m| m != "off"))
+    };
+    read.await
+        .map_err(|e| format!("cannot read the app lock setting: {e}"))
 }
 
 #[cfg(test)]
@@ -74,28 +86,36 @@ mod tests {
         pool
     }
 
+    /// Une base illisible ne passe pas pour « pas de verrouillage » : le serveur refuse de démarrer.
+    #[tokio::test]
+    async fn erreur_de_lecture_du_reglage_n_est_pas_un_deverrouillage() {
+        let p = pool(true).await;
+        p.close().await;
+        assert!(lock_enabled(&p).await.is_err());
+    }
+
     #[tokio::test]
     async fn verrouillage_detecte_dans_les_reglages() {
         assert!(
-            !lock_enabled(&pool(false).await).await,
+            !lock_enabled(&pool(false).await).await.unwrap(),
             "ancienne base : pas de verrouillage"
         );
         let p = pool(true).await;
-        assert!(!lock_enabled(&p).await, "aucun réglage");
+        assert!(!lock_enabled(&p).await.unwrap(), "aucun réglage");
         sqlx::query("INSERT INTO settings VALUES ('lock.method', 'off')")
             .execute(&p)
             .await
             .unwrap();
-        assert!(!lock_enabled(&p).await);
+        assert!(!lock_enabled(&p).await.unwrap());
         sqlx::query("UPDATE settings SET value = 'password'")
             .execute(&p)
             .await
             .unwrap();
-        assert!(lock_enabled(&p).await);
+        assert!(lock_enabled(&p).await.unwrap());
         sqlx::query("UPDATE settings SET value = 'system'")
             .execute(&p)
             .await
             .unwrap();
-        assert!(lock_enabled(&p).await);
+        assert!(lock_enabled(&p).await.unwrap());
     }
 }

@@ -54,6 +54,10 @@ async fn database() -> TestDb {
         "INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (3,'b','Secret autre compte','2026-03-04T09:00:00Z')",
         "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
            VALUES (5,'b',2,3,1,'m5','Secret autre compte','dan@x.fr','[]','2026-03-04T09:00:00Z','confidentiel','confidentiel',0)",
+        "INSERT INTO folders (id,account_id,path,name,role,unread_count,total_count) VALUES (3,'a','Junk','Junk','junk',1,1)",
+        "INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (4,'a','Offre pharma','2026-03-05T09:00:00Z')",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
+           VALUES (6,'a',3,4,1,'m6','Offre pharma','spam@x.fr','[]','2026-03-05T09:00:00Z','pharma','pharma gratuit',0)",
         "INSERT INTO attachments (message_id,filename,mime_type,size,storage_path) VALUES (3,'facture.pdf','application/pdf',5,'/secret/chemin/facture.pdf')",
     ] {
         sqlx::query(sql).execute(&rw).await.unwrap();
@@ -230,16 +234,51 @@ async fn get_thread_truncates_and_hides_attachment_paths() {
 async fn summarize_strips_quotes_and_orders_chronologically() {
     let (c, _db) = connect().await;
     let (_, text) = call(&c, "summarize_thread", json!({"thread_id": 1})).await;
-    assert!(text.contains("2 message(s)"));
+    // Le premier bloc est l'avertissement « non fiable », le dernier les données (JSON sur une ligne).
+    let v: serde_json::Value =
+        serde_json::from_str(text.lines().last().unwrap()).expect("JSON, pas du texte libre");
+    assert_eq!(v["message_count"], 2);
+    let messages = v["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 2);
+    assert!(
+        messages[0]["from"].as_str().unwrap().contains("alice@x.fr"),
+        "du plus ancien au plus récent"
+    );
+    assert!(messages[1]["from"].as_str().unwrap().contains("me@x.fr"));
     assert!(text.contains("À 10h ?") && text.contains("Oui, demain."));
     assert!(
         !text.contains("> Peut-on") && !text.contains("Merci"),
         "citations retirées"
     );
-    assert!(
-        text.find("alice@x.fr").unwrap() < text.find("me@x.fr").unwrap(),
-        "du plus ancien au plus récent"
-    );
+}
+
+#[tokio::test]
+async fn search_hides_spam_from_the_agent() {
+    let (c, _db) = connect().await;
+    let (_, text) = call(&c, "search_emails", json!({"query": "pharma"})).await;
+    assert!(text.contains("\"count\":0"), "{text}");
+}
+
+#[tokio::test]
+async fn threads_only_in_spam_are_not_opened() {
+    let (c, _db) = connect().await;
+    for tool in ["get_thread", "summarize_thread"] {
+        let (r, _) = call(&c, tool, json!({"thread_id": 4})).await; // « Offre pharma », dossier Junk
+        assert_eq!(r.is_error, Some(true), "{tool}");
+    }
+}
+
+#[tokio::test]
+async fn search_refuses_oversized_queries() {
+    let (c, _db) = connect().await;
+    let long = "a".repeat(201);
+    let many = "mot ".repeat(9);
+    for q in [long.as_str(), many.as_str()] {
+        let (r, _) = call(&c, "search_emails", json!({"query": q})).await;
+        assert_eq!(r.is_error, Some(true), "{q}");
+    }
+    let (r, _) = call(&c, "search_emails", json!({"query": "demain"})).await;
+    assert_ne!(r.is_error, Some(true));
 }
 
 #[tokio::test]
@@ -300,7 +339,7 @@ async fn hostile_arguments_never_write() {
         .fetch_one(&ro)
         .await
         .unwrap();
-    assert_eq!(n, 5);
+    assert_eq!(n, 6);
 }
 
 #[tokio::test]
