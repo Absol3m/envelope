@@ -33,6 +33,10 @@ export function applyDevParams() {
     const compose = q.get("compose");
     if (compose === "new") {
       useComposer.getState().compose();
+      if (q.get("colors")) { // ?colors=1 : texte coloré (dont des couleurs foncées) pour juger le thème sombre
+        const spans = [["#000080", "navy"], ["#8b0000", "dark red"], ["#dc2626", "red"], ["#16a34a", "green"], ["#2563eb", "blue"], ["#7c3aed", "violet"]];
+        useComposer.getState().update({ html: `<p>Neutral, ${spans.map(([c, n]) => `<span style="color:${c}">${n}</span>`).join(", ")}</p>` });
+      }
       if (q.get("attach")) useComposer.getState().update({ attachments: [{ id: "1", name: "Devis-refonte-site-v3.pdf", mimeType: "application/pdf", size: 482_000, dataBase64: "" }, { id: "2", name: "photo.jpg", mimeType: "image/jpeg", size: 2_300_000, dataBase64: "" }] });
     }
     else if (compose === "reply" || compose === "replyAll" || compose === "forward") {
