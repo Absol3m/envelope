@@ -539,7 +539,7 @@ pub async fn schedule_send(
 ) -> Result<i64> {
     // Mêmes contrôles qu'un envoi immédiat : expéditeur autorisé, au moins un destinataire.
     let acct = account::get(&state.db, &account_id).await?;
-    smtp::build_message(&acct, &message)?;
+    smtp::check_sendable(&acct, &message)?;
     scheduled::add(&state.db, &account_id, send_at, &message).await
 }
 

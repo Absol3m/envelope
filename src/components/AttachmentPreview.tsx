@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { DetailAttachment } from "@/lib/api";
 import { t as tr } from "@/lib/i18n";
 import { useMail } from "@/lib/store";
+import { DialogFrame } from "./ui/primitives";
 
 const useSrc = (id: number) => {
   const backend = useMail((s) => s.backend);
@@ -16,10 +17,7 @@ export function AttachmentPreview({ item, onClose, onSave, onOpen }: { item: Det
   const name = item.filename ?? tr("reader:attachment");
   const btn = "press inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12.5px] text-muted hover:bg-hover hover:text-fg";
   return (
-    <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="anim-fade-in fixed inset-0 z-[90] bg-black/55 backdrop-blur-[3px]" />
-        <Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-1/2 z-[91] flex max-h-[90vh] w-[min(900px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-elevated p-4 shadow-pop">
+    <DialogFrame onOpenChange={(o) => !o && onClose()} dim="bg-black/55" className="flex max-h-[90vh] w-[min(900px,94vw)] flex-col p-4">
           <div className="flex items-center gap-2">
             <Dialog.Title className="min-w-0 flex-1 truncate text-[14px] font-semibold">{name}</Dialog.Title>
             <button onClick={onSave} className={btn}><Download size={14} />{tr("reader:save")}</button>
@@ -33,9 +31,7 @@ export function AttachmentPreview({ item, onClose, onSave, onOpen }: { item: Det
               /* illisible : on laisse le système l'ouvrir */
               : <img src={src} alt={name} onError={() => { onClose(); onOpen(); }} className="max-h-[78vh] max-w-full object-contain" />}
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </DialogFrame>
   );
 }
 

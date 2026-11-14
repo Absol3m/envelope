@@ -151,6 +151,22 @@ impl header::Header for DraftId {
     }
 }
 
+/// Contrôles d'un envoi à venir (envoi programmé) sans construire le message, pièces jointes comprises : expéditeur
+/// autorisé, au moins un destinataire, adresses valides.
+pub fn check_sendable(account: &Account, out: &OutgoingMessage) -> Result<()> {
+    account::sender(account, out.from_email.as_deref())?;
+    if out.to.is_empty() {
+        return Err(AppError::Invalid(msg!(
+            "smtp.no_recipient",
+            "at least one recipient is required"
+        )));
+    }
+    for a in out.to.iter().chain(&out.cc).chain(&out.bcc) {
+        mailbox(a)?;
+    }
+    Ok(())
+}
+
 pub fn build_message(account: &Account, out: &OutgoingMessage) -> Result<Message> {
     build(account, out, false)
 }
@@ -376,6 +392,21 @@ mod tests {
         assert_eq!(header_filename("../../etc/passwd"), "passwd");
         assert_eq!(header_filename("a\"b\r\n.pdf"), "ab.pdf");
         assert_eq!(header_filename("  "), "attachment");
+    }
+
+    #[test]
+    fn controle_d_un_envoi_a_venir_sans_construire_le_message() {
+        let a = account();
+        assert!(check_sendable(&a, &outgoing(vec![], None)).is_ok());
+        let mut sans_destinataire = outgoing(vec![], None);
+        sans_destinataire.to.clear();
+        assert!(check_sendable(&a, &sans_destinataire).is_err());
+        let mut adresse = outgoing(vec![], None);
+        adresse.cc.push("pas une adresse".into());
+        assert!(check_sendable(&a, &adresse).is_err());
+        let mut libre = outgoing(vec![], None);
+        libre.from_email = Some("inconnu@ailleurs.fr".into());
+        assert!(check_sendable(&a, &libre).is_err());
     }
 
     #[test]

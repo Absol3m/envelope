@@ -9,6 +9,5 @@
   "sendNow": "Envoyer maintenant",
   "edit": "Modifier",
   "sendFailedFor": "Envoi programmé impossible — {{subject}} : {{error}}",
-  "sentFor": "Message programmé envoyé — {{subject}}",
-  "noSubject": "sans objet"
+  "sentFor": "Message programmé envoyé — {{subject}}"
 }

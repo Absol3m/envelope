@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useComposer } from "@/lib/composer";
 import { scheduledAt } from "@/lib/format";
 import { useMail } from "@/lib/store";
-import { btnPrimary } from "./ui/primitives";
+import { btnPrimary, DialogFrame } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
 import { describeStored } from "@/lib/backendError";
 
@@ -34,10 +34,7 @@ export function ScheduledDialog() {
   };
 
   return (
-    <Dialog.Root open onOpenChange={(o) => !o && setScheduledOpen(false)}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="anim-fade-in fixed inset-0 z-[90] bg-black/35 backdrop-blur-[3px]" />
-        <Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-1/2 z-[91] flex max-h-[min(560px,88vh)] w-[min(560px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-elevated p-6 shadow-pop">
+    <DialogFrame onOpenChange={(o) => !o && setScheduledOpen(false)} className="flex max-h-[min(560px,88vh)] w-[min(560px,94vw)] flex-col p-6">
           <div className="flex items-start gap-3">
             <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent"><Clock size={18} /></span>
             <div className="min-w-0 flex-1">
@@ -62,8 +59,6 @@ export function ScheduledDialog() {
               </li>
             ))}
           </ul>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </DialogFrame>
   );
 }

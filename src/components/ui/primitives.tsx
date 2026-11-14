@@ -1,5 +1,6 @@
+import * as Dialog from "@radix-ui/react-dialog";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ComponentProps, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { avatarBackground, displayName, initials } from "@/lib/format";
 import { shortcut } from "@/lib/platform";
@@ -101,3 +102,29 @@ export const inputCls =
 const btnCls = "press inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-[13px] font-medium disabled:opacity-50";
 export const btnPrimary = `${btnCls} bg-accent text-accent-fg hover:bg-accent-hover shadow-card`;
 export const btnGhost = `${btnCls} border border-border bg-bg hover:bg-hover`;
+
+/** Boîte de dialogue centrée : voile, positionnement et animation communs ; `className` règle taille, disposition et marges. */
+export function DialogFrame({ open = true, onOpenChange, className, dim = "bg-black/35", children, ...content }: {
+  open?: boolean;
+  onOpenChange: (open: boolean) => void;
+  className?: string;
+  /** Opacité du voile (aperçu : plus sombre). */
+  dim?: string;
+  children: ReactNode;
+} & Pick<ComponentProps<typeof Dialog.Content>, "onInteractOutside" | "onEscapeKeyDown" | "onOpenAutoFocus">) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className={cn("anim-fade-in fixed inset-0 z-[90] backdrop-blur-[3px]", dim)} />
+        <Dialog.Content
+          aria-describedby={undefined}
+          className={cn("fixed left-1/2 top-1/2 z-[91] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-elevated shadow-pop", className)}
+          style={{ animation: "dialog-in 0.2s cubic-bezier(0.16,1,0.3,1) both" }}
+          {...content}
+        >
+          {children}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}

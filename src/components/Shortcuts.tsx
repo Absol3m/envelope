@@ -4,7 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useMail } from "@/lib/store";
 import { DESTINATION_IDS, DESTINATIONS, NAV_MAILBOXES, NAV_SMART } from "@/lib/views";
 import { keys, settingsLabel } from "@/lib/platform";
-import { IconButton, Kbd } from "./ui/primitives";
+import { DialogFrame, IconButton, Kbd } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
 
 const shortcuts = (): { group: string; items: [string[], string][] }[] => [
@@ -37,17 +37,12 @@ export function ShortcutList() {
 export function ShortcutsHelp() {
   const { helpOpen, setHelp } = useMail(useShallow((s) => ({ helpOpen: s.helpOpen, setHelp: s.setHelp })));
   return (
-    <Dialog.Root open={helpOpen} onOpenChange={setHelp}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[90] bg-black/35 backdrop-blur-[3px] anim-fade-in" />
-        <Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-1/2 z-[91] w-[min(640px,92vw)] rounded-2xl bg-elevated p-6 shadow-pop" style={{ animation: "dialog-in 0.2s cubic-bezier(0.16,1,0.3,1) both" }}>
+    <DialogFrame open={helpOpen} onOpenChange={setHelp} className="w-[min(640px,92vw)] p-6">
           <div className="mb-5 flex items-center">
             <Dialog.Title className="flex-1 text-[16px] font-semibold tracking-tight">{tr("shortcuts:title")}</Dialog.Title>
             <Dialog.Close asChild><IconButton label={tr("common:close")}><X size={16} /></IconButton></Dialog.Close>
           </div>
           <ShortcutList />
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </DialogFrame>
   );
 }

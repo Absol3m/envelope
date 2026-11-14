@@ -66,7 +66,7 @@ export default function App() {
         toast({ message: e.payload > 1 ? `${e.payload} conversations reviennent` : "Une conversation revient" });
       }));
       unlisten.push(listen<{ subject: string; error: string }>("sent-copy:failed", (e) => {
-        useMail.getState().toast({ message: tr("composer:sentNoCopy", { subject: e.payload.subject || tr("scheduled:noSubject"), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 });
+        useMail.getState().toast({ message: tr("composer:sentNoCopy", { subject: e.payload.subject || tr("list:noSubject"), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 });
       }));
       unlisten.push(listen<string>("sent-copy:local", (e) => {
         useMail.getState().toast({ message: tr("composer:sentCopyLocal", { error: describeStored(e.payload) }), tone: "error", duration: 8000 });
@@ -74,7 +74,7 @@ export default function App() {
       unlisten.push(listen<{ subject: string; error: string | null; outbox: boolean } | null>("scheduled:changed", (e) => {
         const { toast, refreshScheduled } = useMail.getState();
         void refreshScheduled();
-        if (e.payload) toast(e.payload.error ? { message: tr("scheduled:sendFailedFor", { subject: e.payload.subject || tr("scheduled:noSubject"), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 } : { message: tr(e.payload.outbox ? "scheduled:outboxSent" : "scheduled:sentFor", { subject: e.payload.subject || tr("scheduled:noSubject") }) });
+        if (e.payload) toast(e.payload.error ? { message: tr("scheduled:sendFailedFor", { subject: e.payload.subject || tr("list:noSubject"), error: describeStored(e.payload.error) }), tone: "error", duration: 8000 } : { message: tr(e.payload.outbox ? "scheduled:outboxSent" : "scheduled:sentFor", { subject: e.payload.subject || tr("list:noSubject") }) });
       }));
     });
     return () => void unlisten.forEach((p) => p.then((fn) => fn()));

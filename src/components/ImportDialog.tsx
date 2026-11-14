@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import type { ImportFolder, ImportProgress, ImportReport } from "@/lib/api";
 import { fileSize, formatNumber } from "@/lib/format";
 import { useMail } from "@/lib/store";
-import { btnPrimary } from "./ui/primitives";
+import { btnPrimary, DialogFrame } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
 
 type Step = "choose" | "pick" | "running" | "done";
@@ -68,10 +68,7 @@ export function ImportDialog() {
   const busy = step === "running";
 
   return (
-    <Dialog.Root open onOpenChange={(o) => !o && !busy && setImportOpen(false)}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="anim-fade-in fixed inset-0 z-[90] bg-black/35 backdrop-blur-[3px]" />
-        <Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-1/2 z-[91] flex max-h-[min(640px,88vh)] w-[min(560px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-elevated p-6 shadow-pop" onInteractOutside={(e) => busy && e.preventDefault()} onEscapeKeyDown={(e) => busy && e.preventDefault()}>
+    <DialogFrame onOpenChange={(o) => !o && !busy && setImportOpen(false)} className="flex max-h-[min(640px,88vh)] w-[min(560px,94vw)] flex-col p-6" onInteractOutside={(e) => busy && e.preventDefault()} onEscapeKeyDown={(e) => busy && e.preventDefault()}>
           <div className="flex items-start gap-3">
             <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent"><HardDrive size={18} /></span>
             <div className="min-w-0 flex-1">
@@ -140,8 +137,6 @@ export function ImportDialog() {
           )}
 
           {error && <p role="alert" className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-danger">{error}</p>}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </DialogFrame>
   );
 }

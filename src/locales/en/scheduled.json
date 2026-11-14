@@ -9,6 +9,5 @@
   "sendNow": "Send now",
   "edit": "Edit",
   "sendFailedFor": "Scheduled send failed — {{subject}}: {{error}}",
-  "sentFor": "Scheduled message sent — {{subject}}",
-  "noSubject": "no subject"
+  "sentFor": "Scheduled message sent — {{subject}}"
 }

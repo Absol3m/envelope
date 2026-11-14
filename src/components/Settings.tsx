@@ -19,7 +19,7 @@ import { ShortcutList } from "./Shortcuts";
 import { AddAccountForm } from "./AddAccountForm";
 import { RulesPanel } from "./RulesPanel";
 import { isMac, isWindows, settingsLabel } from "@/lib/platform";
-import { Avatar, btnGhost, btnPrimary, IconButton, inputCls, Spinner } from "./ui/primitives";
+import { Avatar, btnGhost, btnPrimary, DialogFrame, IconButton, inputCls, Spinner } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
 import { describeStored } from "@/lib/backendError";
 
@@ -554,15 +554,7 @@ function AboutPanel() {
 export function Settings() {
   const { settingsTab, openSettings } = useMail(useShallow((s) => ({ settingsTab: s.settingsTab, openSettings: s.openSettings })));
   return (
-    <Dialog.Root open={settingsTab !== null} onOpenChange={(o) => !o && openSettings(null)}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="anim-fade-in fixed inset-0 z-[90] bg-black/35 backdrop-blur-[3px]" />
-        <Dialog.Content
-          aria-describedby={undefined}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          className="fixed left-1/2 top-1/2 z-[91] flex h-[min(640px,88vh)] w-[min(900px,94vw)] overflow-hidden rounded-2xl bg-elevated shadow-pop"
-          style={{ animation: "dialog-in 0.22s cubic-bezier(0.16,1,0.3,1) both" }}
-        >
+    <DialogFrame open={settingsTab !== null} onOpenChange={(o) => !o && openSettings(null)} onOpenAutoFocus={(e) => e.preventDefault()} className="flex h-[min(640px,88vh)] w-[min(900px,94vw)] overflow-hidden">
           <nav className="w-[196px] shrink-0 border-r border-border bg-sidebar p-3" aria-label={settingsLabel()}>
             <Dialog.Title className="px-2.5 pb-3 pt-1 text-[15px] font-semibold tracking-tight">{settingsLabel()}</Dialog.Title>
             {TABS.map((t) => (
@@ -582,8 +574,6 @@ export function Settings() {
             {settingsTab === "shortcuts" && <ShortcutList />}
             {settingsTab === "about" && <AboutPanel />}
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    </DialogFrame>
   );
 }

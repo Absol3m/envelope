@@ -10,6 +10,7 @@
 
 use std::time::Duration;
 
+use futures::StreamExt;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager};
@@ -19,7 +20,8 @@ use crate::error::{AppError, Result};
 use crate::mail::smtp::OutgoingMessage;
 use crate::AppState;
 
-const TICK: Duration = Duration::from_secs(30);
+/// Attente maximale entre deux vérifications (voir `wait_until`).
+const TICK_MAX: Duration = Duration::from_secs(300);
 /// Retard toléré au-delà de l'heure prévue (veille de l'ordinateur, application relancée juste après).
 const GRACE_SECS: i64 = 3600;
 const MAX_ROWS: i64 = 200;
@@ -28,6 +30,19 @@ const MAX_BYTES: usize = 40 * 1024 * 1024;
 /// Boîte d'envoi : délai entre deux essais, de 30 s doublé à chaque échec jusqu'à 10 min.
 const RETRY_BASE_SECS: i64 = 30;
 const RETRY_MAX_SECS: i64 = 600;
+
+/// État d'une ligne de la file (`scheduled.status`) ; mêmes valeurs en base et vers l'interface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, sqlx::Type)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+pub enum Status {
+    Pending,
+    Sending,
+    Failed,
+}
+
+/// Réveille la boucle d'envoi : un message vient d'entrer, son heure est peut-être plus proche que la prochaine échéance.
+static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
 /// Ligne affichée dans la liste (sans le corps ni les pièces jointes).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -38,8 +53,7 @@ pub struct Scheduled {
     pub send_at: i64,
     pub subject: String,
     pub to: Vec<String>,
-    /// `pending` | `sending` | `failed`
-    pub status: String,
+    pub status: Status,
     pub error: Option<String>,
     /// En boîte d'envoi : parti faute de connexion, repart seul (`send_at` n'est alors que la date de mise en file).
     pub outbox: bool,
@@ -85,16 +99,6 @@ async fn insert(
     retry: Option<(i64, &str)>,
     message: &OutgoingMessage,
 ) -> Result<i64> {
-    let queued: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM scheduled")
-        .fetch_one(pool)
-        .await?;
-    if queued >= MAX_ROWS {
-        return Err(AppError::Invalid(msg!(
-            "scheduled.too_many",
-            "too many scheduled sends ({max} at most)",
-            max = MAX_ROWS
-        )));
-    }
     let json =
         serde_json::to_string(message).map_err(|e| AppError::Invalid((e.to_string()).into()))?;
     if json.len() > MAX_BYTES {
@@ -104,17 +108,28 @@ async fn insert(
         )));
     }
     let (next_try_at, last_error) = retry.unzip();
-    Ok(sqlx::query(
-        "INSERT INTO scheduled (account_id, send_at, message, next_try_at, error) VALUES (?, ?, ?, ?, ?)",
+    // Plafond contrôlé dans l'insertion même : deux ajouts simultanés ne le dépassent pas.
+    let done = sqlx::query(
+        "INSERT INTO scheduled (account_id, send_at, message, next_try_at, error) \
+         SELECT ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM scheduled) < ?",
     )
     .bind(account_id)
     .bind(send_at)
     .bind(json)
     .bind(next_try_at)
     .bind(last_error)
+    .bind(MAX_ROWS)
     .execute(pool)
-    .await?
-    .last_insert_rowid())
+    .await?;
+    if done.rows_affected() == 0 {
+        return Err(AppError::Invalid(msg!(
+            "scheduled.too_many",
+            "too many scheduled sends ({max} at most)",
+            max = MAX_ROWS
+        )));
+    }
+    WAKE.notify_one();
+    Ok(done.last_insert_rowid())
 }
 
 fn parse(json: &str) -> Result<OutgoingMessage> {
@@ -135,7 +150,7 @@ struct Row {
     send_at: i64,
     subject: Option<String>,
     to_json: Option<String>,
-    status: String,
+    status: Status,
     error: Option<String>,
     outbox: bool,
 }
@@ -168,18 +183,18 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Scheduled>> {
 
 /// Retire un message de la file et le rend (pour le rouvrir dans le composer). Refusé pendant son envoi.
 pub async fn cancel(pool: &SqlitePool, id: i64) -> Result<OutgoingMessage> {
-    let json: String = sqlx::query_scalar(
-        "DELETE FROM scheduled WHERE id = ? AND status <> 'sending' RETURNING message",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| {
-        AppError::Invalid(msg!(
-            "scheduled.not_found",
-            "send not found, or already in progress"
-        ))
-    })?;
+    let json: String =
+        sqlx::query_scalar("DELETE FROM scheduled WHERE id = ? AND status <> ? RETURNING message")
+            .bind(id)
+            .bind(Status::Sending)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| {
+                AppError::Invalid(msg!(
+                    "scheduled.not_found",
+                    "send not found, or already in progress"
+                ))
+            })?;
     parse(&json)
 }
 
@@ -195,9 +210,11 @@ pub struct Claimed {
 /// Prend un message pour l'envoyer ; faux s'il a déjà été pris ou retiré (jamais deux envois du même message).
 pub async fn claim(pool: &SqlitePool, id: i64) -> Result<Option<Claimed>> {
     let row: Option<(String, String, bool, i64)> = sqlx::query_as(
-        "UPDATE scheduled SET status = 'sending', error = NULL WHERE id = ? AND status <> 'sending' RETURNING account_id, message, next_try_at IS NOT NULL, attempts",
+        "UPDATE scheduled SET status = ?, error = NULL WHERE id = ? AND status <> ? RETURNING account_id, message, next_try_at IS NOT NULL, attempts",
     )
+    .bind(Status::Sending)
     .bind(id)
+    .bind(Status::Sending)
     .fetch_optional(pool)
     .await?;
     row.map(|(account_id, json, outbox, attempts)| {
@@ -214,10 +231,10 @@ pub async fn claim(pool: &SqlitePool, id: i64) -> Result<Option<Claimed>> {
 /// Le serveur n'a pas répondu : le message passe (ou reste) en boîte d'envoi, prochain essai après un délai croissant.
 pub async fn requeue(pool: &SqlitePool, id: i64, attempts: i64, error: &str) -> Result<()> {
     sqlx::query(
-        "UPDATE scheduled SET status = 'pending', attempts = attempts + 1, next_try_at = ?, error = ? WHERE id = ?",
+        "UPDATE scheduled SET status = ?, attempts = attempts + 1, next_try_at = ?, error = ? WHERE id = ?",
     )
+    .bind(Status::Pending)
     .bind(now() + retry_delay(attempts + 1)) // `attempts` : avant cet échec ; `add_outbox` a déjà compté le délai 0
-
     .bind(error)
     .bind(id)
     .execute(pool)
@@ -234,7 +251,8 @@ pub async fn remove(pool: &SqlitePool, id: i64) -> Result<()> {
 }
 
 pub async fn fail(pool: &SqlitePool, id: i64, error: &str) -> Result<()> {
-    sqlx::query("UPDATE scheduled SET status = 'failed', error = ? WHERE id = ?")
+    sqlx::query("UPDATE scheduled SET status = ?, error = ? WHERE id = ?")
+        .bind(Status::Failed)
         .bind(error)
         .bind(id)
         .execute(pool)
@@ -249,8 +267,10 @@ pub async fn recover(pool: &SqlitePool) -> Result<()> {
         "scheduled.interrupted",
         "send interrupted: check the Sent folder before sending it again"
     ));
-    sqlx::query("UPDATE scheduled SET status = 'failed', error = ? WHERE status = 'sending'")
+    sqlx::query("UPDATE scheduled SET status = ?, error = ? WHERE status = ?")
+        .bind(Status::Failed)
         .bind(interrupted.to_wire())
+        .bind(Status::Sending)
         .execute(pool)
         .await?;
     Ok(())
@@ -260,9 +280,10 @@ pub async fn recover(pool: &SqlitePool) -> Result<()> {
 /// jamais en retard : il repart dès que son délai est écoulé.
 pub async fn due(pool: &SqlitePool, at: i64) -> Result<Vec<(i64, bool)>> {
     let rows: Vec<(i64, i64, bool)> = sqlx::query_as(
-        "SELECT id, send_at, next_try_at IS NOT NULL FROM scheduled WHERE status = 'pending' \
+        "SELECT id, send_at, next_try_at IS NOT NULL FROM scheduled WHERE status = ? \
          AND COALESCE(next_try_at, send_at) <= ? ORDER BY send_at, id",
     )
+    .bind(Status::Pending)
     .bind(at)
     .fetch_all(pool)
     .await?;
@@ -322,41 +343,71 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
     result.map(|_| ())
 }
 
+/// Prochaine échéance d'un message en attente (heure choisie, ou prochain essai de la boîte d'envoi).
+pub async fn next_due(pool: &SqlitePool) -> Result<Option<i64>> {
+    Ok(sqlx::query_scalar(
+        "SELECT MIN(COALESCE(next_try_at, send_at)) FROM scheduled WHERE status = ?",
+    )
+    .bind(Status::Pending)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Attente avant la prochaine vérification : jusqu'à la prochaine échéance, sans dépasser `TICK_MAX` (l'horloge
+/// monotone de tokio s'arrête pendant la veille de l'ordinateur : au réveil, l'attente restante serait trop longue).
+fn wait_until(next: Option<i64>, at: i64) -> Duration {
+    let secs = next.map_or(TICK_MAX.as_secs() as i64, |n| n - at);
+    Duration::from_secs(secs.clamp(1, TICK_MAX.as_secs() as i64) as u64)
+}
+
 async fn tick(app: &AppHandle, state: &AppState) {
     let Ok(due) = due(&state.db, now()).await else {
         return;
     };
-    for (id, late) in due {
-        if late {
-            let missed = AppError::Invalid(msg!(
-                "scheduled.missed",
-                "the app wasn't open at the scheduled time: send it now or edit it"
-            ));
-            let _ = fail(&state.db, id, &missed.to_wire()).await;
-            let _ = app.emit("scheduled:changed", Option::<Outcome>::None);
-        } else if let Err(e) = deliver_now(app, state, id).await {
-            tracing::warn!("scheduled send {id}: {e}");
-        }
-    }
+    // En parallèle : un serveur SMTP lent ne retarde pas les autres messages (`claim` interdit tout double envoi).
+    futures::stream::iter(due)
+        .for_each_concurrent(4, |(id, late)| async move {
+            if late {
+                let missed = AppError::Invalid(msg!(
+                    "scheduled.missed",
+                    "the app wasn't open at the scheduled time: send it now or edit it"
+                ));
+                let _ = fail(&state.db, id, &missed.to_wire()).await;
+                let _ = app.emit("scheduled:changed", Option::<Outcome>::None);
+            } else if let Err(e) = deliver_now(app, state, id).await {
+                tracing::warn!("scheduled send {id}: {e}");
+            }
+        })
+        .await;
 }
 
-/// Boucle d'envoi : une vérification toutes les 30 s, la première tout de suite (messages échus pendant l'arrêt).
+/// Boucle d'envoi : une vérification au démarrage (messages échus pendant l'arrêt), puis à chaque échéance ou ajout.
 pub async fn run(app: AppHandle) {
     let state = app.state::<AppState>();
     if let Err(e) = recover(&state.db).await {
         tracing::warn!("resuming scheduled sends: {e}");
     }
-    let mut interval = tokio::time::interval(TICK);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
-        interval.tick().await;
         tick(&app, &state).await;
+        let next = next_due(&state.db).await.unwrap_or(None);
+        tokio::select! {
+            () = tokio::time::sleep(wait_until(next, now())) => {}
+            () = WAKE.notified() => {}
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attente_jusqu_a_la_prochaine_echeance_bornee() {
+        assert_eq!(wait_until(None, 1000), TICK_MAX);
+        assert_eq!(wait_until(Some(1042), 1000), Duration::from_secs(42));
+        assert_eq!(wait_until(Some(900), 1000), Duration::from_secs(1)); // échu : tout de suite
+        assert_eq!(wait_until(Some(1000 + 86_400), 1000), TICK_MAX);
+    }
 
     fn message(subject: &str) -> OutgoingMessage {
         serde_json::from_value(serde_json::json!({
@@ -425,10 +476,7 @@ mod tests {
         // Reprise après arrêt brutal : l'envoi en cours est signalé, pas renvoyé.
         recover(&pool).await.unwrap();
         let l = list(&pool).await.unwrap();
-        assert_eq!(
-            (l[1].status.as_str(), l[1].error.is_some()),
-            ("failed", true)
-        );
+        assert_eq!((l[1].status, l[1].error.is_some()), (Status::Failed, true));
         // Un échec reste dans la file, et peut être repris.
         fail(&pool, 1, "boum").await.unwrap();
         assert!(claim(&pool, 1).await.unwrap().is_some());
@@ -449,7 +497,9 @@ mod tests {
             .await
             .unwrap();
         let l = list(&pool).await.unwrap();
-        assert!(l[0].outbox && l[0].status == "pending" && l[0].error.as_deref() == Some("boum"));
+        assert!(
+            l[0].outbox && l[0].status == Status::Pending && l[0].error.as_deref() == Some("boum")
+        );
         // Pas avant le premier délai ; ensuite, même très longtemps après, jamais « manqué ».
         assert!(due(&pool, now()).await.unwrap().is_empty());
         let later = now() + 10 * 86_400;
