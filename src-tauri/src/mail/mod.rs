@@ -41,6 +41,7 @@ pub mod local;
 pub mod mbox;
 pub mod oauth;
 pub mod rawstore;
+pub mod secrets;
 pub mod sentcopy;
 pub mod smtp;
 pub mod sync;

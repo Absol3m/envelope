@@ -17,7 +17,7 @@ use tokio::net::TcpListener;
 
 use crate::clock::now;
 use crate::error::{AppError, Result};
-use crate::mail::account;
+use crate::mail::secrets::{self, Secret};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -79,7 +79,7 @@ impl OAuthProvider {
     }
     /// Identifiants d'application : trousseau d'abord, puis variables d'environnement.
     pub fn client(self) -> Result<ClientCreds> {
-        if let Some(c) = account::load_client(self)? {
+        if let Some(c) = secrets::load_client(self)? {
             return Ok(c);
         }
         let cfg = self.config();
@@ -95,8 +95,13 @@ impl OAuthProvider {
             client_secret: cfg.client_secret_env.and_then(|e| std::env::var(e).ok()),
         })
     }
-    pub fn is_configured(self) -> bool {
-        self.client().is_ok()
+    /// Les identifiants d'application sont-ils renseignés (trousseau ou environnement) ?
+    pub async fn is_configured(self) -> bool {
+        self.load_client().await.is_ok()
+    }
+    /// `client`, hors de l'exécuteur (lecture du trousseau).
+    pub async fn load_client(self) -> Result<ClientCreds> {
+        secrets::blocking_keychain(move || self.client()).await
     }
 }
 
@@ -174,7 +179,7 @@ pub async fn authorize(
     provider: OAuthProvider,
     open_browser: impl FnOnce(&str) -> Result<()>,
 ) -> Result<Authorized> {
-    let client = account::blocking_keychain(move || provider.client()).await?;
+    let client = provider.load_client().await?;
     authorize_with(&provider.config(), &client, open_browser).await
 }
 
@@ -349,8 +354,7 @@ fn refresh_form(refresh_token: &str, client: &ClientCreds) -> Vec<(&'static str,
 /// Jeton d'accès valide pour un compte : rafraîchit et persiste s'il expire dans < 60 s.
 pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Result<String> {
     let _guard = refresh_lock().lock().await; // évite deux rafraîchissements concurrents
-    let id = account_id.to_string();
-    let tokens = account::blocking_keychain(move || account::load_oauth(&id)).await?;
+    let tokens = secrets::oauth_tokens(account_id).await?;
     if tokens.expires_at - 60 > now() {
         return Ok(tokens.access_token);
     }
@@ -360,7 +364,7 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
             "no refresh_token: reconnect the account"
         ))
     })?;
-    let client = account::blocking_keychain(move || provider.client()).await?;
+    let client = provider.load_client().await?;
     let resp = token_request(
         &provider.config().token_url,
         &refresh_form(&refresh, &client),
@@ -372,9 +376,9 @@ pub async fn fresh_access_token(provider: OAuthProvider, account_id: &str) -> Re
         refresh_token: resp.refresh_token.or(Some(refresh)), // Google ne renvoie pas toujours le refresh_token
         expires_at: now() + resp.expires_in.unwrap_or(3600),
     };
-    let (id, saved) = (account_id.to_string(), new.clone());
-    account::blocking_keychain(move || account::store_oauth(&id, &saved)).await?;
-    Ok(new.access_token)
+    let access_token = new.access_token.clone();
+    secrets::store(account_id, Secret::OAuth(new)).await?;
+    Ok(access_token)
 }
 
 #[cfg(test)]

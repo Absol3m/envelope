@@ -9,10 +9,8 @@ use sqlx::SqlitePool;
 
 use crate::error::{AppError, Result};
 use crate::mail::oauth::{self, OAuthProvider};
-
-const KEYRING_SERVICE: &str = "dev.envelope.app";
-const PASSWORD: &str = "password";
-const OAUTH: &str = "oauth";
+use crate::mail::secrets::{self, Secret};
+use crate::mail::{imap, smtp};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[serde(rename_all = "lowercase")]
@@ -259,113 +257,6 @@ pub fn guess(domain: &str, email: &str) -> Discovered {
     }
 }
 
-// ---------- Secrets ----------
-
-fn entry(account_id: &str, kind: &str) -> Result<keyring::Entry> {
-    Ok(keyring::Entry::new(
-        KEYRING_SERVICE,
-        &format!("{account_id}:{kind}"),
-    )?)
-}
-pub fn store_password(account_id: &str, password: &str) -> Result<()> {
-    Ok(entry(account_id, PASSWORD)?.set_password(password)?)
-}
-fn load_password(account_id: &str) -> Result<String> {
-    Ok(entry(account_id, PASSWORD)?.get_password()?)
-}
-/// Jetons OAuth déjà lus ou écrits, gardés en mémoire : chaque connexion IMAP/SMTP en demande un, et une lecture du
-/// trousseau coûte (voire une autorisation) alors que le jeton ne change qu'au rafraîchissement.
-/// Le trousseau reste la référence : `store_oauth` et `delete_secrets` tiennent le cache à jour.
-fn token_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, oauth::OAuthTokens>>
-{
-    static CACHE: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, oauth::OAuthTokens>>,
-    > = std::sync::OnceLock::new();
-    CACHE.get_or_init(Default::default)
-}
-pub fn store_oauth(account_id: &str, tokens: &oauth::OAuthTokens) -> Result<()> {
-    entry(account_id, OAUTH)?.set_password(&serde_json::to_string(tokens)?)?;
-    if let Ok(mut cache) = token_cache().lock() {
-        cache.insert(account_id.to_string(), tokens.clone());
-    }
-    Ok(())
-}
-pub fn load_oauth(account_id: &str) -> Result<oauth::OAuthTokens> {
-    if let Some(t) = token_cache()
-        .lock()
-        .ok()
-        .and_then(|c| c.get(account_id).cloned())
-    {
-        return Ok(t);
-    }
-    let tokens: oauth::OAuthTokens =
-        serde_json::from_str(&entry(account_id, OAUTH)?.get_password()?)?;
-    if let Ok(mut cache) = token_cache().lock() {
-        cache.insert(account_id.to_string(), tokens.clone());
-    }
-    Ok(tokens)
-}
-/// Secret de l'application elle-même (hors compte) dans le trousseau du système ; `kind` en désigne l'usage.
-pub fn store_app_secret(kind: &str, value: &str) -> Result<()> {
-    Ok(entry("app", kind)?.set_password(value)?)
-}
-pub fn load_app_secret(kind: &str) -> Result<Option<String>> {
-    match entry("app", kind)?.get_password() {
-        Ok(v) => Ok(Some(v)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
-pub fn delete_app_secret(kind: &str) {
-    if let Ok(e) = entry("app", kind) {
-        let _ = e.delete_credential();
-    }
-}
-
-/// Identifiants d'application OAuth2 (par fournisseur, partagés par tous les comptes).
-fn client_entry(provider: OAuthProvider) -> Result<keyring::Entry> {
-    entry("oauth-client", provider.provider().as_str())
-}
-pub fn store_client(provider: OAuthProvider, creds: &oauth::ClientCreds) -> Result<()> {
-    Ok(client_entry(provider)?.set_password(&serde_json::to_string(creds)?)?)
-}
-pub fn load_client(provider: OAuthProvider) -> Result<Option<oauth::ClientCreds>> {
-    match client_entry(provider)?.get_password() {
-        Ok(json) => Ok(Some(serde_json::from_str(&json)?)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
-pub fn delete_client(provider: OAuthProvider) {
-    if let Ok(e) = client_entry(provider) {
-        let _ = e.delete_credential();
-    }
-}
-pub fn delete_secrets(account_id: &str) {
-    if let Ok(mut cache) = token_cache().lock() {
-        cache.remove(account_id);
-    }
-    for kind in [PASSWORD, OAUTH] {
-        if let Ok(e) = entry(account_id, kind) {
-            let _ = e.delete_credential();
-        }
-    }
-}
-
-/// Accès au trousseau du système depuis du code asynchrone : l'appel est bloquant (jusqu'à plusieurs secondes si le
-/// trousseau est verrouillé ou demande une autorisation) et ne doit pas occuper un thread de l'exécuteur.
-pub async fn blocking_keychain<T: Send + 'static>(
-    job: impl FnOnce() -> Result<T> + Send + 'static,
-) -> Result<T> {
-    tokio::task::spawn_blocking(job).await.map_err(|e| {
-        AppError::Auth(msg!(
-            "keychain.interrupted",
-            "keychain access interrupted: {detail}",
-            detail = e
-        ))
-    })?
-}
-
 /// Résout les identifiants d'un compte (rafraîchit le jeton OAuth2 si besoin).
 pub async fn resolve_credential(account: &Account) -> Result<Credential> {
     if account.auth_kind == AuthKind::OAuth2 {
@@ -382,11 +273,7 @@ pub async fn resolve_credential(account: &Account) -> Result<Credential> {
             access_token,
         })
     } else {
-        let password = blocking_keychain({
-            let id = account.id.clone();
-            move || load_password(&id)
-        })
-        .await?;
+        let password = secrets::password(&account.id).await?;
         Ok(Credential::Password {
             user: account.username.clone(),
             password,
@@ -450,6 +337,67 @@ pub async fn set_sync_state(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Compte à créer : identité et serveurs déjà résolus par l'appelant (formulaire, découverte, fournisseur OAuth2).
+pub struct NewAccountSpec<'a> {
+    pub email: &'a str,
+    pub display_name: Option<&'a str>,
+    pub provider: Provider,
+    pub username: &'a str,
+    pub imap: &'a ServerConfig,
+    pub smtp: &'a ServerConfig,
+    /// Mot de passe ou jetons OAuth2 ; le mode d'authentification en découle.
+    pub secret: Secret,
+}
+
+/// Crée un compte : ligne en base, secret dans le trousseau, puis **essai IMAP + SMTP** avec les identifiants réels
+/// (hôte, TLS, authentification) — pour les deux modes d'authentification. À la moindre erreur, tout est annulé (ni
+/// compte orphelin ni secret oublié). La synchro, elle, est démarrée par l'appelant.
+pub async fn create(pool: &SqlitePool, spec: NewAccountSpec<'_>) -> Result<Account> {
+    let id = uuid::Uuid::new_v4().to_string();
+    // Identifiants de l'essai : ceux qu'on vient de recevoir, sans relire le trousseau.
+    let cred = match &spec.secret {
+        Secret::Password(password) => Credential::Password {
+            user: spec.username.to_string(),
+            password: password.clone(),
+        },
+        Secret::OAuth(tokens) => Credential::OAuth {
+            user: spec.username.to_string(),
+            access_token: tokens.access_token.clone(),
+        },
+    };
+    insert(
+        pool,
+        &NewAccountRow {
+            id: &id,
+            email: spec.email,
+            display_name: spec.display_name,
+            provider: spec.provider,
+            auth_kind: spec.secret.auth_kind(),
+            username: spec.username,
+            imap: spec.imap,
+            smtp: spec.smtp,
+        },
+    )
+    .await?;
+    let verified = async {
+        secrets::store(&id, spec.secret).await?;
+        let acct = get(pool, &id).await?;
+        // Les deux serveurs sont indépendants : essais en parallèle.
+        let imap_check = async {
+            let mut session = imap::connect(&acct, &cred).await?; // hôte, TLS, authentification
+            let _ = session.logout().await;
+            Ok::<_, AppError>(())
+        };
+        tokio::try_join!(imap_check, smtp::test(&acct, &cred))?;
+        Ok::<_, AppError>(acct)
+    }
+    .await;
+    if verified.is_err() {
+        let _ = remove(pool, &id).await; // l'erreur d'origine prime sur celle du nettoyage
+    }
+    verified
 }
 
 /// Identifiant du compte spécial « Sur cet ordinateur » (dossiers locaux, sans serveur).
@@ -630,6 +578,7 @@ pub async fn set_copy_sent(pool: &SqlitePool, id: &str, on: bool) -> Result<()> 
     Ok(())
 }
 
+/// Supprime le compte de la base seulement (ses secrets partent par `secrets::delete` : voir `remove`).
 pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
     if id == LOCAL_ID {
         return Err(AppError::Invalid(msg!(
@@ -641,12 +590,13 @@ pub async fn delete(pool: &SqlitePool, id: &str) -> Result<()> {
         .bind(id)
         .execute(pool)
         .await?;
-    let id = id.to_string();
-    blocking_keychain(move || {
-        delete_secrets(&id);
-        Ok(())
-    })
-    .await
+    Ok(())
+}
+
+/// Supprime un compte : sa ligne (et ce qui en dépend) puis ses secrets du trousseau.
+pub async fn remove(pool: &SqlitePool, id: &str) -> Result<()> {
+    delete(pool, id).await?;
+    secrets::delete(id).await
 }
 
 #[cfg(test)]
@@ -745,6 +695,49 @@ mod tests {
         }
     }
 
+    /// Une création qui échoue (ici : serveurs injoignables ; sans trousseau, elle échoue plus tôt, avec le même résultat)
+    /// ne laisse aucun compte, pour les deux modes d'authentification.
+    #[tokio::test]
+    async fn creation_echouee_annulee_pour_les_deux_modes() {
+        let pool = crate::db::init_memory().await.unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener); // plus personne n'écoute
+        let server = ServerConfig {
+            host: "127.0.0.1".into(),
+            port,
+            security: Security::Starttls,
+        };
+        let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        for secret in [
+            Secret::Password("x".into()),
+            Secret::OAuth(oauth::OAuthTokens {
+                access_token: "t".into(),
+                refresh_token: None,
+                expires_at: i64::MAX,
+            }),
+        ] {
+            let spec = NewAccountSpec {
+                email: "me@x.fr",
+                display_name: None,
+                provider: Provider::Generic,
+                username: "me",
+                imap: &server,
+                smtp: &server,
+                secret,
+            };
+            assert!(create(&pool, spec).await.is_err());
+        }
+        let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(before, after, "aucun compte orphelin");
+    }
+
     #[tokio::test]
     async fn alias_ajoute_liste_refuse_en_double_et_supprime_avec_le_compte() {
         let pool = pool_with_account().await;
@@ -804,37 +797,5 @@ mod tests {
             Some("Moi".to_string())
         );
         assert!(sender(&acct, Some("usurpe@autre.fr")).is_err());
-    }
-
-    /// Un accès bloquant au trousseau ne doit pas figer l'exécuteur : sur un exécuteur à UN seul fil, une tâche
-    /// concurrente continue d'avancer pendant que « le trousseau » dort.
-    #[tokio::test(flavor = "current_thread")]
-    async fn acces_trousseau_ne_bloque_pas_l_executeur() {
-        let ticks = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counter = ticks.clone();
-        let ticker = tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            }
-        });
-        let value = blocking_keychain(|| {
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            Ok(42)
-        })
-        .await
-        .unwrap();
-        ticker.abort();
-        assert_eq!(value, 42);
-        assert!(
-            ticks.load(std::sync::atomic::Ordering::SeqCst) >= 10,
-            "l'exécuteur a continué à tourner : {} battements",
-            ticks.load(std::sync::atomic::Ordering::SeqCst)
-        );
-        // Une erreur du trousseau remonte telle quelle.
-        let err = blocking_keychain::<()>(|| Err(AppError::Auth("refusé".into())))
-            .await
-            .unwrap_err();
-        assert!(err.to_string().contains("refusé"));
     }
 }

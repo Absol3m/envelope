@@ -21,7 +21,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::error::{AppError, Result};
-use crate::mail::account::{self, LOCAL_ID};
+use crate::mail::account::LOCAL_ID;
+use crate::mail::secrets;
 
 const SECRET_KIND: &str = "lock-password";
 pub const MIN_PASSWORD_CHARS: usize = 8;
@@ -255,11 +256,7 @@ impl Lock {
                         "no native authentication on this system: choose a password"
                     )));
                 }
-                account::blocking_keychain(|| {
-                    account::delete_app_secret(SECRET_KIND);
-                    Ok(())
-                })
-                .await?;
+                secrets::delete_app_secret(SECRET_KIND).await?;
             }
             Method::Password => {
                 let password = new_password.ok_or_else(|| {
@@ -275,10 +272,7 @@ impl Lock {
                     )));
                 }
                 // Argon2 (lent, volontairement) puis trousseau : un seul saut hors de l'exécuteur.
-                account::blocking_keychain(move || {
-                    account::store_app_secret(SECRET_KIND, &hash_password(&password)?)
-                })
-                .await?;
+                secrets::store_app_secret(SECRET_KIND, move || hash_password(&password)).await?;
             }
         }
         save_config(pool, next).await?;
@@ -299,11 +293,7 @@ impl Lock {
             )));
         }
         wipe(pool).await?;
-        account::blocking_keychain(|| {
-            account::delete_app_secret(SECRET_KIND);
-            Ok(())
-        })
-        .await?;
+        secrets::delete_app_secret(SECRET_KIND).await?;
         let mut s = self.state();
         *s = State {
             locked: false,
@@ -355,7 +345,7 @@ fn hash_password(password: &str) -> Result<String> {
 }
 
 fn verify_password(password: &str) -> Result<bool> {
-    let stored = account::load_app_secret(SECRET_KIND)?
+    let stored = secrets::load_app_secret(SECRET_KIND)?
         .ok_or_else(|| AppError::Auth(msg!("lock.no_password_saved", "no password saved")))?;
     let parsed: PasswordHash = stored.parse().map_err(|e| {
         AppError::Auth(msg!(
@@ -704,7 +694,7 @@ mod tests {
         .unwrap();
         assert_eq!(load_config(&pool).await.unwrap(), Config::default());
         assert!(
-            account::load_app_secret(SECRET_KIND).unwrap().is_none(),
+            secrets::load_app_secret(SECRET_KIND).unwrap().is_none(),
             "l'empreinte est supprimée du trousseau"
         );
     }

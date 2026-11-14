@@ -3,7 +3,6 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
-use uuid::Uuid;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
@@ -11,10 +10,10 @@ use crate::mail::actions::{self, Action, Destination};
 use crate::mail::autoconfig;
 use crate::mail::drafts;
 use crate::mail::export;
-use crate::mail::imap;
 use crate::mail::local;
 use crate::mail::mbox;
 use crate::mail::oauth::{self, OAuthProvider};
+use crate::mail::secrets::{self, Secret};
 use crate::mail::sentcopy;
 use crate::mail::smtp::{self, OutgoingMessage};
 use crate::mail::unsubscribe;
@@ -26,7 +25,6 @@ use crate::templates::{self, Template};
 use crate::AppState;
 use envelope_core::addr::Addr;
 use envelope_core::contacts;
-use envelope_core::kinds::AuthKind;
 use envelope_core::page::Page;
 use envelope_core::search::{self, FolderRow, MessageSummary};
 use envelope_core::thread::{self, ThreadDetail, ThreadQuery, ThreadSummary};
@@ -83,12 +81,7 @@ pub async fn reset_app(
     }
     for a in account::list(&state.db).await? {
         state.sync.stop(&a.id);
-        let id = a.id.clone();
-        account::blocking_keychain(move || {
-            account::delete_secrets(&id);
-            Ok(())
-        })
-        .await?;
+        secrets::delete(&a.id).await?;
     }
     lock.reset(&state.db).await?;
     for dir in [&state.raw_dir, &state.attachments_dir] {
@@ -149,55 +142,33 @@ pub async fn list_accounts(state: State<'_, AppState>) -> Result<Vec<Account>> {
     account::list(&state.db).await
 }
 
-/// Ajoute un compte (mot de passe / mot de passe d'application) : découverte des serveurs,
-/// test IMAP + SMTP, enregistrement, secret dans le trousseau, démarrage de la synchro.
+/// Ajoute un compte (mot de passe / mot de passe d'application) : découverte des serveurs, création
+/// (`account::create` : essai IMAP + SMTP, annulation en cas d'échec), démarrage de la synchro.
 #[tauri::command]
 pub async fn add_account(state: State<'_, AppState>, input: NewAccount) -> Result<Account> {
     let email = input.email.trim().to_string();
     let found = autoconfig::detect(&email).await?;
-    let imap_cfg = input.imap.unwrap_or(found.imap);
-    let smtp_cfg = input.smtp.unwrap_or(found.smtp);
+    let imap = input.imap.unwrap_or(found.imap);
+    let smtp = input.smtp.unwrap_or(found.smtp);
     let username = input
         .username
         .filter(|u| !u.is_empty())
         .unwrap_or(found.username);
-    let id = Uuid::new_v4().to_string();
-
-    account::insert(
+    let created = account::create(
         &state.db,
-        &account::NewAccountRow {
-            id: &id,
+        account::NewAccountSpec {
             email: &email,
             display_name: input.display_name.as_deref(),
             provider: found.provider,
-            auth_kind: AuthKind::Password,
             username: &username,
-            imap: &imap_cfg,
-            smtp: &smtp_cfg,
+            imap: &imap,
+            smtp: &smtp,
+            secret: Secret::Password(input.password),
         },
     )
     .await?;
-    let finish = async {
-        let (secret_id, password) = (id.clone(), input.password.clone());
-        account::blocking_keychain(move || account::store_password(&secret_id, &password)).await?;
-        let acct = account::get(&state.db, &id).await?;
-        let cred = account::resolve_credential(&acct).await?;
-        let mut session = imap::connect(&acct, &cred).await?; // valide hôte, TLS et identifiants
-        let _ = session.logout().await;
-        smtp::test(&acct, &cred).await?;
-        Ok::<_, AppError>(acct)
-    }
-    .await;
-    match finish {
-        Ok(acct) => {
-            state.sync.start(id);
-            Ok(acct)
-        }
-        Err(e) => {
-            account::delete(&state.db, &id).await?; // annule : ni compte orphelin ni secret
-            Err(e)
-        }
-    }
+    state.sync.start(created.id.clone());
+    Ok(created)
 }
 
 /// Autorise dans le navigateur système et vérifie que le compte choisi est bien `email`.
@@ -228,8 +199,7 @@ pub async fn reconnect_oauth_account(
         AppError::Invalid(msg!("account.not_oauth", "this account doesn't use OAuth2"))
     })?;
     let tokens = authorize_in_browser(&app, provider, &acc.email).await?;
-    let secret_id = id.clone();
-    account::blocking_keychain(move || account::store_oauth(&secret_id, &tokens)).await?;
+    secrets::store(&id, Secret::OAuth(tokens)).await?;
     state.sync.trigger(&id);
     Ok(())
 }
@@ -245,34 +215,23 @@ pub async fn add_oauth_account(
 ) -> Result<Account> {
     let email = email.trim().to_string();
     let tokens = authorize_in_browser(&app, provider, &email).await?;
-
     // Serveurs fixes du fournisseur choisi (le domaine de l'e-mail peut être personnalisé).
-    let (imap_cfg, smtp_cfg) = account::oauth_servers(provider)?;
-
-    let id = Uuid::new_v4().to_string();
-    account::insert(
+    let (imap, smtp) = account::oauth_servers(provider)?;
+    let created = account::create(
         &state.db,
-        &account::NewAccountRow {
-            id: &id,
+        account::NewAccountSpec {
             email: &email,
             display_name: display_name.as_deref(),
             provider: provider.provider(),
-            auth_kind: AuthKind::OAuth2,
             username: &email,
-            imap: &imap_cfg,
-            smtp: &smtp_cfg,
+            imap: &imap,
+            smtp: &smtp,
+            secret: Secret::OAuth(tokens),
         },
     )
     .await?;
-    let (secret_id, secret) = (id.clone(), tokens.clone());
-    if let Err(e) =
-        account::blocking_keychain(move || account::store_oauth(&secret_id, &secret)).await
-    {
-        account::delete(&state.db, &id).await?;
-        return Err(e);
-    }
-    state.sync.start(id.clone());
-    account::get(&state.db, &id).await
+    state.sync.start(created.id.clone());
+    Ok(created)
 }
 
 /// Détecte les serveurs d'une adresse (table intégrée, autoconfig, ISPDB, MX).
@@ -292,13 +251,10 @@ pub struct OAuthStatus {
 // l'interface, et le trousseau peut y bloquer longtemps (verrouillé, autorisation demandée).
 #[tauri::command]
 pub async fn oauth_status() -> Result<OAuthStatus> {
-    account::blocking_keychain(|| {
-        Ok(OAuthStatus {
-            google: OAuthProvider::Google.is_configured(),
-            microsoft: OAuthProvider::Microsoft.is_configured(),
-        })
+    Ok(OAuthStatus {
+        google: OAuthProvider::Google.is_configured().await,
+        microsoft: OAuthProvider::Microsoft.is_configured().await,
     })
-    .await
 }
 
 #[tauri::command]
@@ -317,31 +273,25 @@ pub async fn set_oauth_client(
     let client_secret = client_secret
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
-    account::blocking_keychain(move || {
-        account::store_client(
-            provider,
-            &oauth::ClientCreds {
-                client_id,
-                client_secret,
-            },
-        )
-    })
+    secrets::store_client(
+        provider,
+        oauth::ClientCreds {
+            client_id,
+            client_secret,
+        },
+    )
     .await
 }
 
 #[tauri::command]
 pub async fn clear_oauth_client(provider: OAuthProvider) -> Result<()> {
-    account::blocking_keychain(move || {
-        account::delete_client(provider);
-        Ok(())
-    })
-    .await
+    secrets::delete_client(provider).await
 }
 
 #[tauri::command]
 pub async fn remove_account(state: State<'_, AppState>, account_id: String) -> Result<()> {
     state.sync.stop(&account_id);
-    account::delete(&state.db, &account_id).await?;
+    account::remove(&state.db, &account_id).await?;
     let _ = tokio::fs::remove_dir_all(state.attachments_dir.join(&account_id)).await;
     Ok(())
 }
