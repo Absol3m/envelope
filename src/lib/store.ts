@@ -78,6 +78,7 @@ interface State {
   density: Density;
   font: FontPref;
   previews: boolean;
+  expandThreads: boolean;
 
   init(): Promise<void>;
   enterDemo(): Promise<void>;
@@ -125,6 +126,7 @@ interface State {
   setDensity(d: Density): void;
   setFont(f: FontPref): void;
   setPreviews(p: boolean): void;
+  setExpandThreads(on: boolean): void;
 }
 
 let toastSeq = 0;
@@ -304,6 +306,7 @@ export const useMail = create<State>((set, get) => {
     density: pref.get<Density>("density", "comfortable"),
     font: savedFont(),
     previews: pref.get("previews", "on") === "on",
+    expandThreads: pref.get("expandThreads", "on") === "on",
 
     async init() {
       if (!isTauri()) return get().enterDemo(); // aperçu navigateur : boîte de démonstration
@@ -603,6 +606,10 @@ export const useMail = create<State>((set, get) => {
     setPreviews(previews) {
       pref.set("previews", previews ? "on" : "off");
       set({ previews });
+    },
+    setExpandThreads(expandThreads) {
+      pref.set("expandThreads", expandThreads ? "on" : "off");
+      set({ expandThreads });
     },
   };
 });

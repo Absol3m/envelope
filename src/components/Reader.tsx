@@ -302,13 +302,16 @@ function UnsubscribeButton({ m }: { m: DetailMessage }) {
 
 function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
   const accounts = useMail((s) => s.accounts);
-  const initial = useMemo(() => {
-    const open = new Set<number>(d.messages.filter((m) => !m.isRead).map((m) => m.id));
+  const expandThreads = useMail((s) => s.expandThreads);
+  const allIds = () => new Set(d.messages.map((m) => m.id));
+  // État de départ seulement (le lecteur est remonté à chaque conversation) : le réglage ne rouvre pas ce que l'utilisateur a replié.
+  const [expanded, setExpanded] = useState(() => {
+    if (expandThreads) return allIds(); // comme Mail : tout est déplié
+    const open = new Set(d.messages.filter((m) => !m.isRead).map((m) => m.id));
     const last = d.messages[d.messages.length - 1];
     if (last) open.add(last.id); // le dernier message est toujours ouvert
     return open;
-  }, [d.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [expanded, setExpanded] = useState(initial);
+  });
   const allOpen = expanded.size >= d.messages.length;
   const toggle = (id: number) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const files = d.attachments.filter((a) => !a.isInline || a.filename).length;
@@ -336,7 +339,7 @@ function ThreadView({ d, account }: { d: ThreadDetail; account?: Account }) {
           {unsubscribable && <UnsubscribeButton m={unsubscribable} />}
           {accounts.length > 1 && account && <span className="rounded-full bg-hover px-2 py-0.5 text-[11px] font-medium">{account.email}</span>}
           {d.messages.length > 1 && (
-            <button onClick={() => setExpanded(allOpen ? new Set([d.messages[d.messages.length - 1].id]) : new Set(d.messages.map((m) => m.id)))} className="press ml-auto rounded-md px-2 py-0.5 font-medium hover:bg-hover hover:text-fg">
+            <button onClick={() => setExpanded(allOpen ? new Set([d.messages[d.messages.length - 1].id]) : allIds())} className="press ml-auto rounded-md px-2 py-0.5 font-medium hover:bg-hover hover:text-fg">
               {allOpen ? tr("reader:collapseAll") : tr("reader:expandAll")}
             </button>
           )}

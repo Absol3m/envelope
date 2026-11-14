@@ -144,7 +144,10 @@
     "compact": "Compacte",
     "previews": "Aperçus",
     "previewsLabel": "Afficher un extrait du message sous l'objet",
-    "previewsSwitch": "Afficher les aperçus"
+    "previewsSwitch": "Afficher les aperçus",
+    "threads": "Conversations",
+    "threadsLabel": "Déplier tous les messages d'une conversation. Désactivé : seuls les messages non lus et le dernier sont dépliés",
+    "threadsSwitch": "Déplier les conversations"
   },
   "about": {
     "version": "Version",

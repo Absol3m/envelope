@@ -510,6 +510,12 @@ function AppearancePanel() {
           <Switch checked={s.previews} onChange={s.setPreviews} label={tr("settings:appearance.previewsSwitch")} />
         </label>
       </Section>
+      <Section title={tr("settings:appearance.threads")}>
+        <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
+          <span className="flex-1">{tr("settings:appearance.threadsLabel")}</span>
+          <Switch checked={s.expandThreads} onChange={s.setExpandThreads} label={tr("settings:appearance.threadsSwitch")} />
+        </label>
+      </Section>
     </>
   );
 }

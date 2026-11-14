@@ -144,7 +144,10 @@
     "compact": "Compact",
     "previews": "Previews",
     "previewsLabel": "Show an excerpt of the message under the subject",
-    "previewsSwitch": "Show previews"
+    "previewsSwitch": "Show previews",
+    "threads": "Conversations",
+    "threadsLabel": "Open every message of a conversation. Off: only unread messages and the latest one are open",
+    "threadsSwitch": "Expand conversations"
   },
   "about": {
     "version": "Version",
