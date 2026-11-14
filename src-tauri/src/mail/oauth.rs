@@ -7,6 +7,7 @@
 
 use std::borrow::Cow;
 use std::time::Duration;
+use ts_rs::TS;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use envelope_core::kinds::Provider;
@@ -19,7 +20,8 @@ use crate::clock::now;
 use crate::error::{AppError, Result};
 use crate::mail::secrets::{self, Secret};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[ts(export, rename = "OAuthProviderId")]
 #[serde(rename_all = "lowercase")]
 pub enum OAuthProvider {
     Google,

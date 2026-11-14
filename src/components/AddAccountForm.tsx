@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import type { Detected, OAuthProviderId, OAuthStatus, ServerConfig } from "@/lib/api";
+import type { Detected, OAuthProviderId, OAuthStatus, Security, ServerConfig } from "@/lib/api";
 import { isEmail } from "@/lib/compose";
 import { OAUTH_INFO } from "@/lib/providers";
 import { useMail } from "@/lib/store";
@@ -9,7 +9,7 @@ import { btnGhost, btnPrimary, inputCls, Spinner } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
 
 const sourceLabel = (source: Detected["source"]) => tr(`accountForm:sources.${source}`);
-type Sec = "tls" | "starttls";
+type Sec = Exclude<Security, "none">;
 /** Ports usuels selon le chiffrement : TLS implicite (993 / 465) ou STARTTLS (143 / 587). */
 const PORTS = { imap: { tls: 993, starttls: 143 }, smtp: { tls: 465, starttls: 587 } } as const;
 const server = (host: string, port: string, security: Sec): ServerConfig => ({ host, port: Number(port) || 0, security });

@@ -15,6 +15,7 @@
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use ts_rs::TS;
 
 use argon2::{Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version};
 use serde::{Deserialize, Serialize};
@@ -62,7 +63,8 @@ pub fn blocks(locked: bool, command: &str) -> bool {
             .any(|p| command.starts_with(p))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "LockMethod")]
 #[serde(rename_all = "lowercase")]
 pub enum Method {
     Off,
@@ -97,7 +99,8 @@ impl Default for Config {
 }
 
 /// Ce que l'interface a besoin de savoir.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, rename = "LockStatus")]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub method: Method,

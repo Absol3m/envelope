@@ -11,6 +11,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use ts_rs::TS;
 
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use serde::Serialize;
@@ -28,7 +29,8 @@ const MAX_FOLDERS: usize = 5000;
 /// Séparateur de hiérarchie dans le nom d'un dossier local (qui est plat).
 const SEP: &str = " › ";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[ts(export, rename = "ImportKind")]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
     Mbox,
@@ -36,7 +38,8 @@ pub enum Kind {
 }
 
 /// Un dossier trouvé dans la source.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, rename = "ImportFolder")]
 #[serde(rename_all = "camelCase")]
 pub struct Found {
     /// Identifiant stable : chemin relatif joint par `/`.
@@ -335,7 +338,8 @@ pub fn from_line_timestamp(from_line: &str) -> Option<i64> {
     Some(Utc.from_utc_datetime(&d).timestamp())
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, TS)]
+#[ts(export, rename = "ImportReport")]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
     pub imported: usize,
@@ -345,7 +349,8 @@ pub struct Report {
     pub failed: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, rename = "ImportProgress")]
 #[serde(rename_all = "camelCase")]
 pub struct Progress {
     pub folder: String,

@@ -6,13 +6,15 @@
 use envelope_core::kinds::{AuthKind, Provider, SyncStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use ts_rs::TS;
 
 use crate::error::{AppError, Result};
 use crate::mail::oauth::{self, OAuthProvider};
 use crate::mail::secrets::{self, Secret};
 use crate::mail::{imap, sessions, smtp};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum Security {
@@ -23,7 +25,8 @@ pub enum Security {
     None,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerConfig {
     pub host: String,
@@ -32,7 +35,8 @@ pub struct ServerConfig {
 }
 
 /// Adresse d'envoi supplémentaire d'un compte (alias), avec le nom affiché.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub id: i64,
@@ -51,7 +55,8 @@ struct IdentityRow {
 }
 
 /// Compte tel que stocké en base (sans secret).
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     pub id: String,
@@ -144,7 +149,8 @@ pub enum Credential {
 }
 
 /// Entrée de `add_account` (authentification par mot de passe / mot de passe d'application).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, TS)]
+#[ts(export, optional_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct NewAccount {
     pub email: String,
@@ -155,8 +161,21 @@ pub struct NewAccount {
     pub smtp: Option<ServerConfig>,
 }
 
+/// Origine d'une détection de serveurs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum DiscoverySource {
+    Builtin,
+    Autoconfig,
+    Ispdb,
+    Mx,
+    Guess,
+}
+
 /// Serveurs détectés pour une adresse (voir `mail::autoconfig`).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, rename = "Detected")]
 #[serde(rename_all = "camelCase")]
 pub struct Discovered {
     pub provider: Provider,
@@ -167,7 +186,7 @@ pub struct Discovered {
     /// Fournisseur OAuth2 à proposer plutôt qu'un mot de passe.
     pub oauth: Option<OAuthProvider>,
     /// Origine : `builtin`, `autoconfig`, `ispdb`, `mx` ou `guess`.
-    pub source: &'static str,
+    pub source: DiscoverySource,
 }
 
 fn srv(host: &str, port: u16, security: Security) -> ServerConfig {
@@ -263,7 +282,7 @@ pub fn guess(domain: &str, email: &str) -> Discovered {
         smtp: srv(&format!("smtp.{domain}"), 465, Security::Tls),
         username: email.into(),
         oauth: None,
-        source: "guess",
+        source: DiscoverySource::Guess,
     }
 }
 

@@ -16,8 +16,8 @@ const QUEUE: { id: number; accountId: string; message: OutgoingMessage; sendAt: 
 const TEMPLATES: Template[] = []; // rempli par `seed`, dans la langue active
 
 const ACCOUNTS: Account[] = [
-  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr", signature: "" }] },
-  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [] },
+  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", username: "alex@atelier-nord.fr", imapHost: "imap.example.com", imapPort: 993, imapSecurity: "tls", smtpHost: "smtp.example.com", smtpPort: 465, smtpSecurity: "tls", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr", signature: "" }] },
+  { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", username: "alex.morel@example.com", imapHost: "imap.example.com", imapPort: 993, imapSecurity: "tls", smtpHost: "smtp.example.com", smtpPort: 465, smtpSecurity: "tls", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [] },
 ];
 
 const ROLES = ["inbox", "drafts", "sent", "archive", "junk", "trash"] as const;

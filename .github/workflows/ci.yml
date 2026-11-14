@@ -67,9 +67,17 @@ jobs:
       - name: cargo clippy
         working-directory: src-tauri
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      # `cargo test` réécrit src/lib/bindings/ (types TypeScript générés depuis Rust). On part d'un dossier vide pour
+      # voir aussi les fichiers orphelins (type renommé ou supprimé) ; tout écart avec le dépôt = types non commités.
+      - name: Types TypeScript (repartir de zéro)
+        if: runner.os == 'Linux'
+        run: rm -rf src/lib/bindings
       - name: cargo test
         working-directory: src-tauri
         run: cargo test --locked --workspace
+      - name: Types TypeScript à jour
+        if: runner.os == 'Linux'
+        run: test -z "$(git status --porcelain -- src/lib/bindings)" || { git status --porcelain -- src/lib/bindings; exit 1; }
 
   # Dépendances : vulnérabilités connues (RustSec), licences compatibles avec l'AGPL, sources autorisées, et npm.
   audit:

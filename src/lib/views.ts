@@ -1,9 +1,9 @@
 import { AlarmClock, Archive, FileText, HardDrive, Inbox, Mail, Paperclip, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
 import type { ComponentType } from "react";
-import type { FolderRow } from "./api";
+import type { FolderRole, FolderRow } from "./api";
 import { t } from "./i18n";
 
-export const ROLES = ["inbox", "sent", "drafts", "archive", "junk", "trash"] as const;
+export const ROLES = ["inbox", "sent", "drafts", "archive", "junk", "trash"] as const satisfies readonly FolderRole[]; // un rôle renommé côté Rust casse la compilation
 export type Role = (typeof ROLES)[number];
 
 /** Dossiers où l'on peut déplacer une conversation (miroir de `Destination` côté Rust). */

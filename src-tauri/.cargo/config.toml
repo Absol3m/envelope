@@ -1,0 +1,5 @@
+# Types TypeScript générés depuis les structures Rust (ts-rs) : écrits par `cargo test`, dans src/lib/bindings/.
+[env]
+TS_RS_EXPORT_DIR = { value = "../src/lib/bindings", relative = true, force = true }
+# Les identifiants et compteurs (i64) tiennent largement dans un `number` JavaScript.
+TS_RS_LARGE_INT = { value = "number", force = true }

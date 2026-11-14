@@ -8,5 +8,6 @@ description = "Requêtes de lecture SQLite partagées entre l'application Envelo
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+ts-rs = { version = "12", features = ["serde-compat"] }  # types TypeScript générés depuis les structures de l'API (voir .cargo/config.toml)
 dirs = "7"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite", "derive"] }

@@ -11,6 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
+use ts_rs::TS;
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use envelope_core::addr;
@@ -221,7 +222,8 @@ pub async fn remove(
     result
 }
 
-#[derive(Debug, Serialize, PartialEq, Eq)]
+#[derive(Debug, Serialize, PartialEq, Eq, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftAttachment {
     pub filename: String,
@@ -230,7 +232,8 @@ pub struct DraftAttachment {
 }
 
 /// Brouillon relu depuis le serveur, prêt à rouvrir dans le composer.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftData {
     pub id: String,

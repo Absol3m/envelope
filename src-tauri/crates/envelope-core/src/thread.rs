@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use ts_rs::TS;
 
 use crate::addr::{self, Addr};
 use crate::kinds::{Provider, SyncStatus};
@@ -119,8 +120,19 @@ pub async fn get_thread(
 
 // ---------- Liste de conversations (UI) ----------
 
+/// Nature d'un rappel (`reminders.kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, sqlx::Type, TS)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+#[ts(export)]
+pub enum ReminderKind {
+    Snooze,
+    Followup,
+}
+
 /// Une conversation dans la liste : agrégats + dernier expéditeur + participants.
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadSummary {
     pub id: i64,
@@ -139,14 +151,15 @@ pub struct ThreadSummary {
     /// en déduit le nom, le rôle et le compte à partir de sa liste de dossiers.
     pub folder_id: Option<i64>,
     /// Rappel de la conversation : `snooze` | `followup`, échéance (secondes Unix) et, s'il est échu, son heure de retour.
-    pub reminder_kind: Option<String>,
+    pub reminder_kind: Option<ReminderKind>,
     pub reminder_due: Option<i64>,
     pub reminder_fired: Option<i64>,
 }
 
 /// Filtres de la liste. `folder_id` (un dossier) et `role` (ex. `inbox`, tous comptes confondus)
 /// sont exclusifs ; les autres se combinent.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ThreadQuery {
     pub folder_id: Option<i64>,
@@ -248,7 +261,8 @@ struct RawDetailMessage {
 }
 
 /// Moyens de désabonnement d'une liste de diffusion, tirés des en-têtes List-Unsubscribe.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Unsubscribe {
     /// Lien https vers un domaine public (page de désabonnement ou point d'appel du POST).
@@ -258,7 +272,8 @@ pub struct Unsubscribe {
     pub one_click: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct DetailMessage {
     pub id: i64,
@@ -280,6 +295,7 @@ pub struct DetailMessage {
     pub is_starred: bool,
     pub unsubscribe: Option<Unsubscribe>,
     /// Vérification d'identité de l'expéditeur échouée (« dmarc », « spf », « dkim ») : possible usurpation.
+    #[ts(type = "\"dmarc\" | \"spf\" | \"dkim\" | null")]
     pub auth_fail: Option<String>,
 }
 
@@ -315,7 +331,8 @@ impl From<RawDetailMessage> for DetailMessage {
     }
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct DetailAttachment {
     pub id: i64,
@@ -330,7 +347,8 @@ pub struct DetailAttachment {
     pub previewable: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadDetail {
     pub id: i64,

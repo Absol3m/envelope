@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use crate::error::{AppError, Result};
-use crate::mail::account::{self, Discovered, Security, ServerConfig};
+use crate::mail::account::{self, Discovered, DiscoverySource, Security, ServerConfig};
 use crate::mail::oauth::OAuthProvider;
 use envelope_core::kinds::Provider;
 
@@ -43,7 +43,7 @@ pub async fn detect(email: &str) -> Result<Discovered> {
             ))
         })?;
 
-    if let Some(found) = builtin(&domain, email, "builtin") {
+    if let Some(found) = builtin(&domain, email, DiscoverySource::Builtin) {
         return Ok(found);
     }
     // Autoconfig du domaine (deux emplacements usuels) et ISPDB, en parallèle ; priorité à l'ordre.
@@ -58,31 +58,31 @@ pub async fn detect(email: &str) -> Result<Discovered> {
         fetch_config(&urls[2], false, &domain, email),
     );
     if let Some(d) = a.or(b) {
-        return Ok(with_source(d, "autoconfig"));
+        return Ok(with_source(d, DiscoverySource::Autoconfig));
     }
     if let Some(d) = c {
-        return Ok(with_source(d, "ispdb"));
+        return Ok(with_source(d, DiscoverySource::Ispdb));
     }
     // Domaine personnalisé hébergé chez un fournisseur : on regarde où pointe le MX.
     if let Some(mx_domain) = mx_registrable_domain(&domain).await {
-        if let Some(found) = builtin(&mx_domain, email, "mx") {
+        if let Some(found) = builtin(&mx_domain, email, DiscoverySource::Mx) {
             return Ok(found);
         }
         if let Some(d) =
             fetch_config(&format!("{ISPDB}/{mx_domain}"), false, &mx_domain, email).await
         {
-            return Ok(with_source(d, "mx"));
+            return Ok(with_source(d, DiscoverySource::Mx));
         }
     }
     Ok(account::guess(&domain, email))
 }
 
-fn with_source(mut d: Discovered, source: &'static str) -> Discovered {
+fn with_source(mut d: Discovered, source: DiscoverySource) -> Discovered {
     d.source = source;
     d
 }
 
-fn builtin(domain: &str, email: &str, source: &'static str) -> Option<Discovered> {
+fn builtin(domain: &str, email: &str, source: DiscoverySource) -> Option<Discovered> {
     let (provider, imap, smtp) = account::known_provider(domain)?;
     Some(Discovered {
         provider,
@@ -187,7 +187,7 @@ pub fn parse_config(xml: &str, domain: &str, email: &str) -> Option<Discovered> 
         smtp,
         username,
         oauth,
-        source: "autoconfig",
+        source: DiscoverySource::Autoconfig,
     })
 }
 
@@ -325,12 +325,17 @@ mod tests {
         let d = builtin(
             &registrable_domain("mta-gw.infomaniak.ch"),
             "a@example.net",
-            "mx",
+            DiscoverySource::Mx,
         )
         .expect("infomaniak");
         assert_eq!(d.imap.host, "mail.infomaniak.com");
         assert_eq!(d.username, "a@example.net");
-        assert!(builtin(&registrable_domain("mx1.mail.ovh.net"), "a@x.fr", "mx").is_some());
+        assert!(builtin(
+            &registrable_domain("mx1.mail.ovh.net"),
+            "a@x.fr",
+            DiscoverySource::Mx
+        )
+        .is_some());
     }
 
     #[test]
@@ -354,7 +359,7 @@ mod tests {
         ] {
             match detect(email).await {
                 Ok(d) => println!(
-                    "{email:32} {:10} {}:{} {:?} / {}:{} {:?} user={} oauth={:?}",
+                    "{email:32} {:10?} {}:{} {:?} / {}:{} {:?} user={} oauth={:?}",
                     d.source,
                     d.imap.host,
                     d.imap.port,

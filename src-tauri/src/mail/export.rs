@@ -8,6 +8,7 @@
 //! de route ne laisse jamais un export tronqué sous le nom demandé.
 
 use std::path::{Path, PathBuf};
+use ts_rs::TS;
 
 use chrono::DateTime;
 use futures::TryStreamExt;
@@ -18,14 +19,16 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use crate::error::{AppError, Result};
 use crate::mail::rawstore;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, TS)]
+#[ts(export, rename = "ExportFormat")]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
     Mbox,
     Eml,
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, TS)]
+#[ts(export, rename = "ExportReport")]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
     pub exported: usize,
@@ -33,7 +36,8 @@ pub struct Report {
     pub missing: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export, rename = "ExportProgress")]
 #[serde(rename_all = "camelCase")]
 pub struct Progress {
     pub done: usize,

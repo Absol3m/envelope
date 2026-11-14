@@ -9,6 +9,7 @@
 //! retard » : il n'a pas d'heure à respecter, seulement un réseau à retrouver.
 
 use std::time::Duration;
+use ts_rs::TS;
 
 use futures::StreamExt;
 use serde::Serialize;
@@ -32,7 +33,8 @@ const RETRY_BASE_SECS: i64 = 30;
 const RETRY_MAX_SECS: i64 = 600;
 
 /// État d'une ligne de la file (`scheduled.status`) ; mêmes valeurs en base et vers l'interface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, sqlx::Type, TS)]
+#[ts(export, rename = "ScheduledStatus")]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum Status {
@@ -45,7 +47,8 @@ pub enum Status {
 static WAKE: tokio::sync::Notify = tokio::sync::Notify::const_new();
 
 /// Ligne affichée dans la liste (sans le corps ni les pièces jointes).
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, TS)]
+#[ts(export, rename = "ScheduledSend")]
 #[serde(rename_all = "camelCase")]
 pub struct Scheduled {
     pub id: i64,

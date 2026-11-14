@@ -3,6 +3,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
+use ts_rs::TS;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
@@ -244,7 +245,8 @@ pub async fn detect_servers(email: String) -> Result<account::Discovered> {
 }
 
 /// Fournisseurs OAuth2 dont l'application (identifiant client) est configurée.
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct OAuthStatus {
     google: bool,
     microsoft: bool,
@@ -793,7 +795,8 @@ fn thunderbird_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
 }
 
 /// Source d'import choisie par l'utilisateur : jeton opaque, chemin à afficher, dossiers trouvés.
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportSource {
     token: String,
@@ -971,7 +974,8 @@ pub async fn empty_folder(state: State<'_, AppState>, folder_id: i64) -> Result<
 
 // ---------- Serveur MCP (panneau de réglages) ----------
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct McpInfo {
     /// Binaire `envelope-mcp` à côté de l'application, s'il existe.

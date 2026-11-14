@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use ts_rs::TS;
 
 use crate::error::{AppError, Result};
 
@@ -9,7 +10,8 @@ const MAX_NAME: usize = 100;
 const MAX_SUBJECT: usize = 500;
 const MAX_BODY: usize = 200_000;
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, PartialEq, Eq, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Template {
     #[serde(default)]

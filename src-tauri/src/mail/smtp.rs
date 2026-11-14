@@ -5,11 +5,13 @@ use lettre::message::{header, Attachment, Mailbox, MessageBuilder, MultiPart, Si
 use lettre::transport::smtp::authentication::{Credentials, Mechanism};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, Credential, Security};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export, optional_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct OutgoingMessage {
     pub to: Vec<String>,
@@ -35,7 +37,8 @@ pub struct OutgoingMessage {
 }
 
 /// Pièce jointe fournie par l'interface (contenu en base64).
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct OutgoingAttachment {
     pub filename: String,

@@ -12,11 +12,13 @@
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
+use ts_rs::TS;
 
 use serde::Serialize;
 use tokio::process::Command;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 pub enum DiskEncryption {
     On,

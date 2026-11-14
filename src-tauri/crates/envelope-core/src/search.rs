@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+use ts_rs::TS;
 
 use crate::page::Page;
 use crate::role::FolderRole;
@@ -310,7 +311,8 @@ pub async fn list_messages(
     .await
 }
 
-#[derive(Debug, Serialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderRow {
     pub id: i64,

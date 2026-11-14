@@ -6,6 +6,7 @@
 //! remplie si l'un de ses messages **non lus** la satisfait (les actions portent ensuite sur la conversation).
 
 use std::collections::HashSet;
+use ts_rs::TS;
 
 use envelope_core::role::FolderRole;
 use envelope_core::search::{parse_search, push_message_filters, SearchSpec};
@@ -19,7 +20,8 @@ const MAX_RULES: i64 = 100;
 const MAX_NAME: usize = 100; // caractères (le formulaire borne pareil)
 const MAX_QUERY: usize = 500;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "RuleMove")]
 #[serde(rename_all = "lowercase")]
 pub enum MoveTo {
     Archive,
@@ -49,7 +51,8 @@ impl MoveTo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct Rule {
     /// Ignoré à la création.

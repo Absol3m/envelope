@@ -3,9 +3,11 @@
 //! l'interface et dans les sorties MCP).
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 /// Fournisseur d'un compte (`accounts.provider`). `Generic` : tout serveur IMAP/SMTP configuré à la main ou deviné.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, sqlx::Type, TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum Provider {
@@ -76,7 +78,8 @@ impl Provider {
 }
 
 /// Mode d'authentification (`accounts.auth_kind`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum AuthKind {
@@ -85,7 +88,8 @@ pub enum AuthKind {
 }
 
 /// État de la synchro d'un compte (`accounts.sync_status`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type, TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
 pub enum SyncStatus {

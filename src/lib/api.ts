@@ -7,273 +7,69 @@ const invoke = <T>(command: string, args?: Record<string, unknown>): Promise<T> 
 import { ask } from "@tauri-apps/plugin-dialog";
 import type { ServerDestination } from "./views";
 
-/** Types miroirs des structures Rust (src-tauri/src/commands.rs, crates/envelope-core). */
-/** Adresse d'envoi supplémentaire (alias) d'un compte ; l'authentification reste celle du compte. */
-/** Rôle d'un dossier (`folders.role`, voir `envelope-core/src/role.rs`). */
-export type FolderRole = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "all" | "flagged";
+/** Types de l'API : générés depuis les structures Rust (ts-rs, `cargo test` les écrit dans `bindings/` ; le test de CI
+ *  échoue si le dépôt n'est pas à jour). Seuls les alias de confort sont écrits ici. */
+export type { Account } from "./bindings/Account";
+export type { Addr } from "./bindings/Addr";
+export type { DetailAttachment } from "./bindings/DetailAttachment";
+export type { DetailMessage } from "./bindings/DetailMessage";
+export type { Detected } from "./bindings/Detected";
+export type { DiskEncryption } from "./bindings/DiskEncryption";
+export type { DraftData } from "./bindings/DraftData";
+export type { ExportFormat } from "./bindings/ExportFormat";
+export type { ExportReport } from "./bindings/ExportReport";
+export type { FolderRole } from "./bindings/FolderRole";
+export type { FolderRow } from "./bindings/FolderRow";
+export type { Identity } from "./bindings/Identity";
+export type { ImportFolder } from "./bindings/ImportFolder";
+export type { ImportProgress } from "./bindings/ImportProgress";
+export type { ImportReport } from "./bindings/ImportReport";
+export type { ImportSource } from "./bindings/ImportSource";
+export type { LockMethod } from "./bindings/LockMethod";
+export type { LockStatus } from "./bindings/LockStatus";
+export type { McpInfo } from "./bindings/McpInfo";
+export type { NewAccount } from "./bindings/NewAccount";
+export type { OAuthProviderId } from "./bindings/OAuthProviderId";
+export type { OAuthStatus } from "./bindings/OAuthStatus";
+export type { OutgoingMessage } from "./bindings/OutgoingMessage";
+export type { Provider } from "./bindings/Provider";
+export type { ReminderKind } from "./bindings/ReminderKind";
+export type { Rule } from "./bindings/Rule";
+export type { Security } from "./bindings/Security";
+export type { RuleMove } from "./bindings/RuleMove";
+export type { ScheduledSend } from "./bindings/ScheduledSend";
+export type { ServerConfig } from "./bindings/ServerConfig";
+export type { Template } from "./bindings/Template";
+export type { ThreadDetail } from "./bindings/ThreadDetail";
+export type { ThreadSummary } from "./bindings/ThreadSummary";
+export type { Unsubscribe } from "./bindings/Unsubscribe";
+import type { Account } from "./bindings/Account";
+import type { Addr } from "./bindings/Addr";
+import type { Detected } from "./bindings/Detected";
+import type { DiskEncryption } from "./bindings/DiskEncryption";
+import type { DraftData } from "./bindings/DraftData";
+import type { ExportFormat } from "./bindings/ExportFormat";
+import type { ExportReport } from "./bindings/ExportReport";
+import type { FolderRow } from "./bindings/FolderRow";
+import type { ImportReport } from "./bindings/ImportReport";
+import type { ImportSource } from "./bindings/ImportSource";
+import type { LockMethod } from "./bindings/LockMethod";
+import type { LockStatus } from "./bindings/LockStatus";
+import type { McpInfo } from "./bindings/McpInfo";
+import type { NewAccount } from "./bindings/NewAccount";
+import type { OAuthProviderId } from "./bindings/OAuthProviderId";
+import type { OAuthStatus } from "./bindings/OAuthStatus";
+import type { OutgoingMessage } from "./bindings/OutgoingMessage";
+import type { Rule } from "./bindings/Rule";
+import type { ReminderKind } from "./bindings/ReminderKind";
+import type { ScheduledSend } from "./bindings/ScheduledSend";
+import type { Template } from "./bindings/Template";
+import type { ThreadDetail } from "./bindings/ThreadDetail";
+import type { ThreadQuery as ThreadQueryFull } from "./bindings/ThreadQuery";
+import type { ThreadSummary } from "./bindings/ThreadSummary";
 
-/** Fournisseur d'un compte (`accounts.provider`, voir `envelope-core/src/kinds.rs`) ; `imap` : serveur générique. */
-export type Provider = "gmail" | "outlook" | "icloud" | "yahoo" | "fastmail" | "infomaniak" | "ovh" | "gandi" | "local" | "imap";
-
-export interface Identity {
-  id: number;
-  name: string;
-  email: string;
-  /** Vide : la signature du compte s'applique. */
-  signature: string;
-}
-
-export interface Account {
-  id: string;
-  email: string;
-  displayName: string | null;
-  provider: Provider;
-  authKind: "password" | "oauth2";
-  syncStatus: "idle" | "syncing" | "error";
-  syncError: string | null;
-  lastSyncAt: string | null;
-  /** Texte brut, inséré dans les nouveaux messages et les réponses. */
-  signature: string;
-  /** Une copie des messages envoyés est déposée dans « Envoyés » (toujours faux de fait pour Gmail, qui la range lui-même). */
-  copySent: boolean;
-  /** Copies d'envoyés pas encore déposées sur le serveur (reprise automatique) et dernière erreur (codée). */
-  pendingCopies: number;
-  pendingCopyError: string | null;
-  identities: Identity[];
-}
-/** Dossier trouvé dans une source d'import (profil Thunderbird, dossier de boîtes mbox ou Maildir). */
-export interface ImportFolder {
-  key: string;
-  /** Nom du dossier local créé (hiérarchie jointe par « › »). */
-  name: string;
-  kind: "mbox" | "maildir";
-  /** Octets (mbox) ou nombre de fichiers (Maildir). */
-  size: number;
-  selected: boolean;
-}
-/** Source d'import choisie par l'utilisateur : jeton opaque, chemin à afficher, dossiers trouvés. */
-export interface ImportSource {
-  token: string;
-  path: string;
-  folders: ImportFolder[];
-}
-export interface ImportReport {
-  imported: number;
-  duplicates: number;
-  /** Messages supprimés dans la source, non repris. */
-  deleted: number;
-  failed: number;
-}
-export interface ImportProgress {
-  folder: string;
-  imported: number;
-  foldersDone: number;
-  foldersTotal: number;
-}
-export interface ExportReport {
-  exported: number;
-  /** Messages dont le message brut est introuvable (non exportés). */
-  missing: number;
-}
-export type ExportFormat = "mbox" | "eml";
-export interface FolderRow {
-  id: number;
-  accountId: string;
-  path: string;
-  name: string;
-  role: FolderRole | null;
-  unreadCount: number;
-  totalCount: number;
-}
-export interface ThreadSummary {
-  id: number;
-  accountId: string;
-  subject: string;
-  snippet: string;
-  lastMessageAt: string;
-  messageCount: number;
-  unreadCount: number;
-  isStarred: boolean;
-  hasAttachments: boolean;
-  fromName: string | null;
-  fromAddr: string | null;
-  participants: string | null;
-  /** Dossier du dernier message : les résultats de recherche couvrent tous les dossiers. */
-  folderId: number | null;
-  /** Rappel local : report ou relance si pas de réponse ; échéance et, une fois échu, heure de retour (secondes Unix). */
-  reminderKind: ReminderKind | null;
-  reminderDue: number | null;
-  reminderFired: number | null;
-}
-export type ReminderKind = "snooze" | "followup";
-export interface Addr {
-  name: string | null;
-  address: string;
-}
-export interface DetailMessage {
-  id: number;
-  messageId: string | null;
-  references: string[];
-  folderId: number;
-  subject: string;
-  fromName: string | null;
-  fromAddr: string;
-  to: Addr[];
-  cc: Addr[];
-  date: string;
-  bodyText: string | null;
-  bodyHtml: string | null;
-  isRead: boolean;
-  isStarred: boolean;
-  /** Désabonnement proposé par l'expéditeur (en-têtes List-Unsubscribe). */
-  unsubscribe: Unsubscribe | null;
-  /** Vérification d'identité de l'expéditeur échouée d'après le serveur de réception (« dmarc », « spf », « dkim ») : possible usurpation. */
-  authFail: "dmarc" | "spf" | "dkim" | null;
-}
-export interface Unsubscribe {
-  url: string | null;
-  mailto: string | null;
-  /** Un simple POST suffit (RFC 8058) : désabonnement sans page intermédiaire. */
-  oneClick: boolean;
-}
-export interface DetailAttachment {
-  id: number;
-  messageId: number;
-  filename: string | null;
-  mimeType: string;
-  size: number;
-  contentId: string | null;
-  isInline: boolean;
-  /** Image ou PDF de taille raisonnable : affiché par l'application (règle du moteur). */
-  previewable: boolean;
-}
-export interface ThreadDetail {
-  id: number;
-  accountId: string;
-  subject: string;
-  isStarred: boolean;
-  messages: DetailMessage[];
-  attachments: DetailAttachment[];
-}
-export interface ThreadQuery {
-  folderId?: number;
-  role?: FolderRole;
-  accountId?: string;
-  starredOnly?: boolean;
-  unreadOnly?: boolean;
-  withAttachments?: boolean;
-  /** Conversations avec un rappel en attente. */
-  remindersOnly?: boolean;
-  query?: string;
-  limit?: number;
-  offset?: number;
-}
-export interface NewAccount {
-  email: string;
-  displayName?: string;
-  password: string;
-  imap?: ServerConfig;
-  smtp?: ServerConfig;
-}
-export interface ServerConfig {
-  host: string;
-  port: number;
-  security: "tls" | "starttls" | "none";
-}
-/** Serveurs détectés pour une adresse (`source` : builtin | autoconfig | ispdb | mx | guess). */
-export interface Detected {
-  provider: Provider;
-  imap: ServerConfig;
-  smtp: ServerConfig;
-  username: string;
-  oauth: OAuthProviderId | null;
-  source: "builtin" | "autoconfig" | "ispdb" | "mx" | "guess";
-}
-export type OAuthProviderId = "google" | "microsoft";
-export type OAuthStatus = Record<OAuthProviderId, boolean>;
-/** Message à envoyer (miroir de `OutgoingMessage` côté Rust). Adresses au format « Nom <adresse> » ou « adresse ». */
-export interface OutgoingMessage {
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  bodyText: string;
-  bodyHtml?: string;
-  inReplyTo?: string;
-  references: string[];
-  attachments: { filename: string; mimeType: string; dataBase64: string }[];
-  /** Brouillon dont ce message est la version finale : supprimé du serveur après l'envoi. */
-  draftId?: string;
-  /** Adresse d'expéditeur : celle du compte (défaut) ou l'un de ses alias. */
-  fromEmail?: string;
-}
-/** Brouillon relu depuis le serveur, prêt à rouvrir dans le composer. */
-export interface DraftData {
-  id: string;
-  accountId: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  bodyHtml: string | null;
-  bodyText: string;
-  inReplyTo: string | null;
-  references: string[];
-  attachments: { filename: string; mimeType: string; dataBase64: string }[];
-  fromEmail: string;
-}
-export interface McpInfo {
-  binaryPath: string | null;
-  dbPath: string;
-}
-
-/** Envoi en file : parti à `sendAt` si l'application est ouverte. */
-export interface ScheduledSend {
-  id: number;
-  accountId: string;
-  /** Secondes Unix. */
-  sendAt: number;
-  subject: string;
-  to: string[];
-  status: "pending" | "sending" | "failed";
-  error: string | null;
-  /** Boîte d'envoi : parti faute de connexion, repart seul (`sendAt` : date de mise en file). */
-  outbox: boolean;
-}
-
-export type LockMethod = "off" | "system" | "password";
-/** État du verrouillage de l'application (voir `src-tauri/src/lock.rs`). */
-export interface LockStatus {
-  method: LockMethod;
-  locked: boolean;
-  /** Verrouillage automatique après cette durée d'inactivité, en secondes (0 = jamais). */
-  timeoutSecs: number;
-  /** Le système offre une authentification native (Touch ID, Windows Hello…) ici. */
-  systemAvailable: boolean;
-}
-
-export type DiskEncryption = "on" | "off" | "unknown";
-
-export type RuleMove = "archive" | "trash" | "junk";
-/** Règle locale : condition en syntaxe de recherche (`de:`, `objet:`, `pj`…), appliquée aux nouveaux messages reçus. */
-export interface Rule {
-  /** 0 à la création. */
-  id: number;
-  name: string;
-  enabled: boolean;
-  /** `null` : tous les comptes. */
-  accountId: string | null;
-  query: string;
-  markRead: boolean;
-  star: boolean;
-  moveTo: RuleMove | null;
-}
-export interface Template {
-  id: number;
-  name: string;
-  subject: string;
-  bodyHtml: string;
-}
+/** Filtres de la liste : tous facultatifs (`#[serde(default)]` côté Rust). */
+export type ThreadQuery = Partial<ThreadQueryFull>;
 
 /** Tout ce dont l'interface a besoin du « serveur » : l'implémentation réelle (Tauri) ou la démo. */
 export interface Backend {
