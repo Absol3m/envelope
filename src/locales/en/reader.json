@@ -25,6 +25,7 @@
   "toLabel": "To",
   "date": "Date",
   "unsubscribeConfirm": "Unsubscribe from {{sender}}?",
+  "unsubscribeConfirmTo": "Unsubscribe from {{sender}}? A message will be sent from your account to {{to}}.",
   "unsubscribe": "Unsubscribe",
   "unsubscribed": "Unsubscribed from {{sender}}",
   "unsubscribeRequested": "Unsubscribe request sent to {{sender}}",

@@ -9,12 +9,15 @@ export function cn(...inputs: ClassValue[]) {
 /** Ouvre une URL http(s) ou mailto dans le navigateur système (jamais dans l'application). */
 export async function openExternal(url: string) {
   if (!/^(https?:|mailto:)/i.test(url)) return;
-  try {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url);
-  } catch {
+  // Aperçu navigateur sans Tauri (démo) : le navigateur ouvre le lien.
+  if (!("__TAURI_INTERNALS__" in window)) {
     window.open(url, "_blank", "noopener,noreferrer");
+    return;
   }
+  // Commande de l'application (gardée par le verrouillage, schéma revérifié côté Rust), pas le plugin opener. Un refus
+  // (verrouillé, schéma) n'est pas contourné par `window.open` : le lien ne s'ouvre pas.
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("open_external", { url }).catch(() => undefined);
 }
 
 /** Message d'une erreur venue du moteur, sans préfixes techniques (« Error: », « authentification : »). */

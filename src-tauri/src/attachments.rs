@@ -18,17 +18,6 @@ pub struct AttachmentFile {
     pub filename: Option<String>,
 }
 
-async fn attachment_path(state: &AppState, attachment_id: i64) -> Result<std::path::PathBuf> {
-    Ok(attachment_file(
-        &state.db,
-        &state.attachments_dir,
-        &state.raw_dir,
-        attachment_id,
-    )
-    .await?
-    .path)
-}
-
 /// Fichier d'une pièce jointe, uniquement s'il est bien dans le dossier des pièces jointes (une base altérée ne
 /// doit pas permettre d'ouvrir un fichier arbitraire).
 pub async fn attachment_file(
@@ -72,10 +61,126 @@ pub async fn open_attachment(
     state: State<'_, AppState>,
     attachment_id: i64,
 ) -> Result<()> {
-    let path = attachment_path(&state, attachment_id).await?;
+    let file = attachment_file(
+        &state.db,
+        &state.attachments_dir,
+        &state.raw_dir,
+        attachment_id,
+    )
+    .await?;
+    // Le nom vient de l'expéditeur et le fichier n'a ni quarantaine macOS ni marque du Web de Windows : le système le
+    // lancerait sans l'avertissement habituel. Programmes et scripts ne s'ouvrent donc pas d'un clic.
+    // Le nom de l'expéditeur et celui du fichier réellement lancé (`{rang}_{nom assaini}`) : le système ouvre ce dernier.
+    if is_executable_name(file.filename.as_deref()) || is_executable_name(file.path.to_str()) {
+        let name = attachment_file_name(file.filename.as_deref());
+        return Err(AppError::Invalid(msg!(
+            "attachment.executable",
+            "“{name}” is a program or script: it is not opened from a message. Save it first if you trust the sender.",
+            name = name
+        )));
+    }
+    let path = file.path;
     app.opener()
         .open_path(path.to_string_lossy(), None::<&str>)
         .map_err(|e| AppError::Invalid((e.to_string()).into()))
+}
+
+/// Extensions qu'il est risqué d'ouvrir d'un clic : ce que le système exécute (programme, script, raccourci, installeur,
+/// paquet) et les documents qui exécutent du code (pages web, SVG, macros Office). La dernière extension du nom décide
+/// (« facture.pdf.exe » est un `.exe`).
+const EXECUTABLE_EXTENSIONS: &[&str] = &[
+    "exe",
+    "com",
+    "scr",
+    "pif",
+    "bat",
+    "cmd",
+    "msi",
+    "msp",
+    "mst",
+    "hta",
+    "cpl",
+    "dll",
+    "jar",
+    "js",
+    "jse",
+    "vbs",
+    "vbe",
+    "wsf",
+    "wsh",
+    "ps1",
+    "psm1",
+    "psd1",
+    "reg",
+    "lnk",
+    "url",
+    "scf",
+    "inf",
+    "gadget",
+    "appx",
+    "msix",
+    "appinstaller",
+    "command",
+    "sh",
+    "bash",
+    "zsh",
+    "csh",
+    "ksh",
+    "pl",
+    "py",
+    "rb",
+    "app",
+    "pkg",
+    "dmg",
+    "workflow",
+    "terminal",
+    "scpt",
+    "scptd",
+    "applescript",
+    "mobileconfig",
+    "webloc",
+    "inetloc",
+    "jnlp",
+    "xll",
+    "xlam",
+    "dotm",
+    "cab",
+    "vhd",
+    "vhdx",
+    "iqy",
+    "slk",
+    "msc",
+    "application",
+    "rdp",
+    "ws",
+    "desktop",
+    "apk",
+    "deb",
+    "rpm",
+    "iso",
+    "chm",
+    "html",
+    "htm",
+    "xhtml",
+    "svg",
+    "xlsm",
+    "docm",
+    "pptm",
+];
+
+/// Le nom d'une pièce jointe désigne-t-il un fichier que le système exécuterait à l'ouverture ?
+fn is_executable_name(name: Option<&str>) -> bool {
+    // Nom brut de l'expéditeur : Windows ignore les points et espaces finaux (« a.exe. » est un `.exe`).
+    let leaf = name
+        .and_then(|n| n.rsplit(['/', '\\']).next())
+        .unwrap_or("");
+    leaf.trim_end_matches([' ', '.'])
+        .rsplit_once('.')
+        .is_some_and(|(_, ext)| {
+            EXECUTABLE_EXTENSIONS
+                .iter()
+                .any(|e| ext.eq_ignore_ascii_case(e))
+        })
 }
 
 /// Nom de fichier proposé pour une pièce jointe : celui du message, réduit à son dernier élément (jamais de chemin).
@@ -84,9 +189,27 @@ fn attachment_file_name(name: Option<&str>) -> String {
         .and_then(|n| n.rsplit(['/', '\\']).next())
         .map(|n| n.trim().trim_start_matches('.'))
         .unwrap_or("");
-    let clean: String = leaf.chars().filter(|c| !c.is_control()).collect();
+    // Caractères interdits dans un nom de fichier Windows (`:` crée aussi un flux de données alternatif) : remplacés.
+    let clean: String = leaf
+        .chars()
+        .filter(|c| !c.is_control())
+        .map(|c| {
+            if matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let stem = clean.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.as_bytes()[3].is_ascii_digit());
     if clean.is_empty() {
         "attachment".into()
+    } else if reserved {
+        format!("_{clean}")
     } else {
         clean
     }
@@ -183,6 +306,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn programmes_et_scripts_ne_s_ouvrent_pas() {
+        for name in [
+            "Facture.exe",
+            "facture.pdf.exe",
+            "a.BAT",
+            "x.command",
+            "page.html",
+            "m.docm",
+            "run.sh",
+            "evil.hta",
+            "a.lnk",
+        ] {
+            assert!(is_executable_name(Some(name)), "{name}");
+        }
+        for name in [
+            "facture.pdf",
+            "photo.JPG",
+            "notes.txt",
+            "archive.zip",
+            "sans-extension",
+            "a.docx",
+            ".bashrc",
+        ] {
+            assert!(!is_executable_name(Some(name)), "{name}");
+        }
+        assert!(!is_executable_name(None));
+    }
+
+    #[test]
     fn nom_propose_sans_chemin_ni_point_initial() {
         assert_eq!(attachment_file_name(Some("../../etc/passwd")), "passwd");
         assert_eq!(attachment_file_name(Some("C:\\Users\\x\\a.pdf")), "a.pdf");
@@ -190,6 +342,12 @@ mod tests {
         assert_eq!(attachment_file_name(Some("a\nb.txt")), "ab.txt");
         assert_eq!(attachment_file_name(Some("")), "attachment");
         assert_eq!(attachment_file_name(None), "attachment");
+        // Windows : caractères interdits, flux alternatif (`nom:flux`), noms réservés.
+        assert_eq!(attachment_file_name(Some("a:b<c>.txt")), "a_b_c_.txt");
+        assert_eq!(attachment_file_name(Some("C:x.pdf")), "C_x.pdf");
+        assert_eq!(attachment_file_name(Some("NUL.txt")), "_NUL.txt");
+        assert_eq!(attachment_file_name(Some("com1")), "_com1");
+        assert_eq!(attachment_file_name(Some("console.txt")), "console.txt");
     }
 
     #[tokio::test]

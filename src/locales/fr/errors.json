@@ -58,9 +58,13 @@
       "destination_expired": "Destination d'export expirée : choisissez-la de nouveau",
       "exists": "{{path}} existe déjà"
     },
+    "link": {
+      "not_web": "Seules les adresses web et de messagerie peuvent s'ouvrir"
+    },
     "attachment": {
       "outside_folder": "Pièce jointe hors du dossier autorisé",
-      "not_found": "Pièce jointe introuvable"
+      "not_found": "Pièce jointe introuvable",
+      "executable": "« {{name}} » est un programme ou un script : il ne s'ouvre pas depuis un message. Enregistrez-le d'abord si vous faites confiance à l'expéditeur."
     },
     "keychain": {
       "interrupted": "Accès au trousseau interrompu : {{detail}}"

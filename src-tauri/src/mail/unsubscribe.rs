@@ -21,7 +21,8 @@ pub fn is_public_https(url: &Url) -> bool {
     }
     match url.host() {
         Some(url::Host::Domain(d)) => {
-            let d = d.to_ascii_lowercase();
+            // Un point final (« localhost. », « x.local. ») désigne le même hôte.
+            let d = d.trim_end_matches('.').to_ascii_lowercase();
             d.contains('.')
                 && d != "localhost"
                 && !d.ends_with(".localhost")
@@ -44,7 +45,12 @@ pub fn parse(list: &str, post: Option<&str>) -> Option<Unsubscribe> {
         if target.len() > 2048 {
             continue;
         }
-        if target.len() >= 7 && target[..7].eq_ignore_ascii_case("mailto:") {
+        // `get` : une découpe par octets au milieu d'un caractère (cible non ASCII d'un mail hostile) ferait paniquer, et
+        // l'application s'arrête sur toute panique (`panic = "abort"`) : à chaque synchro du message.
+        if target
+            .get(..7)
+            .is_some_and(|p| p.eq_ignore_ascii_case("mailto:"))
+        {
             u.mailto.get_or_insert_with(|| target.to_string());
         } else if Url::parse(target).is_ok_and(|url| is_public_https(&url)) {
             u.url.get_or_insert_with(|| target.to_string());
@@ -72,6 +78,75 @@ pub async fn run(account: &Account, cred: &Credential, u: &Unsubscribe) -> Resul
     }
 }
 
+/// Résolveur qui ne rend que des adresses publiques : un nom public qui pointerait vers le réseau local, la boucle
+/// locale ou les métadonnées d'un fournisseur de cloud (enregistrement DNS d'un mail hostile) n'est pas contacté.
+struct PublicOnly;
+
+impl reqwest::dns::Resolve for PublicOnly {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_string();
+        Box::pin(async move {
+            let found = tokio::net::lookup_host((host.as_str(), 443)).await?;
+            let public: Vec<std::net::SocketAddr> =
+                found.filter(|a| is_public_ip(a.ip())).collect();
+            if public.is_empty() {
+                return Err(format!("{host} resolves to a non-public address").into());
+            }
+            Ok(Box::new(public.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+/// Adresse joignable depuis Internet : ni privée, ni boucle locale, ni lien local, ni partagée (CGNAT), ni réservée.
+// Écrit à la main : `IpAddr::is_global` n'est pas stable. NAT64 (64:ff9b::/96) et 6to4 ne sont pas traités.
+fn is_public_ip(ip: std::net::IpAddr) -> bool {
+    use std::net::IpAddr;
+    match ip {
+        IpAddr::V4(v) => {
+            let o = v.octets();
+            !(v.is_private()
+                || v.is_loopback()
+                || v.is_link_local()
+                || v.is_unspecified()
+                || v.is_broadcast()
+                || v.is_multicast()
+                || v.is_documentation()
+                || (o[0] == 100 && (64..128).contains(&o[1])) // 100.64.0.0/10 (CGNAT)
+                || o[0] == 0
+                || o[0] >= 240) // 240.0.0.0/4 (réservé)
+        }
+        IpAddr::V6(v) => {
+            if let Some(v4) = v.to_ipv4_mapped() {
+                return is_public_ip(IpAddr::V4(v4));
+            }
+            let s = v.segments();
+            // NAT64 (64:ff9b::/96) et 6to4 (2002::/16) embarquent une adresse IPv4 : c'est elle qu'on juge.
+            if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                return is_public_ip(IpAddr::V4(std::net::Ipv4Addr::new(
+                    (s[6] >> 8) as u8,
+                    s[6] as u8,
+                    (s[7] >> 8) as u8,
+                    s[7] as u8,
+                )));
+            }
+            if s[0] == 0x2002 {
+                return is_public_ip(IpAddr::V4(std::net::Ipv4Addr::new(
+                    (s[1] >> 8) as u8,
+                    s[1] as u8,
+                    (s[2] >> 8) as u8,
+                    s[2] as u8,
+                )));
+            }
+            !(v.is_loopback()
+                || (s[0] == 0x2001 && s[1] == 0x0db8) // documentation
+                || v.is_unspecified()
+                || v.is_multicast()
+                || (s[0] & 0xfe00) == 0xfc00 // fc00::/7 (adresses locales uniques)
+                || (s[0] & 0xffc0) == 0xfe80) // fe80::/10 (lien local)
+        }
+    }
+}
+
 async fn post_one_click(url: &str) -> Result<()> {
     let url = Url::parse(url).map_err(|e| AppError::Invalid((e.to_string()).into()))?;
     if !is_public_https(&url) {
@@ -89,6 +164,7 @@ async fn post_one_click(url: &str) -> Result<()> {
         }
     });
     let client = crate::tls::http_builder()?
+        .dns_resolver(std::sync::Arc::new(PublicOnly))
         .redirect(policy)
         .timeout(Duration::from_secs(15))
         .build()?;
@@ -141,6 +217,67 @@ async fn send_mailto(account: &Account, cred: &Credential, mailto: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nom_avec_point_final_reste_un_hote_local() {
+        for u in [
+            "https://localhost./u",
+            "https://x.local./u",
+            "https://svc.internal./u",
+            "https://a.localhost./u",
+        ] {
+            assert!(!is_public_https(&Url::parse(u).unwrap()), "{u}");
+        }
+        assert!(is_public_https(
+            &Url::parse("https://lists.example.com./u").unwrap()
+        ));
+    }
+
+    #[test]
+    fn seules_les_adresses_publiques_sont_contactees() {
+        for ip in [
+            "127.0.0.1",
+            "10.0.0.5",
+            "192.168.1.1",
+            "172.16.0.9",
+            "169.254.169.254",
+            "100.64.0.1",
+            "0.0.0.0",
+            "::1",
+            "fe80::1",
+            "fd00::1",
+            "::ffff:127.0.0.1",
+            "240.0.0.1",
+        ] {
+            assert!(!is_public_ip(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in [
+            "93.184.216.34",
+            "8.8.8.8",
+            "2606:4700:4700::1111",
+            "::ffff:8.8.8.8",
+        ] {
+            assert!(is_public_ip(ip.parse().unwrap()), "{ip}");
+        }
+    }
+
+    /// Une cible non ASCII dont l'octet 7 tombe au milieu d'un caractère ne fait pas paniquer (l'application
+    /// s'arrêtait à chaque synchro du message).
+    #[test]
+    fn cible_non_ascii_ne_fait_pas_paniquer() {
+        for list in [
+            "<éééé@x.fr>",
+            "<ééééé>",
+            "<mailtoé:a>",
+            "<€€€€€€€>, <mailto:a@x.fr>",
+        ] {
+            let _ = parse(list, None);
+        }
+        assert_eq!(
+            parse("<€€€€€€€>, <mailto:a@x.fr>", None).and_then(|u| u.mailto),
+            Some("mailto:a@x.fr".into())
+        );
+    }
 
     #[test]
     fn extrait_https_et_mailto() {

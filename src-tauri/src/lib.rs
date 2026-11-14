@@ -211,6 +211,7 @@ pub fn run() {
             commands::reconnect_oauth_account,
             commands::detect_servers,
             commands::registrable_domain,
+            commands::open_external,
             commands::oauth_status,
             commands::set_oauth_client,
             commands::clear_oauth_client,

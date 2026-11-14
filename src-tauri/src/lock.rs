@@ -44,8 +44,11 @@ const ALLOWED_WHEN_LOCKED: &[&str] = &[
     "disk_encryption",
 ];
 /// Plugins officiels de Tauri joignables verrouillé : fenêtre, notifications (sans contenu), événements, application
-/// et boîtes de dialogue (confirmation de la réinitialisation). Ni `opener` (ouvrir des liens ou des dossiers), ni
-/// aucun accès aux fichiers.
+/// et boîtes de dialogue (confirmation de la réinitialisation). Ni `opener`, ni aucun accès aux fichiers.
+/// Attention : Tauri route les commandes `plugin:…` vers le plugin lui-même, sans passer par le gestionnaire que
+/// `lib::gated` enveloppe : cette liste n'est qu'une seconde ligne de défense. La vraie barrière est le fichier des
+/// permissions (`capabilities/default.json`) : la webview n'a pas `opener` (liens et dossiers passent par la commande
+/// `open_external`, qui, elle, est gardée), pas de plugin de fichiers.
 const ALLOWED_PLUGINS_WHEN_LOCKED: &[&str] = &[
     "plugin:window|",
     "plugin:notification|",

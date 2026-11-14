@@ -115,7 +115,7 @@ function NearViewport({ children }: { children: ReactNode }) {
 
 function MessageBody({ m }: { m: DetailMessage }) {
   const backend = useMail((s) => s.backend);
-  const [allow, setAllow] = useState(() => trustedSenders().has(m.fromAddr.toLowerCase()));
+  const [allow, setAllow] = useState(() => !m.authFail && trustedSenders().has(m.fromAddr.toLowerCase())); // expéditeur de confiance usurpé (échec SPF/DKIM/DMARC) : pas de chargement automatique
   const [cid, setCid] = useState<Record<string, string>>();
   const html = m.bodyHtml;
   const needsCid = !!html && /cid:/i.test(html);
@@ -298,7 +298,10 @@ function UnsubscribeButton({ m }: { m: DetailMessage }) {
   const run = async () => {
     // Un simple lien (sans POST ni adresse) s'ouvre dans le navigateur : l'utilisateur termine sur la page.
     if (!u.oneClick && !u.mailto && u.url) return void openExternal(u.url);
-    if (!(await backend.confirm(tr("reader:unsubscribeConfirm", { sender }), tr("reader:unsubscribe")))) return;
+    // Sans POST, la demande part sous forme de message envoyé depuis le compte : on montre à qui (adresse fixée par l'expéditeur).
+    const to = !u.oneClick ? u.mailto?.replace(/^mailto:/i, "").split("?")[0] : undefined;
+    const message = to ? tr("reader:unsubscribeConfirmTo", { sender, to }) : tr("reader:unsubscribeConfirm", { sender });
+    if (!(await backend.confirm(message, tr("reader:unsubscribe")))) return;
     setBusy(true);
     try {
       await backend.unsubscribe(m.id);

@@ -25,6 +25,7 @@
   "toLabel": "À",
   "date": "Date",
   "unsubscribeConfirm": "Se désabonner de {{sender}} ?",
+  "unsubscribeConfirmTo": "Se désabonner de {{sender}} ? Un message sera envoyé depuis votre compte à {{to}}.",
   "unsubscribe": "Se désabonner",
   "unsubscribed": "Désabonné de {{sender}}",
   "unsubscribeRequested": "Demande de désabonnement envoyée à {{sender}}",

@@ -238,6 +238,25 @@ pub async fn add_oauth_account(
     Ok(created)
 }
 
+/// Ouvre une adresse dans le navigateur ou le client mail du système (jamais dans l'application). C'est la seule voie :
+/// la webview n'a pas la permission du plugin `opener`, dont les commandes ne passent pas par la barrière du
+/// verrouillage (Tauri les route vers le plugin, pas vers ce gestionnaire).
+#[tauri::command]
+pub fn open_external(app: AppHandle, url: String) -> Result<()> {
+    let parsed = url::Url::parse(&url)
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https" | "mailto"));
+    let Some(parsed) = parsed else {
+        return Err(AppError::Invalid(msg!(
+            "link.not_web",
+            "only web and mail addresses can be opened"
+        )));
+    };
+    app.opener()
+        .open_url(parsed.as_str(), None::<&str>)
+        .map_err(|e| AppError::Invalid((e.to_string()).into()))
+}
+
 /// Domaine enregistrable d'un hôte, d'après la liste des suffixes publics (rubriques privées comprises : `github.io`
 /// ne désigne pas un seul site). Sert à comparer le site annoncé par un lien et sa destination.
 #[tauri::command]
@@ -302,10 +321,33 @@ pub async fn clear_oauth_client(provider: OAuthProvider) -> Result<()> {
 
 #[tauri::command]
 pub async fn remove_account(state: State<'_, AppState>, account_id: String) -> Result<()> {
-    state.sync.stop(&account_id);
-    account::remove(&state.db, &account_id).await?;
-    let _ = tokio::fs::remove_dir_all(state.attachments_dir.join(&account_id)).await;
+    // L'identifiant vient de la webview : il doit être celui d'un compte connu (sinon `NotFound`, rien n'est
+    // supprimé), et le dossier supprimé est calculé depuis l'identifiant lu en base, jamais depuis l'argument.
+    let account = match account::get(&state.db, &account_id).await {
+        Ok(account) => account,
+        // Déjà supprimé (double clic, reprise après un échec du trousseau) : on termine le nettoyage des secrets.
+        Err(AppError::NotFound(_)) => {
+            sessions::forget(&account_id);
+            return secrets::delete(&account_id).await;
+        }
+        Err(e) => return Err(e),
+    };
+    state.sync.stop(&account.id);
+    account::remove(&state.db, &account.id).await?;
+    if let Some(dir) = account_dir(&state.attachments_dir, &account.id) {
+        let _ = tokio::fs::remove_dir_all(dir).await;
+    }
     Ok(())
+}
+
+/// Dossier des pièces jointes d'un compte, seulement si l'identifiant est un nom simple : `..`, un chemin absolu ou un
+/// séparateur ferait sortir de `base` (`Path::join` remplace la base par un chemin absolu).
+fn account_dir(base: &std::path::Path, id: &str) -> Option<std::path::PathBuf> {
+    let simple = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    simple.then(|| base.join(id))
 }
 
 /// Désabonne l'utilisateur de la liste d'un message (POST RFC 8058 ou message mailto).
@@ -1005,5 +1047,24 @@ pub fn mcp_info(state: State<'_, AppState>) -> McpInfo {
     McpInfo {
         binary_path,
         db_path: state.db_path.display().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// Un identifiant de compte venu de la webview ne fait jamais sortir du dossier des pièces jointes.
+    #[test]
+    fn dossier_de_compte_refuse_les_identifiants_qui_sortent_de_la_base() {
+        let base = Path::new("/data/attachments");
+        assert_eq!(
+            account_dir(base, "8f14e45f-ceea-4e6e"),
+            Some(base.join("8f14e45f-ceea-4e6e"))
+        );
+        for bad in ["", "..", ".", "/etc", "a/b", "a\\b", "../x", "C:\\x", "a.b"] {
+            assert_eq!(account_dir(base, bad), None, "{bad:?}");
+        }
     }
 }
