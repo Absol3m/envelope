@@ -228,6 +228,7 @@ pub fn run() {
             commands::send_scheduled_now,
             commands::add_identity,
             commands::remove_identity,
+            commands::set_identity_signature,
             commands::list_templates,
             commands::save_template,
             commands::delete_template,

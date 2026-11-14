@@ -1,6 +1,8 @@
 {
   "unavailable": "Mode démo : cette action est indisponible.",
   "threadNotFound": "Conversation {{id}} introuvable",
+  "invalidAddress": "Adresse invalide : {{email}}",
+  "aliasExists": "Cette adresse existe déjà pour ce compte.",
   "sendNotFound": "Envoi introuvable.",
   "ruleRequired": "Nom et condition requis",
   "wrongPassword": "Mot de passe incorrect",

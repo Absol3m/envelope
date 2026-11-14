@@ -15,7 +15,7 @@ const QUEUE: { id: number; accountId: string; message: OutgoingMessage; sendAt: 
 const TEMPLATES: Template[] = []; // rempli par `seed`, dans la langue active
 
 const ACCOUNTS: Account[] = [
-  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr" }] },
+  { id: "pro", email: "alex@atelier-nord.fr", displayName: "Alex Morel", provider: "imap", authKind: "password", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "Alex Morel\nAtelier Nord", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [{ id: 1, name: "Atelier Nord", email: "contact@atelier-nord.fr", signature: "" }] },
   { id: "perso", email: "alex.morel@example.com", displayName: "Alex Morel", provider: "gmail", authKind: "oauth2", syncStatus: "idle", syncError: null, lastSyncAt: ago(2), signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [] },
 ];
 
@@ -343,11 +343,21 @@ export const demoBackend: Backend = {
   },
   addIdentity: (accountId, name, email) => {
     const a = ACCOUNTS.find((x) => x.id === accountId);
-    if (a) a.identities.push({ id: Math.max(0, ...ACCOUNTS.flatMap((x) => x.identities.map((i) => i.id))) + 1, name, email });
+    const address = email.trim();
+    // Mêmes refus que le moteur : adresse invalide, et alias déjà présent sur le compte (casse ignorée).
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) return Promise.reject(new Error(t("demo:invalidAddress", { email: address })));
+    if (a?.identities.some((i) => i.email.toLowerCase() === address.toLowerCase())) return Promise.reject(new Error(t("demo:aliasExists")));
+    if (a) a.identities.push({ id: Math.max(0, ...ACCOUNTS.flatMap((x) => x.identities.map((i) => i.id))) + 1, name: name.trim(), email: address, signature: "" });
     return delay(undefined, 60);
   },
-  removeIdentity: (id) => {
-    for (const a of ACCOUNTS) a.identities = a.identities.filter((i) => i.id !== id);
+  removeIdentity: (accountId, id) => {
+    const a = ACCOUNTS.find((x) => x.id === accountId);
+    if (a) a.identities = a.identities.filter((i) => i.id !== id);
+    return delay(undefined, 40);
+  },
+  setIdentitySignature: (accountId, id, signature) => {
+    const i = ACCOUNTS.find((x) => x.id === accountId)?.identities.find((x) => x.id === id);
+    if (i) i.signature = signature.trimEnd();
     return delay(undefined, 40);
   },
   listRules: () => delay(structuredClone(RULES), 40),

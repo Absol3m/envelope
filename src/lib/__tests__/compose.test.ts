@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
 import type { Draft } from "../compose";
-import { applyTemplate, knownAlias, senderOptions, templateBody, attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
+import { applyTemplate, knownAlias, senderOptions, signatureOf, templateBody, attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
   id: 1, messageId: "m1@x", references: [] as string[], folderId: 1, subject: "Budget", fromName: "Alice", fromAddr: "alice@x.fr",
@@ -52,7 +52,7 @@ describe("corps HTML", () => {
     for (const c of ["rgb(211, 47, 47)", "rgb(107, 107, 120)", "navy", ""]) expect(isNeutralColor(c)).toBe(false);
   });
   it("les citations de mails HTML perdent images et scripts", () => {
-    const d = draftFrom("reply", thread([msg({ bodyText: null, bodyHtml: '<style>p{}</style><p>ok<img src="https://track/x.gif"><script>1</script></p>' })]), "me@x.fr");
+    const d = draftFrom("reply", thread([msg({ bodyText: null, bodyHtml: '<style>p{}</style><p>ok<img src="https://track/x.gif"><script>1</script></p>' })]), owner("me@x.fr"));
     expect(d.html).not.toMatch(/img|script|style|track/);
     expect(d.html).toContain("ok");
   });
@@ -66,7 +66,7 @@ describe("pièces jointes", () => {
     expect(attachmentError(Array.from({ length: 20 }, () => a(1)), [{ name: "b", size: 1 }])).toMatch(/Trop/);
   });
   it("part avec le message, au format attendu par le serveur", () => {
-    const d = { ...draftFrom("forward", thread(), "me@x.fr"), attachments: [{ id: "1", name: "devis.pdf", mimeType: "application/pdf", size: 3, dataBase64: "AAEC" }] };
+    const d = { ...draftFrom("forward", thread(), owner("me@x.fr")), attachments: [{ id: "1", name: "devis.pdf", mimeType: "application/pdf", size: 3, dataBase64: "AAEC" }] };
     expect(toOutgoing(d).attachments).toEqual([{ filename: "devis.pdf", mimeType: "application/pdf", dataBase64: "AAEC" }]);
   });
 });
@@ -78,9 +78,12 @@ describe("withPrefix", () => {
   });
 });
 
+/** Compte `email` avec sa signature et des alias d'envoi, pour `draftFrom`. */
+const owner = (email: string, signature = "", aliases: string[] = []) => ({ id: "a", email, displayName: null, provider: "imap" as const, authKind: "password" as const, syncStatus: "idle" as const, syncError: null, lastSyncAt: null, signature, copySent: true, pendingCopies: 0, pendingCopyError: null, identities: aliases.map((a, i) => ({ id: i + 1, name: "", email: a, signature: "" })) });
+
 describe("draftFrom", () => {
   it("répond à l'expéditeur avec citation et en-têtes de threading", () => {
-    const d = draftFrom("reply", thread([msg({ references: ["m0@x"] })]), "me@x.fr");
+    const d = draftFrom("reply", thread([msg({ references: ["m0@x"] })]), owner("me@x.fr"));
     expect(d.to).toEqual([{ address: "alice@x.fr", name: "Alice" }]);
     expect(d.cc).toEqual([]);
     expect(d.subject).toBe("Re: Budget");
@@ -91,23 +94,23 @@ describe("draftFrom", () => {
     expect(d.references).toEqual(["m0@x", "m1@x"]);
   });
   it("répondre à tous : ajoute les autres destinataires sans soi-même ni doublon", () => {
-    const d = draftFrom("replyAll", thread(), "ME@x.fr");
+    const d = draftFrom("replyAll", thread(), owner("ME@x.fr"));
     expect(d.to.map((r) => r.address)).toEqual(["alice@x.fr"]);
     expect(d.cc.map((r) => r.address)).toEqual(["bob@x.fr", "carol@x.fr"]);
   });
   it("si le dernier message est de nous, on écrit à ses destinataires", () => {
-    const d = draftFrom("reply", thread([msg({ fromAddr: "me@x.fr", fromName: null, to: [{ name: null, address: "alice@x.fr" }] })]), "me@x.fr");
+    const d = draftFrom("reply", thread([msg({ fromAddr: "me@x.fr", fromName: null, to: [{ name: null, address: "alice@x.fr" }] })]), owner("me@x.fr"));
     expect(d.to.map((r) => r.address)).toEqual(["alice@x.fr"]);
   });
   it("transfert : objet préfixé, corps cité, aucun destinataire ni In-Reply-To", () => {
-    const d = draftFrom("forward", thread(), "me@x.fr");
+    const d = draftFrom("forward", thread(), owner("me@x.fr"));
     expect(d.subject).toBe("Fwd: Budget");
     expect(d.html).toContain("Message transféré");
     expect(d.to).toEqual([]);
     expect(d.inReplyTo).toBeUndefined();
   });
   it("retombe sur le texte du HTML quand il n'y a pas de version texte", () => {
-    const d = draftFrom("reply", thread([msg({ bodyText: null, bodyHtml: "<p>Salut</p><p>Toi</p>" })]), "me@x.fr");
+    const d = draftFrom("reply", thread([msg({ bodyText: null, bodyHtml: "<p>Salut</p><p>Toi</p>" })]), owner("me@x.fr"));
     expect(d.html).toContain("<blockquote><p>Salut</p><p>Toi</p></blockquote>");
   });
 });
@@ -120,7 +123,7 @@ describe("signature", () => {
   it("s'insère dans un nouveau message et sous le curseur d'une réponse, avant la citation", () => {
     expect(emptyDraft("a", "Alex").html).toBe("<p></p><p>--<br>Alex</p>");
     expect(emptyDraft("a").html).toBe("");
-    const d = draftFrom("reply", thread([msg({ bodyText: "salut", bodyHtml: null })]), "me@x.fr", "Alex");
+    const d = draftFrom("reply", thread([msg({ bodyText: "salut", bodyHtml: null })]), owner("me@x.fr", "Alex"));
     expect(d.html.indexOf("Alex")).toBeGreaterThan(-1);
     expect(d.html.indexOf("Alex")).toBeLessThan(d.html.indexOf("<blockquote>"));
   });
@@ -179,16 +182,16 @@ describe("corps de modèle", () => {
 describe("réponse depuis un alias", () => {
   it("répond depuis l'alias auquel le message a été envoyé, sans l'ajouter en copie", () => {
     const t = thread([msg({ to: [{ name: null, address: "contact@x.fr" }, { name: "Bob", address: "bob@x.fr" }] })]);
-    const d = draftFrom("replyAll", t, "me@x.fr", "", ["contact@x.fr"]);
+    const d = draftFrom("replyAll", t, owner("me@x.fr", "", ["contact@x.fr"]));
     expect(d.fromEmail).toBe("contact@x.fr");
     expect(d.cc.map((r) => r.address)).toEqual(["bob@x.fr", "carol@x.fr"]);
   });
   it("garde l'adresse du compte quand le message n'a pas été adressé à un alias", () => {
-    expect(draftFrom("reply", thread(), "me@x.fr", "", ["contact@x.fr"]).fromEmail).toBeUndefined();
+    expect(draftFrom("reply", thread(), owner("me@x.fr", "", ["contact@x.fr"])).fromEmail).toBeUndefined();
   });
   it("un message envoyé depuis un alias est « de moi » : on répond à ses destinataires", () => {
     const t = thread([msg({ fromAddr: "contact@x.fr", to: [{ name: null, address: "alice@x.fr" }] })]);
-    expect(draftFrom("reply", t, "me@x.fr", "", ["contact@x.fr"]).to.map((r) => r.address)).toEqual(["alice@x.fr"]);
+    expect(draftFrom("reply", t, owner("me@x.fr", "", ["contact@x.fr"])).to.map((r) => r.address)).toEqual(["alice@x.fr"]);
   });
   it("l'alias part dans le message à envoyer", () => {
     expect(toOutgoing({ ...emptyDraft("a"), fromEmail: "contact@x.fr" }).fromEmail).toBe("contact@x.fr");
@@ -196,15 +199,30 @@ describe("réponse depuis un alias", () => {
 });
 
 describe("expéditeurs", () => {
-  const acct = (identities: { id: number; name: string; email: string }[]) => ({ id: "a", email: "me@x.fr", displayName: "Moi", provider: "imap" as const, authKind: "password" as const, syncStatus: "idle" as const, syncError: null, lastSyncAt: null, signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities });
+  const acct = (identities: { id: number; name: string; email: string; signature: string }[]) => ({ id: "a", email: "me@x.fr", displayName: "Moi", provider: "imap" as const, authKind: "password" as const, syncStatus: "idle" as const, syncError: null, lastSyncAt: null, signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities });
   it("liste chaque compte puis ses alias", () => {
-    const o = senderOptions([acct([{ id: 1, name: "Pro", email: "contact@x.fr" }])]);
+    const o = senderOptions([acct([{ id: 1, name: "Pro", email: "contact@x.fr", signature: "" }])]);
     expect(o.map((x) => [x.alias, x.label])).toEqual([["", "Moi <me@x.fr>"], ["contact@x.fr", "Pro <contact@x.fr>"]]);
   });
   it("un alias supprimé n'est plus reconnu", () => {
-    const a = acct([{ id: 1, name: "", email: "Contact@x.fr" }]);
+    const a = acct([{ id: 1, name: "", email: "Contact@x.fr", signature: "" }]);
     expect(knownAlias(a, "contact@x.fr")).toBe("Contact@x.fr");
     expect(knownAlias(acct([]), "contact@x.fr")).toBeUndefined();
     expect(knownAlias(a, undefined)).toBeUndefined();
+  });
+});
+
+describe("signature par alias", () => {
+  const withAlias = (aliasSignature: string) => ({ ...owner("me@x.fr", "Compte", ["contact@x.fr"]), identities: [{ id: 1, name: "", email: "contact@x.fr", signature: aliasSignature }] });
+  it("celle de l'alias si elle existe, sinon celle du compte", () => {
+    expect(signatureOf(withAlias("Pro"), "Contact@x.fr")).toBe("Pro");
+    expect(signatureOf(withAlias(""), "contact@x.fr")).toBe("Compte");
+    expect(signatureOf(withAlias("Pro"), undefined)).toBe("Compte");
+    expect(signatureOf(undefined, "contact@x.fr")).toBe("");
+  });
+  it("une réponse à un message adressé à l'alias porte la signature de l'alias", () => {
+    const t = thread([msg({ to: [{ name: null, address: "contact@x.fr" }] })]);
+    expect(draftFrom("reply", t, withAlias("Pro")).html).toContain("Pro");
+    expect(draftFrom("reply", t, withAlias("Pro")).html).not.toContain("Compte");
   });
 });

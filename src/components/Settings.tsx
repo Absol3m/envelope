@@ -104,15 +104,15 @@ function CopySentField({ account }: { account: Account }) {
   );
 }
 
-/** Signature d'un compte : enregistrée à la perte du focus, si elle a changé. */
-function SignatureField({ id, email, value }: { id: string; email: string; value: string }) {
-  const { backend, refreshAccounts, toast } = useMail(useShallow((s) => ({ backend: s.backend, refreshAccounts: s.refreshAccounts, toast: s.toast })));
+/** Signature d'un compte ou d'un alias : enregistrée à la perte du focus, si elle a changé. */
+function SignatureField({ label, value, onSave, placeholder }: { label: string; value: string; onSave: (text: string) => Promise<void>; placeholder?: string }) {
+  const { refreshAccounts, toast } = useMail(useShallow((s) => ({ refreshAccounts: s.refreshAccounts, toast: s.toast })));
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
   const save = async () => {
     if (text.trimEnd() === value) return;
     try {
-      await backend.setAccountSignature(id, text);
+      await onSave(text);
       await refreshAccounts();
     } catch (e) {
       toast({ message: tr("settings:signatureFailed", { error: String(e) }), tone: "error" });
@@ -120,17 +120,30 @@ function SignatureField({ id, email, value }: { id: string; email: string; value
   };
   return (
     <label className="block">
-      <span className="mb-1 block text-[12px] text-muted">{email}</span>
+      <span className="mb-1 block text-[12px] text-muted">{label}</span>
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => void save()}
         rows={3}
         maxLength={2000}
-        placeholder={tr("settings:noSignature")}
+        placeholder={placeholder ?? tr("settings:noSignature")}
         className={cn(inputCls, "h-auto resize-y py-2")}
       />
     </label>
+  );
+}
+
+/** Signature du compte, puis celle de chacun de ses alias (vide : celle du compte s'applique). */
+function AccountSignatures({ account }: { account: Account }) {
+  const backend = useMail((s) => s.backend);
+  return (
+    <>
+      <SignatureField label={account.email} value={account.signature} onSave={(text) => backend.setAccountSignature(account.id, text)} />
+      {account.identities.map((i) => (
+        <SignatureField key={i.id} label={i.email} value={i.signature} onSave={(text) => backend.setIdentitySignature(account.id, i.id, text)} placeholder={tr("settings:aliasSignature")} />
+      ))}
+    </>
   );
 }
 
@@ -147,7 +160,7 @@ function IdentitiesField({ account }: { account: Account }) {
         {account.identities.map((i) => (
           <li key={i.id} className="flex items-center gap-2 rounded-lg bg-hover px-2.5 py-1 text-[13px]">
             <span className="min-w-0 flex-1 truncate">{senderLabel(i.name, i.email)}</span>
-            <button type="button" aria-label={tr("composer:remove", { name: i.email })} onClick={() => void run(backend.removeIdentity(i.id), tr("errors:delete"))} className="press rounded p-0.5 text-muted hover:bg-active hover:text-danger"><X size={13} /></button>
+            <button type="button" aria-label={tr("composer:remove", { name: i.email })} onClick={() => void run(backend.removeIdentity(account.id, i.id), tr("errors:delete"))} className="press rounded p-0.5 text-muted hover:bg-active hover:text-danger"><X size={13} /></button>
           </li>
         ))}
       </ul>
@@ -219,7 +232,7 @@ function AccountsPanel() {
       {accounts.length > 0 && (
         <Section title={tr("settings:signatures")} hint={tr("settings:signaturesHint")}>
           <div className="space-y-3">
-            {accounts.map((a) => <SignatureField key={a.id} id={a.id} email={a.email} value={a.signature} />)}
+            {accounts.map((a) => <AccountSignatures key={a.id} account={a} />)}
           </div>
         </Section>
       )}

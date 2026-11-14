@@ -292,8 +292,16 @@ export function senderOptions(accounts: Account[]) {
 export const knownAlias = (account: Account | undefined, fromEmail: string | undefined) =>
   account?.identities.find((i) => i.email.toLowerCase() === fromEmail?.toLowerCase())?.email;
 
-/** Brouillon de réponse / transfert à partir de la conversation. `own` : adresse du compte ; `aliases` : ses autres adresses d'envoi. */
-export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetail, own: string, signature = "", aliases: string[] = []): Draft {
+/** Signature à insérer pour cet expéditeur : celle de l'alias s'il en a une, sinon celle du compte. */
+export function signatureOf(account: Account | undefined, alias?: string): string {
+  const own = alias ? account?.identities.find((i) => sameAddr(i.email, alias))?.signature : "";
+  return own || account?.signature || "";
+}
+
+/** Brouillon de réponse / transfert à partir de la conversation, écrit depuis `account` (ou l'un de ses alias, si le message lui était adressé). */
+export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetail, account: Account): Draft {
+  const own = account.email;
+  const aliases = account.identities.map((i) => i.email);
   const isMine = (address: string) => [own, ...aliases].some((m) => sameAddr(m, address));
   const msgs = thread.messages;
   // On répond au dernier message reçu ; si tous sont de nous, au dernier.
@@ -301,6 +309,7 @@ export function draftFrom(mode: Exclude<ComposeMode, "new">, thread: ThreadDetai
   // On répond depuis l'adresse à laquelle le message a été envoyé, si c'est un alias.
   const fromEmail = aliases.find((alias) => [...target.to, ...target.cc].some((a) => sameAddr(a.address, alias)));
   const base = { ...emptyDraft(thread.accountId), fromEmail };
+  const signature = signatureOf(account, fromEmail);
   const header = t("composer:wrote", { date: when(target.date), who: who(target.fromName, target.fromAddr) });
 
   if (mode === "forward") {

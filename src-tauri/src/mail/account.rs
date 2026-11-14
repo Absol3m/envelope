@@ -38,6 +38,8 @@ pub struct Identity {
     pub id: i64,
     pub name: String,
     pub email: String,
+    /// Vide : la signature du compte s'applique.
+    pub signature: String,
 }
 
 /// Compte tel que stocké en base (sans secret).
@@ -410,13 +412,18 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Account>> {
     )))
     .fetch_all(pool)
     .await?;
-    let identities: Vec<(String, i64, String, String)> =
-        sqlx::query_as("SELECT account_id, id, name, email FROM identities ORDER BY id")
+    let identities: Vec<(String, i64, String, String, String)> =
+        sqlx::query_as("SELECT account_id, id, name, email, signature FROM identities ORDER BY id")
             .fetch_all(pool)
             .await?;
-    for (account_id, id, name, email) in identities {
+    for (account_id, id, name, email, signature) in identities {
         if let Some(a) = accounts.iter_mut().find(|a| a.id == account_id) {
-            a.identities.push(Identity { id, name, email });
+            a.identities.push(Identity {
+                id,
+                name,
+                email,
+                signature,
+            });
         }
     }
     let pending: Vec<(String, i64, Option<String>)> = sqlx::query_as(
@@ -448,11 +455,12 @@ pub async fn get(pool: &SqlitePool, id: &str) -> Result<Account> {
             id = id
         ))
     })?;
-    account.identities =
-        sqlx::query_as("SELECT id, name, email FROM identities WHERE account_id = ? ORDER BY id")
-            .bind(id)
-            .fetch_all(pool)
-            .await?;
+    account.identities = sqlx::query_as(
+        "SELECT id, name, email, signature FROM identities WHERE account_id = ? ORDER BY id",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
     Ok(account)
 }
 
@@ -495,12 +503,30 @@ pub async fn add_identity(
     Ok(())
 }
 
-pub async fn remove_identity(pool: &SqlitePool, id: i64) -> Result<()> {
-    sqlx::query("DELETE FROM identities WHERE id = ?")
+/// Retire un alias du compte indiqué (l'identifiant seul ne suffit pas : un alias d'un autre compte n'est pas touché).
+pub async fn remove_identity(pool: &SqlitePool, account_id: &str, id: i64) -> Result<()> {
+    sqlx::query("DELETE FROM identities WHERE id = ? AND account_id = ?")
         .bind(id)
+        .bind(account_id)
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Signature (texte brut) d'un alias ; vide, celle du compte s'applique.
+pub async fn set_identity_signature(
+    pool: &SqlitePool,
+    account_id: &str,
+    id: i64,
+    signature: &str,
+) -> Result<()> {
+    let done = sqlx::query("UPDATE identities SET signature = ? WHERE id = ? AND account_id = ?")
+        .bind(signature)
+        .bind(id)
+        .bind(account_id)
+        .execute(pool)
+        .await?;
+    ensure_found(&done, account_id)
 }
 
 /// Expéditeur d'un message : le compte lui-même, ou l'un de ses alias (jamais une adresse libre).
@@ -761,7 +787,26 @@ mod tests {
             ("Pro", "contact@x.fr")
         );
         assert_eq!(list(&pool).await.unwrap()[0].identities.len(), 1);
-        remove_identity(&pool, acct.identities[0].id).await.unwrap();
+        // Un alias ne se retire que par son propre compte.
+        remove_identity(&pool, "autre", acct.identities[0].id)
+            .await
+            .unwrap();
+        assert_eq!(get(&pool, "a").await.unwrap().identities.len(), 1);
+        set_identity_signature(&pool, "a", acct.identities[0].id, "Pro\nContact")
+            .await
+            .unwrap();
+        assert_eq!(
+            get(&pool, "a").await.unwrap().identities[0].signature,
+            "Pro\nContact"
+        );
+        assert!(
+            set_identity_signature(&pool, "autre", acct.identities[0].id, "x")
+                .await
+                .is_err()
+        );
+        remove_identity(&pool, "a", acct.identities[0].id)
+            .await
+            .unwrap();
         assert!(get(&pool, "a").await.unwrap().identities.is_empty());
         add_identity(&pool, "a", "", "autre@x.fr").await.unwrap();
         sqlx::query("DELETE FROM accounts WHERE id = 'a'")

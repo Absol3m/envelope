@@ -19,6 +19,8 @@ export interface Identity {
   id: number;
   name: string;
   email: string;
+  /** Vide : la signature du compte s'applique. */
+  signature: string;
 }
 
 export interface Account {
@@ -331,7 +333,8 @@ export interface Backend {
   cancelScheduled(id: number): Promise<OutgoingMessage>;
   sendScheduledNow(id: number): Promise<void>;
   addIdentity(accountId: string, name: string, email: string): Promise<void>;
-  removeIdentity(id: number): Promise<void>;
+  removeIdentity(accountId: string, id: number): Promise<void>;
+  setIdentitySignature(accountId: string, id: number, signature: string): Promise<void>;
   listRules(): Promise<Rule[]>;
   /** Crée (`id` 0) ou remplace la règle ; rend son identifiant. */
   saveRule(rule: Rule): Promise<number>;
@@ -436,7 +439,8 @@ export const tauriBackend: Backend = {
   cancelScheduled: (id) => invoke("cancel_scheduled", { id }),
   sendScheduledNow: (id) => invoke("send_scheduled_now", { id }),
   addIdentity: (accountId, name, email) => invoke("add_identity", { accountId, name, email }),
-  removeIdentity: (id) => invoke("remove_identity", { id }),
+  removeIdentity: (accountId, id) => invoke("remove_identity", { accountId, id }),
+  setIdentitySignature: (accountId, id, signature) => invoke("set_identity_signature", { accountId, id, signature }),
   listRules: () => invoke("list_rules"),
   saveRule: (rule) => invoke("save_rule", { rule }),
   deleteRule: (id) => invoke("delete_rule", { id }),

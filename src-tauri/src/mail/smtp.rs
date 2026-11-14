@@ -385,6 +385,7 @@ mod tests {
             id: 1,
             name: "Pro".into(),
             email: "contact@x.fr".into(),
+            signature: String::new(),
         });
         let mut out = outgoing(vec![], None);
         out.from_email = Some("contact@x.fr".into());

@@ -1,4 +1,5 @@
 {
+  "aliasSignature": "Identique à la signature du compte",
   "noSignature": "Aucune signature",
   "aliasAddress": "Adresse de l'alias",
   "aliasPlaceholder": "alias@exemple.fr",

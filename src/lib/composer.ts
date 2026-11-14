@@ -159,7 +159,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       const thread = selectedId === null ? undefined : details[selectedId];
       const account = accounts.find((a) => a.id === thread?.accountId);
       if (!thread || !account || !thread.messages.length) return toast(t("composer:openToReply"));
-      open(draftFrom(mode, thread, account.email, account.signature, account.identities.map((i) => i.email)));
+      open(draftFrom(mode, thread, account));
     },
 
     update(patch) {

@@ -328,14 +328,29 @@ pub async fn set_account_signature(
     account_id: String,
     signature: String,
 ) -> Result<()> {
-    // Texte brut, borné : la signature est insérée telle quelle dans le corps des messages.
+    account::set_signature(&state.db, &account_id, checked_signature(&signature)?).await
+}
+
+#[tauri::command]
+pub async fn set_identity_signature(
+    state: State<'_, AppState>,
+    account_id: String,
+    id: i64,
+    signature: String,
+) -> Result<()> {
+    account::set_identity_signature(&state.db, &account_id, id, checked_signature(&signature)?)
+        .await
+}
+
+/// Texte brut, borné : la signature est insérée telle quelle dans le corps des messages.
+fn checked_signature(signature: &str) -> Result<&str> {
     if signature.chars().count() > 2000 {
         return Err(AppError::Invalid(msg!(
             "account.signature_too_long",
             "signature too long (2000 characters)"
         )));
     }
-    account::set_signature(&state.db, &account_id, signature.trim_end()).await
+    Ok(signature.trim_end())
 }
 
 #[tauri::command]
@@ -358,8 +373,12 @@ pub async fn add_identity(
 }
 
 #[tauri::command]
-pub async fn remove_identity(state: State<'_, AppState>, id: i64) -> Result<()> {
-    account::remove_identity(&state.db, id).await
+pub async fn remove_identity(
+    state: State<'_, AppState>,
+    account_id: String,
+    id: i64,
+) -> Result<()> {
+    account::remove_identity(&state.db, &account_id, id).await
 }
 
 #[tauri::command]
