@@ -93,6 +93,7 @@ tauri-plugin-updater = "2.14"
 # Secrets (mots de passe / tokens OAuth2) dans le trousseau de l'OS
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+xattr = "1"  # quarantaine des pièces jointes (`com.apple.quarantine`)
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
 [target.'cfg(target_os = "linux")'.dependencies]

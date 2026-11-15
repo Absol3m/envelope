@@ -1382,6 +1382,7 @@ dependencies = [
  "url",
  "utf7-imap",
  "uuid",
+ "xattr",
 ]
 
 [[package]]

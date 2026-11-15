@@ -64,7 +64,7 @@
     "attachment": {
       "outside_folder": "Pièce jointe hors du dossier autorisé",
       "not_found": "Pièce jointe introuvable",
-      "executable": "« {{name}} » est un programme ou un script : il ne s'ouvre pas depuis un message. Enregistrez-le d'abord si vous faites confiance à l'expéditeur."
+      "not_openable": "« {{name}} » n'est pas d'un type qui s'ouvre depuis un message. Enregistrez-le d'abord si vous faites confiance à l'expéditeur."
     },
     "keychain": {
       "interrupted": "Accès au trousseau interrompu : {{detail}}"

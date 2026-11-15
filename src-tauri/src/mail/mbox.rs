@@ -16,14 +16,17 @@ use ts_rs::TS;
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use serde::Serialize;
 use sqlx::SqlitePool;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncReadExt, BufReader};
 
 use crate::error::{AppError, Result};
 use crate::mail::account::LOCAL_ID;
 use crate::mail::{ingest, local, rawstore};
 
 /// Taille maximale d'un message importé (au-delà : ignoré et compté en échec).
-const MAX_MESSAGE: usize = 256 * 1024 * 1024;
+const MAX_MESSAGE: usize = 100 * 1024 * 1024;
+/// Une ligne est lue par morceaux d'au plus cette taille : un fichier sans saut de ligne n'alloue pas sans limite
+/// avant le contrôle de `MAX_MESSAGE`. Le morceau suivant continue la même ligne (le contenu reste identique).
+const MAX_LINE_CHUNK: u64 = 1024 * 1024;
 const MAX_DEPTH: usize = 8;
 const MAX_FOLDERS: usize = 5000;
 /// Séparateur de hiérarchie dans le nom d'un dossier local (qui est plat).
@@ -240,7 +243,7 @@ impl<R: tokio::io::AsyncRead + Unpin> MboxReader<R> {
                 break f;
             }
             line.clear();
-            if self.reader.read_until(b'\n', &mut line).await? == 0 {
+            if read_line_chunk(&mut self.reader, &mut line).await? == 0 {
                 return Ok(None); // fin sans message
             }
             if line.starts_with(b"From ") && self.prev_blank {
@@ -253,7 +256,7 @@ impl<R: tokio::io::AsyncRead + Unpin> MboxReader<R> {
         self.prev_blank = false;
         loop {
             line.clear();
-            if self.reader.read_until(b'\n', &mut line).await? == 0 {
+            if read_line_chunk(&mut self.reader, &mut line).await? == 0 {
                 break;
             }
             let blank = is_blank(&line);
@@ -284,6 +287,15 @@ impl<R: tokio::io::AsyncRead + Unpin> MboxReader<R> {
             too_big,
         }))
     }
+}
+
+/// Lit jusqu'à la fin de ligne, ou `MAX_LINE_CHUNK` octets au plus. Rend le nombre d'octets lus (0 : fin du fichier).
+async fn read_line_chunk<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    line: &mut Vec<u8>,
+) -> std::io::Result<usize> {
+    use tokio::io::AsyncBufReadExt as _;
+    reader.take(MAX_LINE_CHUNK).read_until(b'\n', line).await
 }
 
 /// Ligne vide (fin de ligne seule) : test sur les octets, sans allouer de chaîne pour chaque ligne du fichier.
@@ -582,6 +594,17 @@ mod tests {
         );
         // Une ligne « >From » du corps ne coupe pas le message et reste telle quelle.
         assert!(String::from_utf8_lossy(&items[1].raw).contains("\n>From ici\nfin\n"));
+    }
+
+    #[tokio::test]
+    async fn ligne_plus_longue_que_le_morceau_reste_intacte() {
+        // Une seule ligne de 2,5 Mo (plus de deux morceaux) : ni coupée ni perdue, et les messages voisins restent séparés.
+        let long = "x".repeat(2_500_000);
+        let data = mbox(&[msg("un", "0001", &long), msg("deux", "0000", "salut")]);
+        let items = split(data.as_bytes()).await;
+        assert_eq!(items.len(), 2);
+        assert!(items[0].raw.ends_with(format!("{long}\n").as_bytes()));
+        assert!(items[1].raw.ends_with(b"salut\n"));
     }
 
     #[tokio::test]

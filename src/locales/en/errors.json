@@ -64,7 +64,7 @@
     "attachment": {
       "outside_folder": "Attachment outside the allowed folder",
       "not_found": "Attachment not found",
-      "executable": "“{{name}}” is a program or script: it is not opened from a message. Save it first if you trust the sender."
+      "not_openable": "“{{name}}” is not a type that opens from a message. Save it first if you trust the sender."
     },
     "keychain": {
       "interrupted": "Keychain access interrupted: {{detail}}"
