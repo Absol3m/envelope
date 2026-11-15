@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 const root = join(__dirname, "../../..");
 const read = (p: string) => readFileSync(join(root, p), "utf8");
 const walk = (dir: string, ext: string): string[] =>
-  (readdirSync(join(root, dir), { recursive: true }) as string[]).filter((f) => f.endsWith(ext)).map((f) => `${dir}/${f}`);
+  (readdirSync(join(root, dir), { recursive: true }) as string[]).filter((f) => f.endsWith(ext)).map((f) => `${dir}/${f.replaceAll("\\", "/")}`); // Windows : séparateur \\
 
 const camel = (s: string) => s.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 
