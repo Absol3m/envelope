@@ -204,7 +204,7 @@ describe("rechargement de la liste", () => {
   it("garde l'objet des conversations inchangées (lignes mémoïsées) et remplace celles qui changent", async () => {
     await boot();
     const before = useMail.getState().threads;
-    const target = before[1];
+    const target = before[2];
     const starred = demoBackend.setStarred(target.id, !target.isStarred);
     await tick(300);
     await starred;
@@ -213,7 +213,8 @@ describe("rechargement de la liste", () => {
     await done;
     const after = useMail.getState().threads;
     expect(after.length).toBe(before.length);
-    expect(after[0]).toBe(before[0]);
+    // La conversation ouverte est marquée lue au bout de 900 ms (sa ligne change) : on compare des conversations non touchées.
+    for (const t of before.slice(3, 8)) expect(after.find((x) => x.id === t.id)).toBe(t);
     expect(after.find((t) => t.id === target.id)).not.toBe(target);
   });
 });
