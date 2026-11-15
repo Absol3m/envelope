@@ -20,7 +20,7 @@ const demoThreads = (): MockThread[] =>
     const messages: DetailMessage[] = t.messages.map((m) => ({
       id: nextId++, messageId: null, references: [], folderId, subject: m.subject,
       fromName: m.from[0], fromAddr: m.from[1], to: [], cc: [], date: m.date, bodyText: m.text, bodyHtml: null,
-      isRead: m.read, isStarred: false, unsubscribe: null, authFail: null,
+      isRead: m.read, isStarred: false, unsubscribe: null, authFail: null, oversize: false, size: null,
     }));
     return {
       id: t.id, accountId: t.account, role: scenario.folders.find((f) => f.id === folderId)!.role, starred: t.starred, messages,

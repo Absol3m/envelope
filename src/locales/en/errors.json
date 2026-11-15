@@ -89,7 +89,8 @@
       "unreadable_cancelled": "Unreadable message: archiving cancelled",
       "copy_unverified": "Local copy not verified: archiving cancelled",
       "copied_not_deleted": "Copied locally but not deleted from the server: {{detail}}",
-      "nothing_to_delete": "Nothing to delete in this folder"
+      "nothing_to_delete": "Nothing to delete in this folder",
+      "oversize": "This conversation contains a large message that is not downloaded yet: open it and download it first."
     },
     "actions": {
       "copy_pending": "The sent message isn't on the server yet: try again in a moment",

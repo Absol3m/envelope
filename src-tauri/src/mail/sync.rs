@@ -26,9 +26,14 @@ use tokio::sync::Notify;
 
 use crate::error::{AppError, Result};
 use crate::mail::imap::{self, ImapSession};
-use crate::mail::{account, ingest, rawstore, sentcopy};
+use crate::mail::{account, ingest, rawstore, sentcopy, sessions};
 
 const INITIAL_WINDOW: i64 = 200;
+/// Au-delà, un message n'est pas téléchargé à la synchro : on garde l'en-tête et le contenu vient à la demande
+/// (`download_message`). Évite de charger un message de plusieurs centaines de Mio en mémoire à chaque synchro.
+pub const OVERSIZE_BYTES: u32 = 50 * 1024 * 1024;
+const FETCH_FULL: &str = "(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[])";
+const FETCH_HEADER: &str = "(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[HEADER])";
 /// Lot de l'historique rapatrié (messages par requête IMAP) et durée maximale d'une série de lots
 /// avant de rendre la main à la synchro courante (nouveaux messages, demandes manuelles).
 const BACKFILL_BATCH: i64 = 100;
@@ -546,19 +551,9 @@ async fn sync_folder(
     };
     let mut count = 0;
     if uid_next.map_or(mbox.exists > 0, |n| start < n) {
-        let mut stream = session
-            .uid_fetch(
-                format!("{start}:*"),
-                "(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[])",
-            )
-            .await?;
-        while let Some(item) = stream.try_next().await? {
-            if !item.uid.is_some_and(|u| i64::from(u) >= start) {
-                continue; // « n:* » renvoie toujours le dernier message, même plus ancien que n
-            }
-            let Some(stored) = ingest_item(ctx, f, &item, false).await? else {
-                continue;
-            };
+        for stored in
+            fetch_ingest(session, ctx, f, &format!("{start}:*"), Some(start), false).await?
+        {
             // Notifier seulement l'arrivée d'un nouveau message dans la boîte de réception : pas la
             // première synchro (last_uid = 0), qui rapatrie l'historique.
             if last_uid > 0 && f.role == Some(FolderRole::Inbox) && !stored.seen {
@@ -568,8 +563,7 @@ async fn sync_folder(
                     thread_id: stored.thread_id,
                 });
             }
-            let tid = stored.thread_id;
-            touched.insert(tid);
+            touched.insert(stored.thread_id);
             count += 1;
         }
     }
@@ -600,6 +594,104 @@ struct Stored {
     subject: String,
 }
 
+/// UID du lot `set` plus gros que `limit` octets, par une recherche serveur (réponse minuscule, aucun corps).
+async fn oversize_uids(session: &mut ImapSession, set: &str, limit: u32) -> Result<Vec<i64>> {
+    let mut big: Vec<i64> = session
+        .uid_search(format!("UID {set} LARGER {limit}"))
+        .await?
+        .into_iter()
+        .map(i64::from)
+        .collect();
+    big.sort_unstable();
+    Ok(big)
+}
+
+/// Récupère et range les messages de `set` : en entier, sauf ceux de plus de `OVERSIZE_BYTES` dont on ne prend que
+/// l'en-tête. Cas courant (aucun volumineux) : une recherche légère puis le même fetch qu'avant. Les corps arrivent
+/// en flux, un message à la fois en mémoire. `min_uid` : « n:* » renvoie toujours le dernier message, même plus ancien.
+async fn fetch_ingest(
+    session: &mut ImapSession,
+    ctx: &Ctx,
+    f: &FolderRec,
+    set: &str,
+    min_uid: Option<i64>,
+    lazy_attachments: bool,
+) -> Result<Vec<Stored>> {
+    let big = oversize_uids(session, set, OVERSIZE_BYTES).await?;
+    let mut jobs = vec![(set.to_string(), FETCH_FULL, false)];
+    if !big.is_empty() {
+        let small: Vec<i64> = session
+            .uid_search(format!("UID {set} NOT LARGER {OVERSIZE_BYTES}"))
+            .await?
+            .into_iter()
+            .map(i64::from)
+            .collect();
+        jobs = vec![
+            (imap::uid_set(&small), FETCH_FULL, false),
+            (imap::uid_set(&big), FETCH_HEADER, true),
+        ];
+        jobs.retain(|(s, ..)| !s.is_empty());
+    }
+    let mut stored = Vec::new();
+    for (uids, query, oversize) in jobs {
+        let mut stream = session.uid_fetch(uids, query).await?;
+        while let Some(item) = stream.try_next().await? {
+            if min_uid.is_some_and(|m| !item.uid.is_some_and(|u| i64::from(u) >= m)) {
+                continue;
+            }
+            if let Some(s) = ingest_item(ctx, f, &item, lazy_attachments, oversize).await? {
+                stored.push(s);
+            }
+        }
+    }
+    Ok(stored)
+}
+
+/// Télécharge le contenu d'un message « volumineux » (en-tête seul jusque-là) : corps, pièces jointes, brut. Le message
+/// est chargé une fois en mémoire, à la demande de l'utilisateur.
+pub async fn download_message(
+    pool: &SqlitePool,
+    attachments_dir: &std::path::Path,
+    raw_dir: &std::path::Path,
+    message_id: i64,
+) -> Result<()> {
+    let row: Option<(String, String, i64, i64)> = sqlx::query_as(
+        "SELECT m.account_id, f.path, m.uid, m.thread_id FROM messages m JOIN folders f ON f.id = m.folder_id \
+         WHERE m.id = ? AND m.oversize = 1",
+    )
+    .bind(message_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some((account_id, path, uid, thread_id)) = row else {
+        return Ok(()); // déjà téléchargé
+    };
+    let mut session = sessions::acquire(pool, &account_id).await?;
+    session.select(&path).await?;
+    let mut found = None;
+    {
+        let mut stream = session
+            .uid_fetch(uid.to_string(), "(UID BODY.PEEK[])")
+            .await?;
+        while let Some(item) = stream.try_next().await? {
+            if let Some(raw) = item.body() {
+                if let Some(parsed) = ingest::parse_with(raw, None, false) {
+                    found = Some((parsed, rawstore::put(raw_dir, raw).await?));
+                }
+            }
+        }
+    }
+    session.release();
+    let Some((parsed, hash)) = found else {
+        return Err(AppError::NotFound(msg!(
+            "not_found.server_message",
+            "message {uid} not found on the server",
+            uid = uid
+        )));
+    };
+    ingest::complete_oversize(pool, attachments_dir, message_id, parsed, &hash).await?;
+    ingest::refresh_threads(pool, &HashSet::from([thread_id])).await
+}
+
 /// Range un message récupéré en entier (`UID FETCH … BODY.PEEK[]`) : le brut d'abord (source de
 /// vérité), puis l'index. `lazy_attachments` : voir `ingest::StoreOpts`. `None` si l'élément n'a ni
 /// UID ni corps, ou si le message est illisible.
@@ -608,8 +700,13 @@ async fn ingest_item(
     f: &FolderRec,
     item: &Fetch,
     lazy_attachments: bool,
+    oversize: bool,
 ) -> Result<Option<Stored>> {
-    let (Some(uid), Some(raw)) = (item.uid.map(i64::from), item.body()) else {
+    // Message volumineux : l'en-tête seul est récupéré (voir `fetch_ingest`).
+    let (Some(uid), Some(raw)) = (
+        item.uid.map(i64::from),
+        if oversize { item.header() } else { item.body() },
+    ) else {
         return Ok(None);
     };
     let Some(parsed) = ingest::parse_with(
@@ -630,7 +727,12 @@ async fn ingest_item(
         .filter(|n| !n.trim().is_empty())
         .unwrap_or_else(|| parsed.from_addr.clone());
     let subject = parsed.subject.clone();
-    let raw_hash = rawstore::put(&ctx.raw_dir, raw).await?;
+    // Un en-tête seul n'est pas un brut : pas de hachage (« '' » = rien à rapatrier), le contenu se télécharge à la demande.
+    let raw_hash = if oversize {
+        String::new()
+    } else {
+        rawstore::put(&ctx.raw_dir, raw).await?
+    };
     let thread_id = ingest::store_with(
         &ctx.pool,
         &ctx.attachments_dir,
@@ -645,6 +747,7 @@ async fn ingest_item(
         ingest::StoreOpts {
             raw_hash: Some(&raw_hash),
             lazy_attachments,
+            oversize,
         },
     )
     .await?;
@@ -723,13 +826,20 @@ async fn rehydrate(session: &mut ImapSession, ctx: &Ctx, folders: &[FolderRec]) 
     else {
         return Ok(false);
     };
-    let uids: Vec<i64> = sqlx::query_scalar(
-        "SELECT uid FROM messages WHERE folder_id = ? AND raw_hash IS NULL ORDER BY uid DESC LIMIT ?",
+    let rows: Vec<(i64, Option<i64>)> = sqlx::query_as(
+        "SELECT uid, size FROM messages WHERE folder_id = ? AND raw_hash IS NULL ORDER BY uid DESC LIMIT ?",
     )
     .bind(folder_id)
     .bind(BACKFILL_BATCH)
     .fetch_all(&ctx.pool)
     .await?;
+    let uids: Vec<i64> = rows.iter().map(|r| r.0).collect();
+    // Les messages volumineux ne sont pas rapatriés ici : ils sont marqués « sans brut » plus bas, comme les absents.
+    let fetchable: Vec<i64> = rows
+        .iter()
+        .filter(|r| !r.1.is_some_and(|s| s > i64::from(OVERSIZE_BYTES)))
+        .map(|r| r.0)
+        .collect();
     let Some(folder) = folders.iter().find(|f| f.id == folder_id) else {
         // Dossier non synchronisé : rien à récupérer, on ne réessaie pas.
         sqlx::query("UPDATE messages SET raw_hash = '' WHERE folder_id = ? AND raw_hash IS NULL")
@@ -739,8 +849,9 @@ async fn rehydrate(session: &mut ImapSession, ctx: &Ctx, folders: &[FolderRec]) 
         return Ok(true);
     };
     session.select(&folder.path).await?;
-    let set = imap::uid_set(&uids);
-    let mut stream = session.uid_fetch(set, "(UID BODY.PEEK[])").await?;
+    let mut stream = session
+        .uid_fetch(imap::uid_set(&fetchable), "(UID BODY.PEEK[])")
+        .await?;
     while let Some(item) = stream.try_next().await? {
         let (Some(uid), Some(raw)) = (item.uid, item.body()) else {
             continue;
@@ -804,20 +915,11 @@ async fn backfill_batch(
         }
         let lo = (cursor - BACKFILL_BATCH).max(1);
         session.select(&f.path).await?;
-        let mut stream = session
-            .uid_fetch(
-                format!("{lo}:{}", cursor - 1),
-                "(UID FLAGS RFC822.SIZE INTERNALDATE BODY.PEEK[])",
-            )
-            .await?;
-        while let Some(item) = stream.try_next().await? {
-            let Some(stored) = ingest_item(ctx, f, &item, true).await? else {
-                continue;
-            };
-            let tid = stored.thread_id;
-            touched.insert(tid);
+        for stored in
+            fetch_ingest(session, ctx, f, &format!("{lo}:{}", cursor - 1), None, true).await?
+        {
+            touched.insert(stored.thread_id);
         }
-        drop(stream);
         sqlx::query("UPDATE folders SET backfill_next = ? WHERE id = ?")
             .bind(lo)
             .bind(f.id)
@@ -916,7 +1018,12 @@ async fn reconcile(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_mutf7, Marks, Reconciled, RECONCILED_SQL, RECONCILE_MAX_AGE_SECS};
+    use super::{
+        decode_mutf7, oversize_uids, Marks, Reconciled, FETCH_HEADER, RECONCILED_SQL,
+        RECONCILE_MAX_AGE_SECS,
+    };
+    use crate::mail::imap;
+    use futures::TryStreamExt;
 
     const NOW: i64 = 1_000_000;
     fn marks() -> Marks {
@@ -1014,5 +1121,41 @@ mod tests {
         assert_eq!(decode_mutf7("Envoy&AOk-s"), "Envoyés");
         assert_eq!(decode_mutf7("A &- B"), "A & B");
         assert_eq!(decode_mutf7("&2D3eAA-"), "\u{1F600}"); // paire de substitution UTF-16
+    }
+
+    /// Dialogue IMAP réel (Dovecot, quota de 40 Ko) : le tri par taille annoncée, puis l'en-tête seul d'un message
+    /// « volumineux » (`BODY.PEEK[HEADER]`). Lancer : `scripts/imap-test-server.sh start` puis
+    /// `ENVELOPE_TEST_IMAP=127.0.0.1:3143 cargo test -p envelope tri_par_taille -- --ignored`.
+    #[tokio::test]
+    #[ignore = "demande un serveur IMAP : ENVELOPE_TEST_IMAP=hôte:port (scripts/imap-test-server.sh)"]
+    async fn tri_par_taille_et_en_tete_seul_sur_serveur_reel() {
+        let addr = std::env::var("ENVELOPE_TEST_IMAP").expect("ENVELOPE_TEST_IMAP");
+        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let io: Box<dyn imap::Io> = Box::new(tcp);
+        let user = format!("u{}", uuid::Uuid::new_v4().simple());
+        let mut session = async_imap::Client::new(io)
+            .login(&user, "pass")
+            .await
+            .map_err(|(e, _)| e)
+            .unwrap();
+        let head = "From: a@x.fr\r\nTo: b@x.fr\r\nSubject: Test\r\nMessage-ID: <t@x>\r\n\r\n";
+        for body in ["court".to_string(), "x".repeat(20_000)] {
+            session
+                .append("INBOX", None, None, format!("{head}{body}").as_bytes())
+                .await
+                .unwrap();
+        }
+        session.select("INBOX").await.unwrap();
+        let big = oversize_uids(&mut session, "1:*", 10_000).await.unwrap();
+        assert_eq!(big, vec![2]);
+        let mut stream = session
+            .uid_fetch(imap::uid_set(&big), FETCH_HEADER)
+            .await
+            .unwrap();
+        let item = stream.try_next().await.unwrap().unwrap();
+        assert!(item.body().is_none(), "le corps n'est pas téléchargé");
+        let header = item.header().expect("en-tête");
+        assert!(header.len() < 200 && header.starts_with(b"From: a@x.fr"));
+        assert_eq!(item.size, Some(u32::try_from(head.len() + 20_000).unwrap()));
     }
 }

@@ -54,5 +54,9 @@
   "saved_one": "{{count}} fichier enregistré",
   "saved_other": "{{count}} fichiers enregistrés",
   "saveFailed": "Enregistrement impossible — {{error}}",
-  "openAttachment": "Ouvrir"
+  "openAttachment": "Ouvrir",
+  "oversize": "Ce message est volumineux ({{size}}) : seul son en-tête a été téléchargé.",
+  "download": "Télécharger le message",
+  "downloading": "Téléchargement…",
+  "downloadFailed": "Impossible de télécharger le message"
 }

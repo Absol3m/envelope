@@ -54,5 +54,9 @@
   "saved_one": "{{count}} file saved",
   "saved_other": "{{count}} files saved",
   "saveFailed": "Couldn't save — {{error}}",
-  "openAttachment": "Open"
+  "openAttachment": "Open",
+  "oversize": "This message is large ({{size}}): only its header was downloaded.",
+  "download": "Download message",
+  "downloading": "Downloading…",
+  "downloadFailed": "Couldn't download the message"
 }

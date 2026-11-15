@@ -483,6 +483,7 @@ mod tests {
             let opts = StoreOpts {
                 raw_hash: Some(&hash),
                 lazy_attachments: true,
+                ..Default::default()
             };
             last_thread = store_with(
                 &pool,

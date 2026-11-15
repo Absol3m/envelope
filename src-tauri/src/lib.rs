@@ -246,6 +246,7 @@ pub fn run() {
             commands::suggest_contacts,
             commands::list_threads,
             commands::get_thread_detail,
+            commands::download_message,
             commands::set_thread_read,
             commands::set_thread_starred,
             commands::move_thread,

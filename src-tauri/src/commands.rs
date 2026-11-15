@@ -706,6 +706,18 @@ pub async fn list_threads(
     Ok(thread::list_threads(&state.db, &query).await?)
 }
 
+/// Télécharge le contenu d'un message volumineux, resté en en-tête seul à la synchro.
+#[tauri::command]
+pub async fn download_message(state: State<'_, AppState>, message_id: i64) -> Result<()> {
+    crate::mail::sync::download_message(
+        &state.db,
+        &state.attachments_dir,
+        &state.raw_dir,
+        message_id,
+    )
+    .await
+}
+
 #[tauri::command]
 pub async fn get_thread_detail(state: State<'_, AppState>, thread_id: i64) -> Result<ThreadDetail> {
     thread::get_thread_detail(&state.db, thread_id)

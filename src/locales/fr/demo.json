@@ -118,6 +118,10 @@
       "mom": "Maman",
       "bankSecurity": "Service Sécurité",
       "security": "Sécurité Atelier Nord"
+    },
+    "bigfile": {
+      "subject": "Rushes — tournage jour 3",
+      "body": "Tous les rushes sont dans l'archive jointe."
     }
   }
 }

@@ -256,6 +256,7 @@ mod tests {
             let opts = StoreOpts {
                 raw_hash: Some(&hash),
                 lazy_attachments: true,
+                ..Default::default()
             };
             store_with(
                 &pool,

@@ -105,6 +105,8 @@ interface State {
   clearChecked(): void;
   move(delta: 1 | -1): void;
   toggleRead(ids: Ids): void;
+  /** Télécharge le contenu d'un message volumineux puis recharge sa conversation. */
+  downloadMessage(messageId: number): Promise<void>;
   toggleStar(ids: Ids): void;
   /** Pose un rappel (report ou relance) ; `at` en millisecondes. */
   remind(id: number, kind: ReminderKind, at: number): void;
@@ -452,6 +454,20 @@ export const useMail = create<State>((set, get) => {
       const i = list.findIndex((t) => t.id === s.selectedId);
       const next = list[Math.min(list.length - 1, Math.max(0, i < 0 ? 0 : i + delta))];
       if (next) s.select(next.id);
+    },
+
+    async downloadMessage(messageId) {
+      const s = get();
+      const threadId = Object.values(s.details).find((d) => d.messages.some((m) => m.id === messageId))?.id;
+      try {
+        await s.backend.downloadMessage(messageId);
+        if (threadId !== undefined) {
+          const d = await s.backend.getThread(threadId);
+          set((cur) => ({ details: { ...cur.details, [threadId]: d } }));
+        }
+      } catch (e) {
+        fail(tr("reader:downloadFailed"), e);
+      }
     },
 
     toggleRead(ids) {

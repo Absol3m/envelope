@@ -335,6 +335,8 @@ pub struct StoreOpts<'a> {
     /// `false` : métadonnées des pièces jointes seulement ; leur contenu est extrait du message
     /// brut à la première ouverture (historique rapatrié : pas de copie disque systématique).
     pub lazy_attachments: bool,
+    /// Message trop volumineux pour la synchro : en-tête seul, contenu à télécharger à la demande.
+    pub oversize: bool,
 }
 
 /// Sans options : utilisé par les essais et les outils de développement (le moteur appelle `store_with`).
@@ -392,15 +394,14 @@ pub async fn store_with(
         .last_insert_rowid(),
     };
 
-    let has_att = m
-        .attachments
-        .iter()
-        .any(|a| !a.is_inline || a.filename.is_some());
+    // En-tête seul (message volumineux) : l'analyse d'un corps absent ne décrit aucune pièce jointe réelle.
+    let attachments: &[ParsedAttachment] = if opts.oversize { &[] } else { &m.attachments };
+    let has_att = has_real_attachment(attachments);
     let res = sqlx::query(
         "INSERT INTO messages (account_id, folder_id, thread_id, uid, message_id, in_reply_to, references_ids, \
          subject, from_name, from_addr, to_addrs, cc_addrs, bcc_addrs, date, snippet, body_text, body_html, \
-         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click, raw_hash, draft_id, auth_fail) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+         is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click, raw_hash, draft_id, auth_fail, oversize) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
          ON CONFLICT(folder_id, uid) DO NOTHING",
     )
     .bind(account_id)
@@ -430,6 +431,7 @@ pub async fn store_with(
     .bind(opts.raw_hash)
     .bind(&m.draft_id)
     .bind(m.auth_fail)
+    .bind(opts.oversize)
     .execute(&mut *tx)
     .await?;
     if res.rows_affected() == 0 {
@@ -454,40 +456,116 @@ pub async fn store_with(
             .await?;
     }
 
-    if !m.attachments.is_empty() {
-        let dir = attachments_dir
-            .join(account_id)
-            .join(message_row.to_string());
-        if !opts.lazy_attachments && m.attachments.iter().any(|a| !a.data.is_empty()) {
-            crate::private::create_dir_all(&dir).await?;
-        }
-        for (i, a) in m.attachments.iter().enumerate() {
-            // Chemin NULL tant que le contenu n'est pas extrait (voir `materialize_attachment`).
-            let path = if opts.lazy_attachments || (a.data.is_empty() && a.size > 0) {
-                None
-            } else {
-                let fname = safe_filename(a.filename.as_deref().unwrap_or("attachment"));
-                let path = dir.join(format!("{i}_{fname}"));
-                crate::private::write(&path, &a.data).await?;
-                Some(path.to_string_lossy().into_owned())
-            };
-            sqlx::query(
-                "INSERT INTO attachments (message_id, filename, mime_type, size, content_id, is_inline, storage_path) \
-                 VALUES (?,?,?,?,?,?,?)",
-            )
-            .bind(message_row)
-            .bind(&a.filename)
-            .bind(&a.mime_type)
-            .bind(a.size as i64)
-            .bind(&a.content_id)
-            .bind(a.is_inline)
-            .bind(path)
-            .execute(&mut *tx)
-            .await?;
-        }
-    }
+    insert_attachments(
+        &mut tx,
+        attachments_dir,
+        account_id,
+        message_row,
+        attachments,
+        opts.lazy_attachments,
+    )
+    .await?;
     tx.commit().await?;
     Ok(thread_id)
+}
+
+/// Une pièce jointe visible : tout sauf une image « inline » sans nom (logo, pixel de suivi).
+fn has_real_attachment(attachments: &[ParsedAttachment]) -> bool {
+    attachments
+        .iter()
+        .any(|a| !a.is_inline || a.filename.is_some())
+}
+
+/// Écrit les pièces jointes d'un message : métadonnées en base, contenu sur disque quand il a été copié.
+async fn insert_attachments(
+    tx: &mut sqlx::SqliteConnection,
+    attachments_dir: &Path,
+    account_id: &str,
+    message_row: i64,
+    attachments: &[ParsedAttachment],
+    lazy: bool,
+) -> Result<()> {
+    if attachments.is_empty() {
+        return Ok(());
+    }
+    let dir = attachments_dir
+        .join(account_id)
+        .join(message_row.to_string());
+    if !lazy && attachments.iter().any(|a| !a.data.is_empty()) {
+        crate::private::create_dir_all(&dir).await?;
+    }
+    for (i, a) in attachments.iter().enumerate() {
+        // Chemin NULL tant que le contenu n'est pas extrait (voir `materialize_attachment`).
+        let path = if lazy || (a.data.is_empty() && a.size > 0) {
+            None
+        } else {
+            let fname = safe_filename(a.filename.as_deref().unwrap_or("attachment"));
+            let path = dir.join(format!("{i}_{fname}"));
+            crate::private::write(&path, &a.data).await?;
+            Some(path.to_string_lossy().into_owned())
+        };
+        sqlx::query(
+            "INSERT INTO attachments (message_id, filename, mime_type, size, content_id, is_inline, storage_path) \
+             VALUES (?,?,?,?,?,?,?)",
+        )
+        .bind(message_row)
+        .bind(&a.filename)
+        .bind(&a.mime_type)
+        .bind(a.size as i64)
+        .bind(&a.content_id)
+        .bind(a.is_inline)
+        .bind(path)
+        .execute(&mut *tx)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Complète un message « volumineux » (en-tête seul) avec son contenu téléchargé : corps, résumé, pièces jointes (extraites
+/// du brut à la première ouverture) et empreinte du brut. Sans effet si le message n'est plus en attente de contenu.
+pub async fn complete_oversize(
+    pool: &SqlitePool,
+    attachments_dir: &Path,
+    message_row: i64,
+    m: ParsedMessage,
+    raw_hash: &str,
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    let account_id: Option<String> =
+        sqlx::query_scalar("SELECT account_id FROM messages WHERE id = ? AND oversize = 1")
+            .bind(message_row)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some(account_id) = account_id else {
+        return Ok(());
+    };
+    let has_att = has_real_attachment(&m.attachments);
+    sqlx::query(
+        "UPDATE messages SET snippet = ?, body_text = ?, body_html = ?, has_attachments = ?, unsub_url = ?, \
+         unsub_mailto = ?, unsub_one_click = ?, raw_hash = ?, oversize = 0 WHERE id = ?",
+    )
+    .bind(&m.snippet)
+    .bind(&m.body_text)
+    .bind(&m.body_html)
+    .bind(has_att)
+    .bind(m.unsubscribe.as_ref().and_then(|u| u.url.as_deref()))
+    .bind(m.unsubscribe.as_ref().and_then(|u| u.mailto.as_deref()))
+    .bind(m.unsubscribe.as_ref().is_some_and(|u| u.one_click))
+    .bind(raw_hash)
+    .bind(message_row)
+    .execute(&mut *tx)
+    .await?;
+    insert_attachments(
+        &mut tx,
+        attachments_dir,
+        &account_id,
+        message_row,
+        &m.attachments,
+        true,
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(())
 }
 
 /// Contenu de la pièce jointe de rang `rank` d'un message brut (fonction synchrone : le `Message`
@@ -1195,6 +1273,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn message_volumineux_en_tete_seul_puis_complete() {
+        let (pool, folder) = setup().await;
+        let base = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
+        let (att_dir, raw_dir) = (base.join("att"), base.join("raw"));
+        let head = "From: a@x.fr\r\nTo: me@x.fr\r\nSubject: Gros\r\nDate: Mon, 2 Mar 2026 10:00:00 +0000\r\nMessage-ID: <big@x>\r\n\
+MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n";
+        let full = format!("{head}--B\r\nContent-Type: text/plain\r\n\r\nle corps\r\n--B\r\nContent-Type: application/pdf\r\n\
+Content-Disposition: attachment; filename=\"gros.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\nSGVsbG8gUERG\r\n--B--\r\n");
+        let loc = MessageLoc {
+            account_id: "a",
+            folder_id: folder,
+            uid: 1,
+            size: Some(900_000_000),
+        };
+        let opts = StoreOpts {
+            raw_hash: Some(""),
+            lazy_attachments: true,
+            oversize: true,
+        };
+        let thread = store_with(
+            &pool,
+            &att_dir,
+            loc,
+            Flags::default(),
+            parse(head.as_bytes(), None).unwrap(),
+            opts,
+        )
+        .await
+        .unwrap();
+        let detail = envelope_core::thread::get_thread_detail(&pool, thread)
+            .await
+            .unwrap()
+            .unwrap();
+        let m = &detail.messages[0];
+        assert!(m.oversize && m.size == Some(900_000_000));
+        assert!(m.body_text.as_deref().unwrap_or("").is_empty() && detail.attachments.is_empty());
+
+        let hash = crate::mail::rawstore::put(&raw_dir, full.as_bytes())
+            .await
+            .unwrap();
+        let id = m.id;
+        complete_oversize(
+            &pool,
+            &att_dir,
+            id,
+            parse_with(full.as_bytes(), None, false).unwrap(),
+            &hash,
+        )
+        .await
+        .unwrap();
+        let detail = envelope_core::thread::get_thread_detail(&pool, thread)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!detail.messages[0].oversize);
+        assert_eq!(detail.messages[0].body_text.as_deref(), Some("le corps"));
+        assert_eq!(detail.attachments.len(), 1);
+        // La pièce jointe s'extrait du brut rapatrié.
+        let att = detail.attachments[0].id;
+        let p = materialize_attachment(&pool, &att_dir, &raw_dir, att)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(p).unwrap(), b"Hello PDF");
+        // Un second appel est sans effet.
+        complete_oversize(
+            &pool,
+            &att_dir,
+            id,
+            parse_with(full.as_bytes(), None, false).unwrap(),
+            &hash,
+        )
+        .await
+        .unwrap();
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM attachments")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[tokio::test]
     async fn lazy_attachments_are_extracted_from_the_raw_message() {
         let (pool, folder) = setup().await;
         let base = std::env::temp_dir().join(format!("envelope-test-{}", uuid::Uuid::new_v4()));
@@ -1214,6 +1373,7 @@ MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=B\r\n\r\n--B\r\nCon
         let opts = StoreOpts {
             raw_hash: Some(&hash),
             lazy_attachments: true,
+            ..Default::default()
         };
         store_with(
             &pool,
@@ -1744,6 +1904,7 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
             StoreOpts {
                 raw_hash: Some(&hash),
                 lazy_attachments: false,
+                ..Default::default()
             },
         )
         .await

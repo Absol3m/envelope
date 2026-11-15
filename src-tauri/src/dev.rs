@@ -453,6 +453,7 @@ pub async fn seed_photo_thread(data_dir: &Path, images_dir: &Path) -> Result<usi
             ingest::StoreOpts {
                 raw_hash: Some(&hash),
                 lazy_attachments: true,
+                ..Default::default()
             },
         )
         .await?;

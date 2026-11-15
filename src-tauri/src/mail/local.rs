@@ -168,6 +168,7 @@ struct Source {
     size: Option<i64>,
     date: String,
     thread_id: Option<i64>,
+    oversize: bool,
 }
 
 /// Complète le brut des messages qui n'en ont pas encore (ancienne synchro) depuis le serveur.
@@ -236,7 +237,7 @@ pub async fn copy_to_local(
 ) -> Result<Copied> {
     ensure_local_folder(pool, to_folder).await?;
     let mut sources: Vec<Source> = sqlx::query_as(
-        "SELECT m.id, m.uid, m.account_id, f.path, m.is_read, m.is_starred, m.raw_hash, m.size, m.date, m.thread_id \
+        "SELECT m.id, m.uid, m.account_id, f.path, m.is_read, m.is_starred, m.raw_hash, m.size, m.date, m.thread_id, m.oversize \
          FROM messages m JOIN folders f ON f.id = m.folder_id WHERE m.thread_id = ? AND m.folder_id = ? ORDER BY m.uid",
     )
     .bind(thread_id)
@@ -253,6 +254,13 @@ pub async fn copy_to_local(
         return Err(AppError::Invalid(msg!(
             "local.already_local",
             "this conversation is already stored locally"
+        )));
+    }
+    // Un message volumineux n'a que son en-tête : on ne le télécharge pas en cachette pour le copier.
+    if sources.iter().any(|s| s.oversize) {
+        return Err(AppError::Invalid(msg!(
+            "local.oversize",
+            "this conversation contains a large message that is not downloaded yet: open it and download it first"
         )));
     }
     fetch_missing_raw(pool, raw_dir, &mut sources).await?;
@@ -292,6 +300,7 @@ pub async fn copy_to_local(
                 ingest::StoreOpts {
                     raw_hash: Some(hash),
                     lazy_attachments: true,
+                    ..Default::default()
                 },
             )
             .await?;
@@ -479,6 +488,7 @@ mod tests {
         let opts = StoreOpts {
             raw_hash: Some(&hash),
             lazy_attachments: false,
+            ..Default::default()
         };
         store_with(
             pool,

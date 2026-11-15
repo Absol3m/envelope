@@ -160,6 +160,8 @@ export interface Backend {
   saveAttachments(ids: number[]): Promise<number>;
   /** Images `cid:` du message : identifiant de contenu → URL (protocole `attachment://`). */
   inlineImages(messageId: number): Promise<Record<string, string>>;
+  /** Télécharge le contenu d'un message volumineux (en-tête seul à la synchro). */
+  downloadMessage(messageId: number): Promise<void>;
   lockStatus(): Promise<LockStatus>;
   unlockPassword(password: string): Promise<void>;
   /** Ouvre l'invite d'authentification du système (Touch ID, Windows Hello) ; se termine quand elle est close. */
@@ -259,6 +261,7 @@ export const tauriBackend: Backend = {
   openAttachment: (attachmentId) => invoke("open_attachment", { attachmentId }),
   attachmentSrc: (id) => convertFileSrc(String(id), "attachment"),
   saveAttachments: (attachmentIds) => invoke("save_attachments", { attachmentIds }),
+  downloadMessage: (messageId) => invoke("download_message", { messageId }),
   inlineImages: async (messageId) => {
     const ids = await invoke<Record<string, number>>("inline_images", { messageId });
     return Object.fromEntries(Object.entries(ids).map(([cid, id]) => [cid, tauriBackend.attachmentSrc(id)]));

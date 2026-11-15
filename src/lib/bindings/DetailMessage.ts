@@ -19,4 +19,12 @@ bodyHtml: string | null, isRead: boolean, isStarred: boolean, unsubscribe: Unsub
 /**
  * Vérification d'identité de l'expéditeur échouée (`AuthFail`) : possible usurpation.
  */
-authFail: AuthFail | null, };
+authFail: AuthFail | null, 
+/**
+ * Trop volumineux pour la synchro : seul l'en-tête est local, le contenu se télécharge à la demande.
+ */
+oversize: boolean, 
+/**
+ * Taille annoncée par le serveur (octets).
+ */
+size: number | null, };

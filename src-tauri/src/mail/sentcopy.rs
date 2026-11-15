@@ -153,6 +153,7 @@ pub async fn show_now(
         ingest::StoreOpts {
             raw_hash: Some(&queued.raw_hash),
             lazy_attachments: true,
+            ..Default::default()
         },
     )
     .await?;
@@ -295,6 +296,7 @@ async fn save_locally(
         ingest::StoreOpts {
             raw_hash: Some(&p.raw_hash),
             lazy_attachments: true,
+            ..Default::default()
         },
     )
     .await?;

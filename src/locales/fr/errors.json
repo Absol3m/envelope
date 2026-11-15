@@ -89,7 +89,8 @@
       "unreadable_cancelled": "Message illisible : archivage annulé",
       "copy_unverified": "Copie locale non vérifiée : archivage annulé",
       "copied_not_deleted": "Copié en local mais pas supprimé du serveur : {{detail}}",
-      "nothing_to_delete": "Rien à supprimer dans ce dossier"
+      "nothing_to_delete": "Rien à supprimer dans ce dossier",
+      "oversize": "Cette conversation contient un message volumineux pas encore téléchargé : ouvrez-le et téléchargez-le d'abord."
     },
     "actions": {
       "copy_pending": "Le message envoyé n'est pas encore sur le serveur : réessayez dans un instant",

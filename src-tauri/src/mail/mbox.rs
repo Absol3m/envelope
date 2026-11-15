@@ -431,6 +431,7 @@ impl Sink<'_> {
             ingest::StoreOpts {
                 raw_hash: Some(&hash),
                 lazy_attachments: true,
+                ..Default::default()
             },
         )
         .await?;

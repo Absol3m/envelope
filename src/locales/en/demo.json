@@ -118,6 +118,10 @@
       "mom": "Mom",
       "bankSecurity": "Security Department",
       "security": "Atelier Nord Security"
+    },
+    "bigfile": {
+      "subject": "Raw footage — day 3 shoot",
+      "body": "All rushes are in the attached archive."
     }
   }
 }

@@ -113,6 +113,25 @@ function NearViewport({ children }: { children: ReactNode }) {
   return near ? <>{children}</> : <div ref={ref}><BodySkeleton /></div>;
 }
 
+/** Message volumineux : seul l'en-tête est local ; le contenu se télécharge à la demande (un seul message en mémoire, au clic). */
+function OversizeNotice({ m }: { m: DetailMessage }) {
+  const download = useMail((s) => s.downloadMessage);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-[10px] bg-accent-soft px-4 py-2.5 text-[13px]">
+      <span className="min-w-0 flex-1">{tr("reader:oversize", { size: fileSize(m.size ?? 0) })}</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => { setBusy(true); void download(m.id).finally(() => setBusy(false)); }}
+        className="press rounded-lg bg-accent px-3 py-1.5 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-60"
+      >
+        {busy ? tr("reader:downloading") : tr("reader:download")}
+      </button>
+    </div>
+  );
+}
+
 function MessageBody({ m }: { m: DetailMessage }) {
   const backend = useMail((s) => s.backend);
   const [allow, setAllow] = useState(() => !m.authFail && trustedSenders().has(m.fromAddr.toLowerCase())); // expéditeur de confiance usurpé (échec SPF/DKIM/DMARC) : pas de chargement automatique
@@ -128,6 +147,7 @@ function MessageBody({ m }: { m: DetailMessage }) {
   const ready = !needsCid || cid !== undefined;
   const prepared = useMemo(() => (html && ready ? prepareHtml(html, { allowRemote: allow, cid }) : null), [html, ready, allow, cid]);
 
+  if (m.oversize) return <OversizeNotice m={m} />;
   if (html && !ready) return <BodySkeleton />;
 
   if (prepared) {

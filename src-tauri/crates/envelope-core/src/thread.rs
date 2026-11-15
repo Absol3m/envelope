@@ -258,6 +258,8 @@ struct RawDetailMessage {
     unsub_mailto: Option<String>,
     unsub_one_click: bool,
     auth_fail: Option<AuthFail>,
+    oversize: bool,
+    size: Option<i64>,
 }
 
 /// Moyens de désabonnement d'une liste de diffusion, tirés des en-têtes List-Unsubscribe.
@@ -296,6 +298,10 @@ pub struct DetailMessage {
     pub unsubscribe: Option<Unsubscribe>,
     /// Vérification d'identité de l'expéditeur échouée (`AuthFail`) : possible usurpation.
     pub auth_fail: Option<AuthFail>,
+    /// Trop volumineux pour la synchro : seul l'en-tête est local, le contenu se télécharge à la demande.
+    pub oversize: bool,
+    /// Taille annoncée par le serveur (octets).
+    pub size: Option<i64>,
 }
 
 impl From<RawDetailMessage> for DetailMessage {
@@ -319,6 +325,8 @@ impl From<RawDetailMessage> for DetailMessage {
             is_read: m.is_read,
             is_starred: m.is_starred,
             auth_fail: m.auth_fail,
+            oversize: m.oversize,
+            size: m.size,
             unsubscribe: (m.unsub_url.is_some() || m.unsub_mailto.is_some()).then_some(
                 Unsubscribe {
                     url: m.unsub_url,
@@ -370,7 +378,7 @@ pub async fn get_thread_detail(pool: &SqlitePool, thread_id: i64) -> Result<Opti
     };
 
     let raw: Vec<RawDetailMessage> = sqlx::query_as(
-        "SELECT id, message_id, references_ids, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred, unsub_url, unsub_mailto, unsub_one_click, auth_fail \
+        "SELECT id, message_id, references_ids, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred, unsub_url, unsub_mailto, unsub_one_click, auth_fail, oversize, size \
          FROM messages WHERE id IN (SELECT MIN(id) FROM messages WHERE thread_id = ?1 GROUP BY COALESCE(message_id, 'id:' || id)) \
          ORDER BY date, id",
     )

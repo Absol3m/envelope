@@ -46,7 +46,7 @@ const me = (acct: string) => ({ name: "Alex Morel", address: ACCOUNTS.find((a) =
 /** Textes du jeu de données : espace `demo`, sous `mail.` (les corps HTML y gardent leurs balises de mise en forme). */
 const d = (key: string, opts?: Record<string, string>) => t(`demo:mail.${key}`, opts);
 
-function msg(p: { from: [string | null, string]; to?: [string | null, string][]; cc?: [string | null, string][]; at: number; text?: string; html?: string; read?: boolean; subject: string; folder?: number; unsubscribe?: DetailMessage["unsubscribe"]; authFail?: DetailMessage["authFail"] }): DetailMessage {
+function msg(p: { from: [string | null, string]; to?: [string | null, string][]; cc?: [string | null, string][]; at: number; text?: string; html?: string; read?: boolean; subject: string; folder?: number; unsubscribe?: DetailMessage["unsubscribe"]; authFail?: DetailMessage["authFail"]; oversize?: number }): DetailMessage {
   return {
     id: nextMsg++,
     messageId: `demo-${nextMsg}@envelope.local`,
@@ -64,6 +64,8 @@ function msg(p: { from: [string | null, string]; to?: [string | null, string][];
     isStarred: false,
     unsubscribe: p.unsubscribe ?? null,
     authFail: p.authFail ?? null,
+    oversize: p.oversize !== undefined,
+    size: p.oversize ?? null,
   };
 }
 const att = (messageId: number, filename: string, mimeType: string, size: number): DetailAttachment => ({
@@ -129,6 +131,8 @@ function seed() {
     subject: d("phishing.subject"), from: [d("senders.bankSecurity"), "securite@banque-exemple.fr"], to: [persoMe], at: 70, read: false, authFail: "dmarc",
     html: `<div style="font-family:Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;color:#222"><p>${d("phishing.hello")}</p><p>${d("phishing.body")} <a href="https://verification-compte.example.net/login">www.banque-exemple.fr/verification</a></p><img src="https://pixel.example.net/o.gif" width="1" height="1" alt=""/></div>`,
   })]);
+  // 7c — Message volumineux : en-tête seul, contenu à télécharger
+  add("pro", "inbox", [msg({ subject: d("bigfile.subject"), from: ["Studio Lumière", "rushes@studio-lumiere.fr"], to: [proMe], at: 300, read: false, oversize: 180 * 1024 * 1024 })]);
   // 8 — Hebdo Rust (pro, newsletter, HTML sans image distante)
   add("pro", "inbox", [msg({
     subject: d("rust.subject"), from: ["Hebdo Rust France", "hello@rust-france.org"], to: [proMe], at: 600, text: d("rust.body"),
@@ -403,6 +407,10 @@ export const demoBackend: Backend = {
   attachmentSrc: () => DEMO_PHOTO,
   saveAttachments: () => delay(0, 60),
   inlineImages: () => delay({}, 10),
+  downloadMessage: (messageId) => {
+    for (const t of T) for (const m of t.messages) if (m.id === messageId) { m.oversize = false; m.bodyText = d("bigfile.body"); }
+    return delay(undefined, 700);
+  },
   lockStatus: () => delay({ ...LOCK }, 20),
   unlockPassword: (password) => (password === "demo1234" ? ((LOCK.locked = false), delay(undefined, 200)) : Promise.reject(new Error(t("demo:wrongPassword")))),
   unlockSystem: () => ((LOCK.locked = false), delay(undefined, 300)),
