@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuse un push dont les vérifications locales (= celles de la CI) échouent. Contournement conscient : git push --no-verify.
+exec "$(git rev-parse --show-toplevel)/scripts/verify.sh"
