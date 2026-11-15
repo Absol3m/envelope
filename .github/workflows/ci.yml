@@ -31,6 +31,11 @@ jobs:
         if: runner.os == 'Linux'
         run: scripts/check-version.sh "${{ github.ref_type == 'tag' && github.ref_name || '' }}"
 
+      # La règle « toute évolution de la liste ou de la recherche ajoute un cas au scénario » est contrôlée.
+      - name: Contrat de la liste touché
+        if: runner.os == 'Linux'
+        run: scripts/check-contract-touched.sh "${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
+
       - name: Dépendances système (Linux)
         if: runner.os == 'Linux'
         run: |

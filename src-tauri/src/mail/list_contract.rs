@@ -5,7 +5,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use envelope_core::thread::{list_threads, ThreadQuery};
+use envelope_core::addr::{self, Addr};
+use envelope_core::thread::{list_threads, ThreadQuery, ThreadSummary};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use sqlx::SqlitePool;
@@ -53,6 +54,24 @@ struct Message {
     date: String,
     read: bool,
     text: String,
+    /// Dossier du message, si différent de celui de la conversation.
+    #[serde(default)]
+    folder: Option<i64>,
+    #[serde(default)]
+    to: Vec<(Option<String>, String)>,
+    #[serde(default)]
+    cc: Vec<(Option<String>, String)>,
+}
+
+fn addrs(list: &[(Option<String>, String)]) -> String {
+    let list: Vec<Addr> = list
+        .iter()
+        .map(|(name, address)| Addr {
+            name: name.clone(),
+            address: address.clone(),
+        })
+        .collect();
+    addr::encode(&list)
 }
 
 #[derive(Deserialize)]
@@ -91,7 +110,8 @@ async fn seed(pool: &SqlitePool, s: &Scenario) {
         sqlx::query("INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (?,?,?,?)")
             .bind(t.id)
             .bind(&t.account)
-            .bind(&t.messages[0].subject)
+            // Comme l'ingestion : l'objet de la conversation est normalisé (sans « Re: »).
+            .bind(ingest::normalize_subject(&t.messages[0].subject))
             .bind(&t.messages[0].date)
             .execute(pool)
             .await
@@ -102,10 +122,10 @@ async fn seed(pool: &SqlitePool, s: &Scenario) {
             let last = i == t.messages.len() - 1;
             sqlx::query(
                 "INSERT INTO messages (account_id,folder_id,thread_id,uid,message_id,subject,from_name,from_addr,date,\
-                 body_text,is_read,is_starred,has_attachments) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 body_text,is_read,is_starred,has_attachments,to_addrs,cc_addrs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             )
             .bind(&t.account)
-            .bind(t.folder)
+            .bind(m.folder.unwrap_or(t.folder))
             .bind(t.id)
             .bind(uid)
             .bind(format!("m{uid}@contract"))
@@ -117,6 +137,8 @@ async fn seed(pool: &SqlitePool, s: &Scenario) {
             .bind(m.read)
             .bind(last && t.starred)
             .bind(last && t.attachments)
+            .bind(addrs(&m.to))
+            .bind(addrs(&m.cc))
             .execute(pool)
             .await
             .unwrap();
@@ -141,24 +163,55 @@ async fn seed(pool: &SqlitePool, s: &Scenario) {
     }
 }
 
+async fn ids(pool: &SqlitePool, q: &ThreadQuery) -> Vec<i64> {
+    list_threads(pool, q)
+        .await
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect()
+}
+
+/// Toutes les conversations : la liste par défaut masque les reports en cours, qu'on lit par `remindersOnly`.
+async fn all_summaries(pool: &SqlitePool) -> Vec<ThreadSummary> {
+    let mut all = list_threads(pool, &ThreadQuery::default()).await.unwrap();
+    all.extend(
+        list_threads(
+            pool,
+            &ThreadQuery {
+                reminders_only: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap(),
+    );
+    all
+}
+
+/// `CONTRACT_DUMP=1 cargo test -p envelope le_moteur_respecte -- --nocapture` écrit ce que rend le moteur : aide à la
+/// rédaction du scénario, à **relire à la main** (ce que le moteur répond n'est pas forcément ce qu'on veut), jamais collé tel quel.
 #[tokio::test]
 async fn le_moteur_respecte_le_contrat_de_la_liste() {
     let scenario: Scenario =
         serde_json::from_str(include_str!("../../tests/contract/list_threads.json")).unwrap();
     let pool = crate::db::init_memory().await.unwrap();
     seed(&pool, &scenario).await;
+    let all = all_summaries(&pool).await;
 
+    if std::env::var_os("CONTRACT_DUMP").is_some() {
+        for q in &scenario.queries {
+            eprintln!("QUERY {} => {:?}", q.name, ids(&pool, &q.query).await);
+        }
+        for t in &all {
+            eprintln!("SUMMARY {}", serde_json::to_string(t).unwrap());
+        }
+    }
     for q in &scenario.queries {
-        let got: Vec<i64> = list_threads(&pool, &q.query)
-            .await
-            .unwrap()
-            .iter()
-            .map(|t| t.id)
-            .collect();
-        assert_eq!(got, q.ids, "{}", q.name);
+        assert_eq!(ids(&pool, &q.query).await, q.ids, "{}", q.name);
     }
 
-    let all = list_threads(&pool, &ThreadQuery::default()).await.unwrap();
+    assert_eq!(scenario.summaries.len(), scenario.threads.len());
     for (id, want) in &scenario.summaries {
         let t = all
             .iter()

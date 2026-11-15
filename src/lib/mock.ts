@@ -1,5 +1,7 @@
 import { i18next, t } from "./i18n";
 import { isEmail, sameAddr } from "./utils";
+import { compileSpec, parseSearch, type SearchableMessage } from "./searchSpec";
+import type { FolderRole } from "./bindings/FolderRole";
 import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
@@ -197,7 +199,7 @@ function summarize(t: MockThread): ThreadSummary {
     fromName: last.fromName,
     fromAddr: last.fromAddr,
     participants: names.slice(0, 4).join(", "),
-    folderId: folderId(t.accountId, t.role),
+    folderId: last.folderId, // dossier du dernier message, comme le moteur
     reminderKind: t.reminder?.kind ?? null,
     reminderDue: t.reminder?.due ?? null,
     reminderFired: t.reminder?.fired ?? null,
@@ -217,35 +219,53 @@ const folders = (): FolderRow[] =>
     }),
   );
 
-const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+/** Rôle d'un dossier de la démo d'après son identifiant (`folderId`) ; `undefined` : dossier inconnu (archives locales). */
+const ROLE_OF_FOLDER = new Map<number, FolderRole>(["pro", "perso"].flatMap((a) => ROLES.map((r) => [folderId(a, r), r] as const)));
+const roleOfFolder = (id: number | null): FolderRole | undefined => (id === null ? undefined : ROLE_OF_FOLDER.get(id));
+/** Dossiers où la conversation a des messages (comme le moteur) : ceux de ses messages, sinon son dossier. */
+const folderIdsOf = (t: MockThread) => new Set<number | null>(t.messages.length ? t.messages.map((m) => m.folderId) : [folderId(t.accountId, t.role)]);
+const rolesOf = (t: MockThread) => new Set([...folderIdsOf(t)].map((id) => roleOfFolder(id) ?? t.role));
+
+const searchable = (t: MockThread, m: DetailMessage, i: number): SearchableMessage => {
+  const role = roleOfFolder(m.folderId) ?? t.role;
+  const last = i === t.messages.length - 1; // l'indicateur « suivi » et les pièces jointes sont portés par le dernier message
+  return {
+    subject: m.subject, fromName: m.fromName, fromAddr: m.fromAddr, to: m.to, cc: m.cc, date: m.date,
+    body: m.bodyText ?? htmlToText(m.bodyHtml ?? ""), isRead: m.isRead, isStarred: last && t.starred,
+    hasAttachments: last && t.attachments.some((a) => !a.isInline || a.filename),
+    folderRole: role, folderName: roleName(role),
+  };
+};
+
+/** Comme le moteur : bornes de pagination (`Page::new` : 1 à 500, départ jamais négatif). */
+const page = (q: ThreadQuery) => {
+  const limit = Math.min(500, Math.max(1, q.limit ?? 100));
+  const offset = Math.max(0, q.offset ?? 0);
+  return [offset, offset + limit] as const;
+};
 
 export function listThreads(q: ThreadQuery): ThreadSummary[] {
-  const words = q.query ? norm(q.query).split(/\s+/).filter(Boolean) : [];
+  const spec = q.query?.trim() ? parseSearch(q.query) : undefined;
+  const matches = spec && compileSpec(spec);
   return T.filter((t) => {
-    if (q.folderId !== undefined && folderId(t.accountId, t.role) !== q.folderId) return false;
-    if (q.role && t.role !== q.role) return false;
-    if (q.accountId && t.accountId !== q.accountId) return false;
+    if (q.folderId !== undefined && !folderIdsOf(t).has(q.folderId)) return false;
+    if (q.role && !rolesOf(t).has(q.role)) return false;
+    // Une recherche couvre aussi les archives locales, quel que soit le compte choisi.
+    if (q.accountId && t.accountId !== q.accountId && !(spec && t.accountId === "local")) return false;
     if (q.starredOnly && !t.starred) return false;
     if (q.unreadOnly && !t.messages.some((m) => !m.isRead)) return false;
     if (q.withAttachments && t.attachments.length === 0) return false;
-    const pending = t.reminder && !t.reminder.fired;
+    const pending = t.reminder && t.reminder.fired === undefined;
     if (q.remindersOnly && !pending) return false;
-    if (!q.remindersOnly && !words.length && pending && t.reminder?.kind === "snooze") return false;
-    if (words.length) {
-      if (t.role === "trash" || t.role === "junk") return false; // la recherche ignore corbeille et spam par défaut
-      // Comme le moteur : un seul message doit satisfaire tous les mots.
-      const matches = (m: DetailMessage) => {
-        const hay = norm(`${m.subject} ${m.fromName} ${m.fromAddr} ${m.bodyText ?? htmlToText(m.bodyHtml ?? "")}`);
-        return words.every((w) => hay.includes(w));
-      };
-      if (!t.messages.some(matches)) return false;
-    }
+    if (!q.remindersOnly && !spec && pending && t.reminder?.kind === "snooze") return false;
+    // Une conversation correspond si l'un de ses messages satisfait tous les critères.
+    if (matches && !t.messages.some((m, i) => matches(searchable(t, m, i)))) return false;
     return true;
   })
     .map(summarize)
-    // Comme le moteur : les conversations revenues (rappel échu) d'abord, puis la plus récente, à égalité l'identifiant le plus grand.
-    .sort((a, b) => Number(b.reminderFired !== null) - Number(a.reminderFired !== null) || b.lastMessageAt.localeCompare(a.lastMessageAt) || b.id - a.id)
-    .slice(q.offset ?? 0, (q.offset ?? 0) + (q.limit ?? 100));
+    // Comme le moteur : les conversations revenues (rappel échu) d'abord, puis la plus récente (texte, comme SQLite), à égalité l'identifiant le plus grand.
+    .sort((a, b) => Number(b.reminderFired !== null) - Number(a.reminderFired !== null) || (a.lastMessageAt < b.lastMessageAt ? 1 : a.lastMessageAt > b.lastMessageAt ? -1 : 0) || b.id - a.id)
+    .slice(...page(q));
 }
 
 const find = (id: number) => {
@@ -282,7 +302,10 @@ export const demoBackend: Backend = {
     return delay(undefined, 80);
   },
   moveThread: (id, _folderId, to) => {
-    find(id).role = to;
+    // Comme le moteur : les messages changent de dossier (la conversation se retrouve là où sont ses messages).
+    const t = find(id);
+    t.role = to;
+    t.messages.forEach((m) => (m.folderId = folderId(t.accountId, to)));
     return delay(undefined, 200);
   },
   deleteThread: (id) => {

@@ -1,4 +1,5 @@
 import { t } from "./i18n";
+import { fold } from "./searchSpec";
 
 /** Suggestions de la barre de recherche (opérateurs, valeurs) : logique pure, sans interface. */
 
@@ -14,7 +15,7 @@ export type Context =
   | { kind: "operator"; token: Token; prefix: string }
   | { kind: "contact" | "value"; token: Token; op: string; prefix: string };
 
-const norm = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+const norm = fold;
 
 /** Mot (délimité par des espaces) sous le curseur. */
 export function tokenAt(q: string, caret: number): Token {
