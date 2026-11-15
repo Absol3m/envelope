@@ -7,6 +7,7 @@ import { cn, errText } from "@/lib/utils";
 import { btnGhost, btnPrimary, IconButton, inputCls } from "./ui/primitives";
 import { t as tr } from "@/lib/i18n";
 import { Trans } from "react-i18next";
+import { Switch } from "./ui/controls";
 
 const moves = (): { value: RuleMove | ""; label: string }[] => [
   { value: "", label: tr("rules:moves.none") },
@@ -49,7 +50,7 @@ export function RulesPanel() {
       <ul className="divide-y divide-border rounded-xl border border-border">
         {rules.map((r) => (
           <li key={r.id} className="flex items-center gap-3 px-3.5 py-2.5">
-            <input type="checkbox" aria-label={tr("rules:enable", { name: r.name })} checked={r.enabled} onChange={(e) => void save({ ...r, enabled: e.target.checked })} />
+            <Switch label={tr("rules:enable", { name: r.name })} checked={r.enabled} onChange={(enabled) => void save({ ...r, enabled })} />
             <div className={cn("min-w-0 flex-1", !r.enabled && "opacity-55")}>
               <div className="truncate text-[13px] font-medium">{r.name}</div>
               <div className="truncate text-[12px] text-muted"><span className="font-mono">{r.query}</span> → {actionsLabel(r)}{r.accountId ? ` · ${accounts.find((a) => a.id === r.accountId)?.email ?? tr("rules:accountGone")}` : ""}</div>

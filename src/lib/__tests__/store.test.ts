@@ -199,3 +199,21 @@ describe("store (boîte de démonstration)", () => {
     expect(list.every((t) => /lalettretech|rust-france/.test(t.fromAddr ?? ""))).toBe(true);
   });
 });
+
+describe("rechargement de la liste", () => {
+  it("garde l'objet des conversations inchangées (lignes mémoïsées) et remplace celles qui changent", async () => {
+    await boot();
+    const before = useMail.getState().threads;
+    const target = before[1];
+    const starred = demoBackend.setStarred(target.id, !target.isStarred);
+    await tick(300);
+    await starred;
+    const done = useMail.getState().reload({ silent: true });
+    await tick(1000);
+    await done;
+    const after = useMail.getState().threads;
+    expect(after.length).toBe(before.length);
+    expect(after[0]).toBe(before[0]);
+    expect(after.find((t) => t.id === target.id)).not.toBe(target);
+  });
+});

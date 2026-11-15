@@ -336,12 +336,13 @@ function FontSection() {
 
 /** Brouillons enregistrés sur le serveur : retrouvés sur un autre appareil ou dans un autre client. */
 function DraftsSection() {
+  const canServerDrafts = useMail((s) => s.backend.can.serverDrafts); // la démo n'a pas de serveur
   const [on, setOn] = useState(serverDraftsEnabled);
   return (
     <Section title={tr("settings:drafts.title")} hint={tr("settings:drafts.hint")}>
       <label className="flex max-w-[420px] items-center gap-3 text-[13px]">
         <span className="flex-1">{tr("settings:drafts.save")}</span>
-        <Switch checked={on} onChange={(v) => { setOn(v); setServerDrafts(v); }} label={tr("settings:drafts.save")} />
+        <Switch checked={on && canServerDrafts} disabled={!canServerDrafts} onChange={(v) => { setOn(v); setServerDrafts(v); }} label={tr("settings:drafts.save")} />
       </label>
     </Section>
   );
@@ -387,6 +388,7 @@ function LockSection() {
         <legend className="sr-only">{tr("settings:lock.method")}</legend>
         {options.map(([id, label]) => (
           <label key={id} className="flex cursor-default items-center gap-2.5 text-[13px]">
+            {/* Radio natif volontaire : avec Radix `RadioGroup`, chaque flèche changerait la valeur (verrouillage) et un clic sur l'option active ne rappellerait plus `onChange`. */}
             <input type="radio" name="lock-method" checked={method === id} onChange={() => setMethod(id)} className="accent-[var(--accent)]" />
             {label}
           </label>
@@ -452,7 +454,7 @@ function LanguageSection() {
 }
 
 function AppearancePanel() {
-  const s = useMail();
+  const s = useMail(useShallow((m) => ({ theme: m.theme, setTheme: m.setTheme, colors: m.colors, setColors: m.setColors, density: m.density, setDensity: m.setDensity, previews: m.previews, setPreviews: m.setPreviews, expandThreads: m.expandThreads, setExpandThreads: m.setExpandThreads })));
   return (
     <>
       <LanguageSection />

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { shallow } from "zustand/shallow";
 import { parseColors, parseTheme, renderAppearance, type ColorsPref, type ThemePref } from "./theme";
 import { applyFont, savedFont, type FontPref } from "./font";
 import { pref } from "./pref";
@@ -243,6 +244,17 @@ export const useMail = create<State>((set, get) => {
   };
   const fail = (message: string, e: unknown) => get().toast({ message: `${message} — ${String(e)}`, tone: "error", duration: 6000 });
 
+  /** Rechargement : une conversation inchangée garde son objet (les lignes mémoïsées ne se redessinent pas) ; rien de
+   *  changé du tout : le même tableau. */
+  const keepUnchanged = (prev: ThreadSummary[], rows: ThreadSummary[]) => {
+    const byId = new Map(prev.map((t) => [t.id, t]));
+    const merged = rows.map((r) => {
+      const old = byId.get(r.id);
+      return old && shallow(old, r) ? old : r;
+    });
+    return merged.length === prev.length && merged.every((t, i) => t === prev[i]) ? prev : merged;
+  };
+
   async function fetchThreads(reset: boolean, silent = false) {
     const seq = ++loadSeq;
     const s = get();
@@ -251,7 +263,7 @@ export const useMail = create<State>((set, get) => {
       const rows = await s.backend.listThreads({ ...buildQuery(s), offset: reset ? 0 : s.threads.length });
       if (seq !== loadSeq) return;
       set((cur) => {
-        const threads = reset ? rows : [...cur.threads, ...rows];
+        const threads = reset ? keepUnchanged(cur.threads, rows) : [...cur.threads, ...rows];
         // Une conversation disparue (synchro, autre appareil) ne reste pas sélectionnée à l'insu de l'utilisateur.
         const alive = new Set(threads.map((t) => t.id));
         const checked = new Set([...cur.checked].filter((id) => alive.has(id)));

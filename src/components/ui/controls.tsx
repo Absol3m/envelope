@@ -26,9 +26,9 @@ export function Segmented<T extends string>({ value, onChange, options }: { valu
 }
 
 /** Interrupteur (role switch, espace pour basculer) ; `label` : son nom pour les lecteurs d'écran. */
-export function Switch({ checked, onChange, label }: { checked: boolean; onChange(v: boolean): void; label: string }) {
+export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange(v: boolean): void; label: string; disabled?: boolean }) {
   return (
-    <SwitchPrimitive.Root checked={checked} onCheckedChange={onChange} aria-label={label} className="relative h-[22px] w-[38px] shrink-0 rounded-full bg-active transition-colors data-[state=checked]:bg-accent">
+    <SwitchPrimitive.Root checked={checked} onCheckedChange={onChange} disabled={disabled} aria-label={label} className="relative h-[22px] w-[38px] shrink-0 rounded-full bg-active transition-colors data-[state=checked]:bg-accent disabled:opacity-50">
       <SwitchPrimitive.Thumb className="block h-[18px] w-[18px] translate-x-[2px] rounded-full bg-white shadow transition-transform data-[state=checked]:translate-x-[18px]" />
     </SwitchPrimitive.Root>
   );
