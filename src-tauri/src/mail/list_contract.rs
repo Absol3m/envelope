@@ -120,9 +120,9 @@ async fn seed(pool: &SqlitePool, s: &Scenario) {
             uid += 1;
             // Le drapeau « suivi » et la pièce jointe sont portés par le dernier message de la conversation.
             let last = i == t.messages.len() - 1;
-            sqlx::query(
+            let id = sqlx::query(
                 "INSERT INTO messages (account_id,folder_id,thread_id,uid,message_id,subject,from_name,from_addr,date,\
-                 body_text,is_read,is_starred,has_attachments,to_addrs,cc_addrs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 is_read,is_starred,has_attachments,to_addrs,cc_addrs) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             )
             .bind(&t.account)
             .bind(m.folder.unwrap_or(t.folder))
@@ -133,7 +133,6 @@ async fn seed(pool: &SqlitePool, s: &Scenario) {
             .bind(&m.from.0)
             .bind(&m.from.1)
             .bind(&m.date)
-            .bind(&m.text)
             .bind(m.read)
             .bind(last && t.starred)
             .bind(last && t.attachments)
@@ -141,7 +140,14 @@ async fn seed(pool: &SqlitePool, s: &Scenario) {
             .bind(addrs(&m.cc))
             .execute(pool)
             .await
-            .unwrap();
+            .unwrap()
+            .last_insert_rowid();
+            sqlx::query("INSERT INTO message_bodies (message_id, body_text) VALUES (?, ?)")
+                .bind(id)
+                .bind(&m.text)
+                .execute(pool)
+                .await
+                .unwrap();
         }
     }
     // Les agrégats d'abord, les rappels ensuite : `refresh_threads` retire un rappel de relance dès que la conversation grossit.

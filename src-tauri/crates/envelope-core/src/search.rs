@@ -28,6 +28,9 @@ const SUMMARY_COLS: &str =
     "m.id, m.account_id, m.folder_id, m.thread_id, m.subject, m.from_name, m.from_addr, \
     m.date, m.snippet, m.is_read, m.is_starred, m.has_attachments";
 
+/// L'index `messages_fts` est « contentless » (migration 0032) : on l'interroge par `MATCH`, `rowid` et `rank` ; pas de
+/// `snippet()` ni `highlight()` (rien n'y est relisible).
+///
 /// Transforme une saisie utilisateur en requête FTS5 sûre : chaque mot devient un préfixe entre
 /// guillemets (`"mot"*`), combinés en ET. Neutralise les opérateurs FTS5 (`OR`, `NEAR`, `-`, `:`…).
 pub fn build_fts_query(input: &str) -> Option<String> {

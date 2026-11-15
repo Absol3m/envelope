@@ -399,9 +399,9 @@ pub async fn store_with(
     let has_att = has_real_attachment(attachments);
     let res = sqlx::query(
         "INSERT INTO messages (account_id, folder_id, thread_id, uid, message_id, in_reply_to, references_ids, \
-         subject, from_name, from_addr, to_addrs, cc_addrs, bcc_addrs, date, snippet, body_text, body_html, \
+         subject, from_name, from_addr, to_addrs, cc_addrs, bcc_addrs, date, snippet, \
          is_read, is_starred, has_attachments, size, unsub_url, unsub_mailto, unsub_one_click, raw_hash, draft_id, auth_fail, oversize) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) \
          ON CONFLICT(folder_id, uid) DO NOTHING",
     )
     .bind(account_id)
@@ -419,8 +419,6 @@ pub async fn store_with(
     .bind(&m.bcc)
     .bind(&m.date)
     .bind(&m.snippet)
-    .bind(&m.body_text)
-    .bind(&m.body_html)
     .bind(flags.seen)
     .bind(flags.flagged)
     .bind(has_att)
@@ -447,6 +445,7 @@ pub async fn store_with(
         return Ok(existing.unwrap_or(thread_id));
     }
     let message_row = res.last_insert_rowid();
+    save_body(&mut tx, message_row, &m).await?;
     for r in m.references.iter().collect::<HashSet<_>>() {
         sqlx::query("INSERT INTO message_refs (account_id, ref_id, message_id) VALUES (?, ?, ?)")
             .bind(account_id)
@@ -467,6 +466,28 @@ pub async fn store_with(
     .await?;
     tx.commit().await?;
     Ok(thread_id)
+}
+
+/// Écrit le corps d'un message dans `message_bodies` (les triggers complètent l'index plein texte) ; sans corps, rien.
+/// Mise à jour si la ligne existe : le téléchargement d'un message volumineux complète un message déjà rangé.
+async fn save_body(
+    tx: &mut sqlx::SqliteConnection,
+    message_id: i64,
+    m: &ParsedMessage,
+) -> Result<()> {
+    if m.body_text.is_none() && m.body_html.is_none() {
+        return Ok(());
+    }
+    sqlx::query(
+        "INSERT INTO message_bodies (message_id, body_text, body_html) VALUES (?, ?, ?) \
+         ON CONFLICT(message_id) DO UPDATE SET body_text = excluded.body_text, body_html = excluded.body_html",
+    )
+    .bind(message_id)
+    .bind(&m.body_text)
+    .bind(&m.body_html)
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
 }
 
 /// Une pièce jointe visible : tout sauf une image « inline » sans nom (logo, pixel de suivi).
@@ -541,12 +562,10 @@ pub async fn complete_oversize(
     };
     let has_att = has_real_attachment(&m.attachments);
     sqlx::query(
-        "UPDATE messages SET snippet = ?, body_text = ?, body_html = ?, has_attachments = ?, unsub_url = ?, \
+        "UPDATE messages SET snippet = ?, has_attachments = ?, unsub_url = ?, \
          unsub_mailto = ?, unsub_one_click = ?, raw_hash = ?, oversize = 0 WHERE id = ?",
     )
     .bind(&m.snippet)
-    .bind(&m.body_text)
-    .bind(&m.body_html)
     .bind(has_att)
     .bind(m.unsubscribe.as_ref().and_then(|u| u.url.as_deref()))
     .bind(m.unsubscribe.as_ref().and_then(|u| u.mailto.as_deref()))
@@ -555,6 +574,7 @@ pub async fn complete_oversize(
     .bind(message_row)
     .execute(&mut *tx)
     .await?;
+    save_body(&mut tx, message_row, &m).await?;
     insert_attachments(
         &mut tx,
         attachments_dir,
@@ -1270,6 +1290,21 @@ mod tests {
             .unwrap();
         assert_eq!(refs, 1);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// La migration 0032 (index plein texte « contentless » avec suppression par rowid) demande SQLite >= 3.43.
+    #[tokio::test]
+    async fn sqlite_assez_recent_pour_l_index_sans_contenu() {
+        let pool = crate::db::init_memory().await.unwrap();
+        let version: String = sqlx::query_scalar("SELECT sqlite_version()")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let parts: Vec<u32> = version.split('.').filter_map(|p| p.parse().ok()).collect();
+        assert!(
+            parts[0] > 3 || (parts[0] == 3 && parts[1] >= 43),
+            "SQLite {version}"
+        );
     }
 
     #[tokio::test]
@@ -1990,19 +2025,29 @@ List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n\r\nbody";
         assert_eq!((found("licorne").await, found("alpha").await), (1, 1));
 
         // Corps et objet : l'ancien texte disparaît, le nouveau est trouvé.
-        sqlx::query("UPDATE messages SET body_text = 'dragon', subject = 'Beta'")
+        sqlx::query("UPDATE message_bodies SET body_text = 'dragon'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!((found("licorne").await, found("alpha").await), (0, 1));
+        sqlx::query("UPDATE messages SET subject = 'Beta'")
             .execute(&pool)
             .await
             .unwrap();
         assert_eq!((found("licorne").await, found("alpha").await), (0, 0));
         assert_eq!((found("dragon").await, found("beta").await), (1, 1));
 
-        // Suppression : plus rien dans l'index.
+        // Suppression : plus rien dans l'index, ni de corps orphelin.
         sqlx::query("DELETE FROM messages")
             .execute(&pool)
             .await
             .unwrap();
         assert_eq!(found("dragon").await, 0);
+        let bodies: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_bodies")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(bodies, 0);
     }
 
     /// La recherche par `Message-ID` passe par l'index sur `message_id`, jamais par un balayage des messages du compte

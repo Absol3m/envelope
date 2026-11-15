@@ -92,10 +92,10 @@ pub async fn get_thread(
     };
 
     let messages = sqlx::query_as(
-        "SELECT id, subject, from_name, from_addr, to_addrs, cc_addrs, date, snippet, substr(body_text, 1, ?2) AS body_text, is_read \
-         FROM messages WHERE id IN ( \
+        "SELECT m.id, m.subject, m.from_name, m.from_addr, m.to_addrs, m.cc_addrs, m.date, m.snippet, substr(b.body_text, 1, ?2) AS body_text, m.is_read \
+         FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id WHERE m.id IN ( \
              SELECT MIN(id) FROM messages WHERE thread_id = ?1 GROUP BY COALESCE(message_id, 'id:' || id)) \
-         ORDER BY date, id",
+         ORDER BY m.date, m.id",
     )
     .bind(thread_id)
     .bind(body_chars)
@@ -384,9 +384,10 @@ pub async fn get_thread_detail(pool: &SqlitePool, thread_id: i64) -> Result<Opti
     };
 
     let raw: Vec<RawDetailMessage> = sqlx::query_as(
-        "SELECT id, message_id, references_ids, folder_id, subject, from_name, from_addr, to_addrs, cc_addrs, date, body_text, body_html, is_read, is_starred, unsub_url, unsub_mailto, unsub_one_click, auth_fail, oversize, size \
-         FROM messages WHERE id IN (SELECT MIN(id) FROM messages WHERE thread_id = ?1 GROUP BY COALESCE(message_id, 'id:' || id)) \
-         ORDER BY date, id",
+        "SELECT m.id, m.message_id, m.references_ids, m.folder_id, m.subject, m.from_name, m.from_addr, m.to_addrs, m.cc_addrs, m.date, b.body_text, b.body_html, m.is_read, m.is_starred, m.unsub_url, m.unsub_mailto, m.unsub_one_click, m.auth_fail, m.oversize, m.size \
+         FROM messages m LEFT JOIN message_bodies b ON b.message_id = m.id \
+         WHERE m.id IN (SELECT MIN(id) FROM messages WHERE thread_id = ?1 GROUP BY COALESCE(message_id, 'id:' || id)) \
+         ORDER BY m.date, m.id",
     )
     .bind(thread_id)
     .fetch_all(pool)

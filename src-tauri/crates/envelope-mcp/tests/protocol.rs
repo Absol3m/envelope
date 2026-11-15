@@ -41,23 +41,29 @@ async fn database() -> TestDb {
         "INSERT INTO accounts (id,email,username,imap_host,smtp_host,provider) VALUES ('a','me@x.fr','me','i','s','imap')",
         "INSERT INTO folders (id,account_id,path,name,role,unread_count,total_count) VALUES (1,'a','INBOX','INBOX','inbox',2,3)",
         "INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (1,'a','Budget trimestriel','2026-03-02T11:00:00Z'), (2,'a','Facture','2026-03-03T09:00:00Z')",
-        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_name,from_addr,to_addrs,date,snippet,body_text,is_read)
-           VALUES (1,'a',1,1,1,'m1','Budget trimestriel','Alice','alice@x.fr','[{\"name\":null,\"address\":\"me@x.fr\"}]','2026-03-02T10:00:00Z','Peut-on parler du budget ?','Peut-on parler du budget ?',1)",
-        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,in_reply_to,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
-           VALUES (2,'a',1,1,2,'m2','m1','Re: Budget trimestriel','me@x.fr','[{\"name\":\"Alice\",\"address\":\"alice@x.fr\"}]','2026-03-02T11:00:00Z','Oui, demain.','Oui, demain.\n\n> Peut-on parler du budget ?\n> Merci\n\nÀ 10h ?',0)",
-        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read,has_attachments)
-           VALUES (3,'a',1,2,3,'m3','Facture','carol@x.fr','[]','2026-03-03T09:00:00Z','Voir pièce jointe.','Voir pièce jointe.',0,1)",
-        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
-           VALUES (4,'a',1,2,4,'m4','Facture','carol@x.fr','[]','2026-03-03T10:00:00Z','long',replace(hex(zeroblob(1500)),'0','é'),1)",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_name,from_addr,to_addrs,date,snippet,is_read)
+           VALUES (1,'a',1,1,1,'m1','Budget trimestriel','Alice','alice@x.fr','[{\"name\":null,\"address\":\"me@x.fr\"}]','2026-03-02T10:00:00Z','Peut-on parler du budget ?',1)",
+        "INSERT INTO message_bodies (message_id, body_text) VALUES (1, 'Peut-on parler du budget ?')",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,in_reply_to,subject,from_addr,to_addrs,date,snippet,is_read)
+           VALUES (2,'a',1,1,2,'m2','m1','Re: Budget trimestriel','me@x.fr','[{\"name\":\"Alice\",\"address\":\"alice@x.fr\"}]','2026-03-02T11:00:00Z','Oui, demain.',0)",
+        "INSERT INTO message_bodies (message_id, body_text) VALUES (2, 'Oui, demain.\n\n> Peut-on parler du budget ?\n> Merci\n\nÀ 10h ?')",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,is_read,has_attachments)
+           VALUES (3,'a',1,2,3,'m3','Facture','carol@x.fr','[]','2026-03-03T09:00:00Z','Voir pièce jointe.',0,1)",
+        "INSERT INTO message_bodies (message_id, body_text) VALUES (3, 'Voir pièce jointe.')",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,is_read)
+           VALUES (4,'a',1,2,4,'m4','Facture','carol@x.fr','[]','2026-03-03T10:00:00Z','long',1)",
+        "INSERT INTO message_bodies (message_id, body_text) VALUES (4, replace(hex(zeroblob(1500)),'0','é'))",
         "INSERT INTO accounts (id,email,username,imap_host,smtp_host,provider) VALUES ('b','autre@x.fr','autre','i','s','imap')",
         "INSERT INTO folders (id,account_id,path,name,role,unread_count,total_count) VALUES (2,'b','INBOX','INBOX','inbox',1,1)",
         "INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (3,'b','Secret autre compte','2026-03-04T09:00:00Z')",
-        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
-           VALUES (5,'b',2,3,1,'m5','Secret autre compte','dan@x.fr','[]','2026-03-04T09:00:00Z','confidentiel','confidentiel',0)",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,is_read)
+           VALUES (5,'b',2,3,1,'m5','Secret autre compte','dan@x.fr','[]','2026-03-04T09:00:00Z','confidentiel',0)",
+        "INSERT INTO message_bodies (message_id, body_text) VALUES (5, 'confidentiel')",
         "INSERT INTO folders (id,account_id,path,name,role,unread_count,total_count) VALUES (3,'a','Junk','Junk','junk',1,1)",
         "INSERT INTO threads (id,account_id,subject,last_message_at) VALUES (4,'a','Offre pharma','2026-03-05T09:00:00Z')",
-        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,body_text,is_read)
-           VALUES (6,'a',3,4,1,'m6','Offre pharma','spam@x.fr','[]','2026-03-05T09:00:00Z','pharma','pharma gratuit',0)",
+        "INSERT INTO messages (id,account_id,folder_id,thread_id,uid,message_id,subject,from_addr,to_addrs,date,snippet,is_read)
+           VALUES (6,'a',3,4,1,'m6','Offre pharma','spam@x.fr','[]','2026-03-05T09:00:00Z','pharma',0)",
+        "INSERT INTO message_bodies (message_id, body_text) VALUES (6, 'pharma gratuit')",
         "INSERT INTO attachments (message_id,filename,mime_type,size,storage_path) VALUES (3,'facture.pdf','application/pdf',5,'/secret/chemin/facture.pdf')",
     ] {
         sqlx::query(sql).execute(&rw).await.unwrap();
