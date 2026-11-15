@@ -58,5 +58,17 @@
   "oversize": "Ce message est volumineux ({{size}}) : seul son en-tête a été téléchargé.",
   "download": "Télécharger le message",
   "downloading": "Téléchargement…",
-  "downloadFailed": "Impossible de télécharger le message"
+  "downloadFailed": "Impossible de télécharger le message",
+  "pgp": {
+    "valid": "Signature vérifiée : signé par {{signer}}.",
+    "invalid": "Signature invalide ({{signer}}) : ce message a été modifié après sa signature.",
+    "unknownKey": "Signé avec une clé que tu n'as pas importée : la signature ne peut pas être vérifiée. Ajoute la clé de l'expéditeur dans Réglages › Sécurité.",
+    "decrypted": "Message chiffré, déchiffré sur cet ordinateur.",
+    "noKey": "Message chiffré : aucune de tes clés privées ne peut l'ouvrir. Importe la bonne clé dans Réglages › Sécurité.",
+    "failed": "Ce message chiffré est illisible (corrompu ou non pris en charge).",
+    "passphrase": "Ce message est chiffré. Saisis la phrase secrète de ta clé pour le lire.",
+    "passphraseWrong": "La phrase secrète manque ou est fausse. Réessaie.",
+    "passphraseLabel": "Phrase secrète de la clé",
+    "decrypt": "Déchiffrer"
+  }
 }

@@ -177,6 +177,8 @@ impl Lock {
             )));
         }
         s.locked = true;
+        // Le verrou ferme aussi ce qui a été déverrouillé en mémoire : phrases secrètes des clés PGP.
+        crate::pgp_store::forget_passphrases();
         Ok(())
     }
 

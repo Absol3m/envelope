@@ -160,5 +160,23 @@
     "upToDate": "Envelope est à jour (vérifié {{when}})"
   },
   "copied": "Copié",
-  "copy": "Copier"
+  "copy": "Copier",
+  "pgp": {
+    "title": "Clés OpenPGP",
+    "hint": "Vérifie les messages signés et lis les messages chiffrés. Les clés privées sont gardées dans le trousseau du système, jamais en base ; un message déchiffré n'est jamais enregistré ni indexé.",
+    "empty": "Aucune clé pour l'instant.",
+    "import": "Importer un fichier de clé…",
+    "paste": "Coller une clé",
+    "pastePlaceholder": "-----BEGIN PGP PUBLIC KEY BLOCK-----",
+    "add": "Ajouter",
+    "imported": "Clé importée : {{name}}",
+    "importFailed": "Impossible d'importer la clé — {{error}}",
+    "private": "clé privée",
+    "public": "clé publique",
+    "revoked": "révoquée",
+    "delete": "Supprimer",
+    "deleteConfirm": "Supprimer cette clé ? Une clé privée est irrécupérable sans sauvegarde.",
+    "deleted": "Clé supprimée",
+    "deleteFailed": "Impossible de supprimer la clé — {{error}}"
+  }
 }

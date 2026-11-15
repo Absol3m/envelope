@@ -27,6 +27,8 @@ pub struct NativeTexts {
     pub export_pick_title: String,
     pub mbox_filter: String,
     pub save_folder_title: String,
+    pub pgp_pick_title: String,
+    pub pgp_filter: String,
 }
 
 /// Statique plutôt qu'`AppState` : l'invite du système et le port de rappel OAuth n'ont pas d'`AppHandle` sous la main.

@@ -2,7 +2,7 @@ import { i18next, t } from "./i18n";
 import { isEmail, sameAddr } from "./utils";
 import { compileSpec, parseSearch, type SearchableMessage } from "./searchSpec";
 import type { FolderRole } from "./bindings/FolderRole";
-import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, PgpKeyInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
@@ -15,6 +15,7 @@ const LOCK: LockStatus = { method: "off", locked: false, timeoutSecs: 0, systemA
 
 const QUEUE: { id: number; accountId: string; message: OutgoingMessage; sendAt: number }[] = [];
 
+const PGP_KEYS: PgpKeyInfo[] = [];
 const TEMPLATES: Template[] = []; // rempli par `seed`, dans la langue active
 
 /** Compte IMAP type (champs communs aux comptes de la démo et des essais) : `over` précise ce qui change. */
@@ -437,6 +438,20 @@ export const demoBackend: Backend = {
     for (const t of T) for (const m of t.messages) if (m.id === messageId) { m.oversize = false; m.bodyText = d("bigfile.body"); }
     return delay(undefined, 700);
   },
+  pgpListKeys: () => delay(PGP_KEYS.map((k) => ({ ...k })), 30),
+  pgpImportKey: (armored) => {
+    if (!armored.includes("-----BEGIN PGP")) return Promise.reject(new Error(t("errors:rust.pgp.invalid_key")));
+    const key: PgpKeyInfo = { fingerprint: "0123456789ABCDEF0123456789ABCDEF01234567", userIds: [d("pgp.demoKey")], hasSecret: armored.includes("PRIVATE KEY"), revoked: false };
+    if (!PGP_KEYS.some((k) => k.fingerprint === key.fingerprint)) PGP_KEYS.push(key);
+    return delay({ ...key }, 80);
+  },
+  pgpImportPick: () => delay(null, 30),
+  pgpDeleteKey: (fingerprint) => {
+    const i = PGP_KEYS.findIndex((k) => k.fingerprint === fingerprint);
+    if (i >= 0) PGP_KEYS.splice(i, 1);
+    return delay(undefined, 30);
+  },
+  pgpInspect: () => delay(null, 10),
   lockStatus: () => delay({ ...LOCK }, 20),
   unlockPassword: (password) => (password === "demo1234" ? ((LOCK.locked = false), delay(undefined, 200)) : Promise.reject(new Error(t("demo:wrongPassword")))),
   unlockSystem: () => ((LOCK.locked = false), delay(undefined, 300)),

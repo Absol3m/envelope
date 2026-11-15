@@ -164,6 +164,69 @@ pub async fn delete_client(provider: OAuthProvider) -> Result<()> {
     })
     .await
 }
+/// Clé privée OpenPGP (armurée, donc ASCII) : découpée en morceaux, car certains trousseaux limitent la taille d'un
+/// secret (Windows : 2,5 Kio). Le nombre de morceaux est le secret `<empreinte>:n`.
+const PGP_CHUNK: usize = 800;
+const PGP_MAX_CHUNKS: usize = 1024;
+fn pgp_entry(fingerprint: &str, part: &str) -> Result<keyring::Entry> {
+    entry("pgp", &format!("{fingerprint}:{part}"))
+}
+/// Nombre de morceaux enregistrés ; `None` : pas de clé.
+fn pgp_chunks(fingerprint: &str) -> Result<Option<usize>> {
+    match pgp_entry(fingerprint, "n")?.get_password() {
+        Ok(n) => Ok(Some(n.parse().unwrap_or(0).min(PGP_MAX_CHUNKS))),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+pub async fn store_pgp_secret(fingerprint: &str, armored: String) -> Result<()> {
+    let fp = fingerprint.to_string();
+    blocking_keychain(move || {
+        if !armored.is_ascii() || armored.len() > PGP_CHUNK * PGP_MAX_CHUNKS {
+            return Err(AppError::Invalid(msg!(
+                "pgp.invalid_key",
+                "this is not a valid OpenPGP key"
+            )));
+        }
+        // ASCII : chaque découpe tombe sur une frontière de caractère.
+        for (i, chunk) in armored.as_bytes().chunks(PGP_CHUNK).enumerate() {
+            pgp_entry(&fp, &i.to_string())?.set_password(&String::from_utf8_lossy(chunk))?;
+        }
+        // Le compteur en dernier : une écriture interrompue ne laisse pas une clé tronquée lisible.
+        Ok(pgp_entry(&fp, "n")?.set_password(&armored.len().div_ceil(PGP_CHUNK).to_string())?)
+    })
+    .await
+}
+pub async fn load_pgp_secret(fingerprint: &str) -> Result<Option<String>> {
+    let fp = fingerprint.to_string();
+    blocking_keychain(move || {
+        let Some(n) = pgp_chunks(&fp)? else {
+            return Ok(None);
+        };
+        let mut out = String::new();
+        for i in 0..n {
+            out.push_str(&pgp_entry(&fp, &i.to_string())?.get_password()?);
+        }
+        Ok(Some(out))
+    })
+    .await
+}
+pub async fn delete_pgp_secret(fingerprint: &str) -> Result<()> {
+    let fp = fingerprint.to_string();
+    blocking_keychain(move || {
+        let n = pgp_chunks(&fp).ok().flatten().unwrap_or(0);
+        for i in 0..n {
+            if let Ok(e) = pgp_entry(&fp, &i.to_string()) {
+                let _ = e.delete_credential();
+            }
+        }
+        if let Ok(e) = pgp_entry(&fp, "n") {
+            let _ = e.delete_credential();
+        }
+        Ok(())
+    })
+    .await
+}
 fn delete_secrets(account_id: &str) {
     if let Ok(mut cache) = token_cache().lock() {
         cache.remove(account_id);

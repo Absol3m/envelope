@@ -160,5 +160,23 @@
     "upToDate": "Envelope is up to date (checked {{when}})"
   },
   "copied": "Copied",
-  "copy": "Copy"
+  "copy": "Copy",
+  "pgp": {
+    "title": "OpenPGP keys",
+    "hint": "Verify signed messages and read encrypted ones. Private keys are stored in your system keychain, never in the database; decrypted messages are never saved or indexed.",
+    "empty": "No keys yet.",
+    "import": "Import a key file…",
+    "paste": "Paste a key",
+    "pastePlaceholder": "-----BEGIN PGP PUBLIC KEY BLOCK-----",
+    "add": "Add",
+    "imported": "Key imported: {{name}}",
+    "importFailed": "Couldn't import the key — {{error}}",
+    "private": "private key",
+    "public": "public key",
+    "revoked": "revoked",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this key? A private key can't be recovered unless you have a backup.",
+    "deleted": "Key deleted",
+    "deleteFailed": "Couldn't delete the key — {{error}}"
+  }
 }

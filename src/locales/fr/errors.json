@@ -175,6 +175,10 @@
       "keychain": "Trousseau : {{detail}}",
       "network": "Réseau : {{detail}}",
       "json": "JSON : {{detail}}"
+    },
+    "pgp": {
+      "invalid_key": "Ce n'est pas une clé OpenPGP valide",
+      "interrupted": "Déchiffrement interrompu : {{detail}}"
     }
   },
   "load": "Chargement impossible",

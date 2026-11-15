@@ -122,6 +122,9 @@
     "bigfile": {
       "subject": "Raw footage — day 3 shoot",
       "body": "All rushes are in the attached archive."
+    },
+    "pgp": {
+      "demoKey": "Demo <demo@example.com>"
     }
   }
 }

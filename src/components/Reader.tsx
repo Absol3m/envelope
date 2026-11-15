@@ -14,6 +14,7 @@ import { BellOff } from "lucide-react";
 import { isLinux, shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 import { t as tr } from "@/lib/i18n";
 import { AttachmentPreview, InlineImage } from "./AttachmentPreview";
+import { PgpBanner, usePgp } from "./PgpStatus";
 
 // ───────────── Corps du message ─────────────
 
@@ -239,6 +240,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
   const sender = displayName(m.fromName, m.fromAddr);
   const preview = (m.bodyText ?? "").split(/\n/).find((l) => l.trim() && !l.startsWith(">"))?.trim() ?? "";
   const files = atts.filter((a) => !a.isInline || a.filename);
+  const pgp = usePgp(m, expanded);
 
   if (!expanded) {
     return (
@@ -275,6 +277,8 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
         </div>
       )}
 
+      <PgpBanner pgp={pgp} />
+
       {details && (
         <dl className="selectable anim-fade-in mt-3 grid grid-cols-[52px_1fr] gap-x-3 gap-y-1 rounded-lg bg-bg-subtle px-3 py-2 text-[12px]">
           <dt className="text-faint">{tr("reader:from")}</dt><dd>{m.fromName ? `${m.fromName} <${m.fromAddr}>` : m.fromAddr}</dd>
@@ -284,7 +288,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
         </dl>
       )}
 
-      <div className="mt-3 border-t border-border pt-3"><NearViewport><MessageBody m={m} /></NearViewport></div>
+      <div className="mt-3 border-t border-border pt-3"><NearViewport><MessageBody m={pgp.shown} /></NearViewport></div>
       <Attachments items={files} />
     </article>
   );

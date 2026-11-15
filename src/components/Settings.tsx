@@ -1,10 +1,10 @@
 import * as Dialog from "@radix-ui/react-dialog";
-import { Bot, Check, Download, Filter, Copy, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
-import { useEffect, useState, type ComponentType } from "react";
+import { Bot, Check, Download, Filter, Copy, Info, Keyboard, KeyRound, Monitor, Moon, Palette, RefreshCw, ShieldCheck, Sun, Trash2, UserRound, X } from "lucide-react";
+import { useCallback, useEffect, useState, type ComponentType } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { LANGUAGES, parseLangPref, setLanguage, type LangPref } from "@/lib/i18n";
 import { pref } from "@/lib/pref";
-import { isTauri, type Account, type LockMethod, type McpInfo } from "@/lib/api";
+import { isTauri, type Account, type LockMethod, type McpInfo, type PgpKeyInfo } from "@/lib/api";
 import { senderLabel } from "@/lib/compose";
 import { relativeTime } from "@/lib/format";
 import { serverDraftsEnabled, setServerDrafts } from "@/lib/composer";
@@ -351,6 +351,55 @@ function DraftsSection() {
 const systemLockLabel = () => tr(isMac ? "settings:lock.systemMac" : isWindows ? "settings:lock.systemWindows" : "settings:lock.systemOther");
 const AUTO_LOCK = [0, 60, 300, 900, 1800, 3600];
 
+/** Clés OpenPGP : annuaire des clés publiques, clés privées (trousseau du système). */
+function PgpSection() {
+  const { backend, toast } = useMail(useShallow((s) => ({ backend: s.backend, toast: s.toast })));
+  const [keys, setKeys] = useState<PgpKeyInfo[]>([]);
+  const [pasted, setPasted] = useState("");
+  const [busy, setBusy] = useState(false);
+  const reload = useCallback(() => backend.pgpListKeys().then(setKeys, () => setKeys([])), [backend]);
+  useEffect(() => { void reload(); }, [reload]);
+
+  const imported = (k: PgpKeyInfo | null) => { if (k) toast({ message: tr("settings:pgp.imported", { name: k.userIds[0] ?? k.fingerprint }) }); void reload(); };
+  const run = async (job: () => Promise<void>) => {
+    setBusy(true);
+    try { await job(); } catch (e) { toast({ message: tr("settings:pgp.importFailed", { error: errText(e) }), tone: "error", duration: 6000 }); } finally { setBusy(false); }
+  };
+  const remove = async (k: PgpKeyInfo) => {
+    if (!(await backend.confirm(tr("settings:pgp.deleteConfirm"), tr("settings:pgp.delete")))) return;
+    try { await backend.pgpDeleteKey(k.fingerprint); toast({ message: tr("settings:pgp.deleted") }); void reload(); }
+    catch (e) { toast({ message: tr("settings:pgp.deleteFailed", { error: errText(e) }), tone: "error", duration: 6000 }); }
+  };
+  return (
+    <Section title={tr("settings:pgp.title")} hint={tr("settings:pgp.hint")}>
+      {keys.length === 0 ? <p className="text-[13px] text-muted">{tr("settings:pgp.empty")}</p> : (
+        <ul className="flex max-w-[560px] flex-col gap-1.5">
+          {keys.map((k) => (
+            <li key={k.fingerprint} className="flex items-center gap-2.5 rounded-lg bg-bg-subtle px-3 py-2 text-[13px]">
+              <KeyRound size={15} className="shrink-0 text-muted" />
+              <div className="min-w-0 flex-1">
+                <div className="selectable truncate font-medium">{k.userIds[0] ?? k.fingerprint}</div>
+                <div className="selectable truncate font-mono text-[11px] text-muted">{k.fingerprint}</div>
+              </div>
+              <span className="shrink-0 text-[12px] text-muted">{k.revoked ? tr("settings:pgp.revoked") : k.hasSecret ? tr("settings:pgp.private") : tr("settings:pgp.public")}</span>
+              <button type="button" onClick={() => void remove(k)} className={btnGhost}>{tr("settings:pgp.delete")}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-3 flex max-w-[560px] flex-col gap-2">
+        <div>
+          <button type="button" disabled={busy} onClick={() => void run(async () => imported(await backend.pgpImportPick()))} className={btnGhost}>{tr("settings:pgp.import")}</button>
+        </div>
+        <textarea aria-label={tr("settings:pgp.paste")} value={pasted} onChange={(e) => setPasted(e.target.value)} rows={3} placeholder={tr("settings:pgp.pastePlaceholder")} className={cn(inputCls, "h-auto resize-y py-2 font-mono text-[11px]")} />
+        <div>
+          <button type="button" disabled={busy || !pasted.trim()} onClick={() => void run(async () => { imported(await backend.pgpImportKey(pasted)); setPasted(""); })} className={btnPrimary}>{tr("settings:pgp.add")}</button>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 /** Verrouillage de l'application : désactivé, par le système (Touch ID, Windows Hello) ou par un mot de passe. */
 function LockSection() {
   const { backend, lock, setLockStatus, toast } = useMail(useShallow((s) => ({ backend: s.backend, lock: s.lock, setLockStatus: s.setLockStatus, toast: s.toast })));
@@ -540,7 +589,7 @@ export function Settings() {
         <h2 className="mb-5 text-[18px] font-semibold tracking-tight">{TABS.find((t) => t.id === settingsTab)?.label}</h2>
         {settingsTab === "accounts" && <AccountsPanel />}
         {settingsTab === "rules" && <RulesPanel />}
-        {settingsTab === "security" && <LockSection />}
+        {settingsTab === "security" && <><LockSection /><PgpSection /></>}
         {settingsTab === "agent" && <AgentPanel />}
         {settingsTab === "appearance" && <AppearancePanel />}
         {settingsTab === "shortcuts" && <ShortcutList />}

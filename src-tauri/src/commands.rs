@@ -90,6 +90,7 @@ pub async fn reset_app(
     for p in [OAuthProvider::Google, OAuthProvider::Microsoft] {
         secrets::delete_client(p).await?;
     }
+    crate::pgp_store::delete_all_secrets(&state.db).await?;
     lock.reset(&state.db).await?;
     for dir in [&state.raw_dir, &state.attachments_dir] {
         let _ = tokio::fs::remove_dir_all(dir).await;
@@ -720,6 +721,62 @@ pub async fn download_message(state: State<'_, AppState>, message_id: i64) -> Re
         message_id,
     )
     .await
+}
+
+#[tauri::command]
+pub async fn pgp_list_keys(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::pgp_store::PgpKeyInfo>> {
+    crate::pgp_store::list_keys(&state.db).await
+}
+
+/// Importe une clé OpenPGP armurée (publique ou privée).
+#[tauri::command]
+pub async fn pgp_import_key(
+    state: State<'_, AppState>,
+    armored: String,
+) -> Result<crate::pgp_store::PgpKeyInfo> {
+    crate::pgp_store::import_key(&state.db, armored.as_bytes()).await
+}
+
+/// Ouvre le sélecteur de fichier natif et importe la clé OpenPGP choisie. `None` si l'utilisateur annule.
+#[tauri::command]
+pub async fn pgp_import_pick(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<crate::pgp_store::PgpKeyInfo>> {
+    use tauri_plugin_dialog::DialogExt;
+    let texts = crate::native_text::get();
+    let Some(picked) = app
+        .dialog()
+        .file()
+        .set_title(&texts.pgp_pick_title)
+        .add_filter(&texts.pgp_filter, &["asc", "gpg", "pgp", "key"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = picks::dialog_path(picked)?;
+    let data = tokio::fs::read(&path).await?;
+    crate::pgp_store::import_key(&state.db, &data)
+        .await
+        .map(Some)
+}
+
+#[tauri::command]
+pub async fn pgp_delete_key(state: State<'_, AppState>, fingerprint: String) -> Result<()> {
+    crate::pgp_store::delete_key(&state.db, &fingerprint).await
+}
+
+/// Signature et contenu déchiffré d'un message PGP (`None` : pas du PGP). `passphrase` : phrase secrète saisie pour la
+/// clé privée qui déchiffre ; elle reste en mémoire quelques minutes, jamais écrite.
+#[tauri::command]
+pub async fn pgp_inspect(
+    state: State<'_, AppState>,
+    message_id: i64,
+    passphrase: Option<String>,
+) -> Result<Option<crate::pgp_store::PgpInspection>> {
+    crate::pgp_store::inspect(&state.db, &state.raw_dir, message_id, passphrase.as_deref()).await
 }
 
 #[tauri::command]

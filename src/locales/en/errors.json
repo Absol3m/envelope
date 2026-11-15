@@ -175,6 +175,10 @@
       "keychain": "Keychain: {{detail}}",
       "network": "Network: {{detail}}",
       "json": "JSON: {{detail}}"
+    },
+    "pgp": {
+      "invalid_key": "This is not a valid OpenPGP key",
+      "interrupted": "Decryption interrupted: {{detail}}"
     }
   },
   "load": "Couldn't load",

@@ -20,6 +20,8 @@ mod lock;
 mod mail;
 mod mcp;
 mod native_text;
+mod openpgp;
+mod pgp_store;
 mod picks;
 mod private;
 mod reminders;
@@ -247,6 +249,11 @@ pub fn run() {
             commands::list_threads,
             commands::get_thread_detail,
             commands::download_message,
+            commands::pgp_list_keys,
+            commands::pgp_import_key,
+            commands::pgp_import_pick,
+            commands::pgp_delete_key,
+            commands::pgp_inspect,
             commands::set_thread_read,
             commands::set_thread_starred,
             commands::move_thread,

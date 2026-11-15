@@ -30,6 +30,11 @@ export type { LockMethod } from "./bindings/LockMethod";
 export type { LockStatus } from "./bindings/LockStatus";
 export type { McpInfo } from "./bindings/McpInfo";
 export type { NewAccount } from "./bindings/NewAccount";
+export type { DecryptError } from "./bindings/DecryptError";
+export type { PgpInspection } from "./bindings/PgpInspection";
+export type { PgpKeyInfo } from "./bindings/PgpKeyInfo";
+export type { PgpSignature } from "./bindings/PgpSignature";
+export type { SigState } from "./bindings/SigState";
 export type { OAuthProviderId } from "./bindings/OAuthProviderId";
 export type { OAuthStatus } from "./bindings/OAuthStatus";
 export type { OutgoingMessage } from "./bindings/OutgoingMessage";
@@ -45,6 +50,8 @@ export type { ThreadDetail } from "./bindings/ThreadDetail";
 export type { ThreadSummary } from "./bindings/ThreadSummary";
 export type { Unsubscribe } from "./bindings/Unsubscribe";
 import type { Account } from "./bindings/Account";
+import type { PgpInspection } from "./bindings/PgpInspection";
+import type { PgpKeyInfo } from "./bindings/PgpKeyInfo";
 import type { Addr } from "./bindings/Addr";
 import type { Detected } from "./bindings/Detected";
 import type { DiskEncryption } from "./bindings/DiskEncryption";
@@ -162,6 +169,14 @@ export interface Backend {
   inlineImages(messageId: number): Promise<Record<string, string>>;
   /** Télécharge le contenu d'un message volumineux (en-tête seul à la synchro). */
   downloadMessage(messageId: number): Promise<void>;
+  pgpListKeys(): Promise<PgpKeyInfo[]>;
+  /** Importe une clé OpenPGP armurée, publique ou privée. */
+  pgpImportKey(armored: string): Promise<PgpKeyInfo>;
+  /** Sélecteur natif de fichier puis import ; `null` si annulé. */
+  pgpImportPick(): Promise<PgpKeyInfo | null>;
+  pgpDeleteKey(fingerprint: string): Promise<void>;
+  /** Signature et contenu déchiffré d'un message PGP ; `null` : le message n'est pas du PGP. `passphrase` : phrase secrète de la clé privée. */
+  pgpInspect(messageId: number, passphrase?: string): Promise<PgpInspection | null>;
   lockStatus(): Promise<LockStatus>;
   unlockPassword(password: string): Promise<void>;
   /** Ouvre l'invite d'authentification du système (Touch ID, Windows Hello) ; se termine quand elle est close. */
@@ -262,6 +277,11 @@ export const tauriBackend: Backend = {
   attachmentSrc: (id) => convertFileSrc(String(id), "attachment"),
   saveAttachments: (attachmentIds) => invoke("save_attachments", { attachmentIds }),
   downloadMessage: (messageId) => invoke("download_message", { messageId }),
+  pgpListKeys: () => invoke("pgp_list_keys"),
+  pgpImportKey: (armored) => invoke("pgp_import_key", { armored }),
+  pgpImportPick: () => invoke("pgp_import_pick"),
+  pgpDeleteKey: (fingerprint) => invoke("pgp_delete_key", { fingerprint }),
+  pgpInspect: (messageId, passphrase) => invoke("pgp_inspect", { messageId, passphrase: passphrase ?? null }),
   inlineImages: async (messageId) => {
     const ids = await invoke<Record<string, number>>("inline_images", { messageId });
     return Object.fromEntries(Object.entries(ids).map(([cid, id]) => [cid, tauriBackend.attachmentSrc(id)]));

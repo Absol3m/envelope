@@ -6,5 +6,7 @@
   "importPickTitle": "Choose the folder to import",
   "exportPickTitle": "Choose the folder to write the .eml files to",
   "mboxFilter": "mbox mailbox",
-  "saveFolderTitle": "Choose a folder for the attachments"
+  "saveFolderTitle": "Choose a folder for the attachments",
+  "pgpPickTitle": "Choose an OpenPGP key file",
+  "pgpFilter": "OpenPGP key"
 }

@@ -58,5 +58,17 @@
   "oversize": "This message is large ({{size}}): only its header was downloaded.",
   "download": "Download message",
   "downloading": "Downloading…",
-  "downloadFailed": "Couldn't download the message"
+  "downloadFailed": "Couldn't download the message",
+  "pgp": {
+    "valid": "Signature verified: signed by {{signer}}.",
+    "invalid": "Invalid signature ({{signer}}): this message was altered after it was signed.",
+    "unknownKey": "Signed with a key you haven't imported: the signature can't be verified. Add the sender's key in Settings › Security.",
+    "decrypted": "Encrypted message, decrypted on this computer.",
+    "noKey": "Encrypted message: none of your private keys can open it. Import the right key in Settings › Security.",
+    "failed": "This encrypted message can't be read (corrupted or unsupported).",
+    "passphrase": "This message is encrypted. Enter your key's passphrase to read it.",
+    "passphraseWrong": "The passphrase is missing or wrong. Try again.",
+    "passphraseLabel": "Key passphrase",
+    "decrypt": "Decrypt"
+  }
 }
