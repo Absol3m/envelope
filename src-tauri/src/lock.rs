@@ -473,6 +473,26 @@ async fn native_authenticate() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    /// La webview n'a que les permissions listées ici : les commandes de plugin ne passent pas par la barrière de
+    /// verrouillage (`gated`), donc un plugin qui ouvre des fichiers ou des liens (opener, fs, shell…) n'y a pas sa place.
+    #[test]
+    fn la_webview_n_a_pas_de_plugin_qui_contourne_le_verrouillage() {
+        let caps: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        for p in caps["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p.as_str())
+        {
+            let plugin = p.split(':').next().unwrap();
+            assert!(
+                matches!(plugin, "core" | "dialog" | "notification"),
+                "permission {p} : plugin non prévu, vérifier le contournement du verrouillage"
+            );
+        }
+    }
+
     use super::*;
 
     fn password_lock() -> Lock {

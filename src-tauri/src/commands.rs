@@ -86,6 +86,10 @@ pub async fn reset_app(
         sessions::forget(&a.id);
         secrets::delete(&a.id).await?;
     }
+    // Les identifiants d'application OAuth2 (client_id / secret saisis par l'utilisateur) sont aussi des secrets.
+    for p in [OAuthProvider::Google, OAuthProvider::Microsoft] {
+        secrets::delete_client(p).await?;
+    }
     lock.reset(&state.db).await?;
     for dir in [&state.raw_dir, &state.attachments_dir] {
         let _ = tokio::fs::remove_dir_all(dir).await;

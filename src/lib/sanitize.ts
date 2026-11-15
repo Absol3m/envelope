@@ -71,7 +71,8 @@ export function prepareHtml(html: string, opts: { allowRemote: boolean; cid?: Re
   const sanitized = DOMPurify.sanitize(html, { FORBID_TAGS, FORBID_ATTR: ["srcset", "ping"] });
   // Après la sanitisation : DOMPurify retirerait le schéma `attachment:`, et l'URL du protocole (en `http://` sous Windows)
   // serait prise pour une image distante. Les URL substituées viennent du moteur, jamais du message.
-  const clean = opts.cid ? sanitized.replace(/cid:([^"'\s>)]+)/gi, (m, id: string) => opts.cid?.[id] ?? m) : sanitized;
+  const cid = opts.cid;
+  const clean = cid ? sanitized.replace(/cid:([^"'\s>)]+)/gi, (m, id: string) => (Object.hasOwn(cid, id) ? cid[id] : m)) : sanitized;
   const img = `img-src data: attachment: http://attachment.localhost${opts.allowRemote ? " https: http:" : ""}`;
   const csp = `default-src 'none'; ${img}; style-src 'unsafe-inline'; font-src data:`;
   return {

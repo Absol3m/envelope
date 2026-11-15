@@ -149,7 +149,7 @@ pub enum Credential {
 }
 
 /// Entrée de `add_account` (authentification par mot de passe / mot de passe d'application).
-#[derive(Debug, Deserialize, TS)]
+#[derive(Deserialize, TS)]
 #[ts(export, optional_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct NewAccount {
@@ -159,6 +159,15 @@ pub struct NewAccount {
     pub password: String,
     pub imap: Option<ServerConfig>,
     pub smtp: Option<ServerConfig>,
+}
+
+// Jamais de mot de passe dans un journal ou un message d'erreur : `Debug` est écrit à la main.
+impl std::fmt::Debug for NewAccount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewAccount")
+            .field("email", &self.email)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Origine d'une détection de serveurs.

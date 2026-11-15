@@ -108,10 +108,23 @@ impl OAuthProvider {
 }
 
 /// Application OAuth2 « bureau » enregistrée par l'utilisateur chez le fournisseur.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ClientCreds {
     pub client_id: String,
     pub client_secret: Option<String>,
+}
+
+// Jamais de secret dans un journal ou un message d'erreur : `Debug` est écrit à la main.
+impl std::fmt::Debug for ClientCreds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientCreds")
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self.client_secret.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 impl ClientCreds {
@@ -125,12 +138,20 @@ impl ClientCreds {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OAuthTokens {
     pub access_token: String,
     pub refresh_token: Option<String>,
     /// Timestamp UNIX (secondes) d'expiration du jeton d'accès.
     pub expires_at: i64,
+}
+
+impl std::fmt::Debug for OAuthTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthTokens")
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Deserialize)]

@@ -78,6 +78,20 @@ pub async fn run(account: &Account, cred: &Credential, u: &Unsubscribe) -> Resul
     }
 }
 
+/// Adresses publiques de `host` ; erreur si le nom n'en a aucune (règle commune au résolveur et à la vérification préalable).
+async fn resolve_public(host: &str) -> std::io::Result<Vec<std::net::SocketAddr>> {
+    let public: Vec<_> = tokio::net::lookup_host((host, 443))
+        .await?
+        .filter(|a| is_public_ip(a.ip()))
+        .collect();
+    if public.is_empty() {
+        return Err(std::io::Error::other(format!(
+            "{host} resolves to a non-public address"
+        )));
+    }
+    Ok(public)
+}
+
 /// Résolveur qui ne rend que des adresses publiques : un nom public qui pointerait vers le réseau local, la boucle
 /// locale ou les métadonnées d'un fournisseur de cloud (enregistrement DNS d'un mail hostile) n'est pas contacté.
 struct PublicOnly;
@@ -86,19 +100,14 @@ impl reqwest::dns::Resolve for PublicOnly {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
         let host = name.as_str().to_string();
         Box::pin(async move {
-            let found = tokio::net::lookup_host((host.as_str(), 443)).await?;
-            let public: Vec<std::net::SocketAddr> =
-                found.filter(|a| is_public_ip(a.ip())).collect();
-            if public.is_empty() {
-                return Err(format!("{host} resolves to a non-public address").into());
-            }
+            let public = resolve_public(&host).await?;
             Ok(Box::new(public.into_iter()) as reqwest::dns::Addrs)
         })
     }
 }
 
 /// Adresse joignable depuis Internet : ni privée, ni boucle locale, ni lien local, ni partagée (CGNAT), ni réservée.
-// Écrit à la main : `IpAddr::is_global` n'est pas stable. NAT64 (64:ff9b::/96) et 6to4 ne sont pas traités.
+// Écrit à la main : `IpAddr::is_global` n'est pas stable. NAT64 et 6to4 : on juge l'IPv4 qu'ils embarquent.
 fn is_public_ip(ip: std::net::IpAddr) -> bool {
     use std::net::IpAddr;
     match ip {
@@ -113,6 +122,8 @@ fn is_public_ip(ip: std::net::IpAddr) -> bool {
                 || v.is_documentation()
                 || (o[0] == 100 && (64..128).contains(&o[1])) // 100.64.0.0/10 (CGNAT)
                 || o[0] == 0
+                || (o[0] == 192 && o[1] == 0 && o[2] == 0) // 192.0.0.0/24 (protocoles IETF)
+                || (o[0] == 198 && (o[1] & 0xfe) == 18) // 198.18.0.0/15 (bancs d'essai)
                 || o[0] >= 240) // 240.0.0.0/4 (réservé)
         }
         IpAddr::V6(v) => {
@@ -139,11 +150,23 @@ fn is_public_ip(ip: std::net::IpAddr) -> bool {
             }
             !(v.is_loopback()
                 || (s[0] == 0x2001 && s[1] == 0x0db8) // documentation
+                || (s[0] == 0x2001 && s[1] == 0) // Teredo (2001::/32) : IPv4 masquée
                 || v.is_unspecified()
                 || v.is_multicast()
                 || (s[0] & 0xfe00) == 0xfc00 // fc00::/7 (adresses locales uniques)
                 || (s[0] & 0xffc0) == 0xfe80) // fe80::/10 (lien local)
         }
+    }
+}
+
+/// Le nom de l'hôte ne doit résoudre que vers des adresses publiques (même règle que `PublicOnly`).
+async fn ensure_public_host(url: &Url) -> Result<()> {
+    match url.host_str() {
+        Some(host) if resolve_public(host).await.is_ok() => Ok(()),
+        _ => Err(AppError::Invalid(msg!(
+            "unsubscribe.refused_link",
+            "unsubscribe link refused"
+        ))),
     }
 }
 
@@ -155,6 +178,9 @@ async fn post_one_click(url: &str) -> Result<()> {
             "unsubscribe link refused"
         )));
     }
+    // Derrière un proxy système, c'est le proxy qui résout le nom et `PublicOnly` est contourné : on résout donc aussi
+    // ici, avant d'envoyer. (`no_proxy` casserait les réseaux d'entreprise.) Le proxy reste maître des redirections.
+    ensure_public_host(&url).await?;
     // Redirections suivies seulement vers d'autres liens publics en https.
     let policy = Policy::custom(|a| {
         if a.previous().len() < 3 && is_public_https(a.url()) {
@@ -248,6 +274,11 @@ mod tests {
             "fd00::1",
             "::ffff:127.0.0.1",
             "240.0.0.1",
+            "192.0.0.8",
+            "198.18.0.1",
+            "198.19.255.254",
+            "2001:0:4136:e378:8000:63bf:3fff:fdd2", // Teredo
+            "64:ff9b::7f00:1",                      // NAT64 vers 127.0.0.1
         ] {
             assert!(!is_public_ip(ip.parse().unwrap()), "{ip}");
         }
@@ -256,6 +287,8 @@ mod tests {
             "8.8.8.8",
             "2606:4700:4700::1111",
             "::ffff:8.8.8.8",
+            "198.20.0.1",
+            "192.1.0.1",
         ] {
             assert!(is_public_ip(ip.parse().unwrap()), "{ip}");
         }
