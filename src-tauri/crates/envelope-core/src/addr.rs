@@ -2,10 +2,10 @@
 //! Un seul type pour l'écriture (application) et la lecture (MCP) : changer le format casse la compilation.
 
 use serde::{Deserialize, Serialize};
-use ts_rs::TS;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[ts(export)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export))]
 pub struct Addr {
     pub name: Option<String>,
     pub address: String,

@@ -23,7 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-envelope-core = { path = "crates/envelope-core" }
+envelope-core = { path = "crates/envelope-core", features = ["ts"] }
 envelope-appearance = { path = "crates/envelope-appearance" }
 
 # --- Tauri ---

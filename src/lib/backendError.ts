@@ -1,13 +1,8 @@
+import type { WireError } from "./bindings/WireError";
 import { t } from "./i18n";
 
 /** Erreur du moteur Rust telle qu'elle traverse l'IPC (voir `src-tauri/src/error.rs`) : un code stable traduit ici,
- *  ses paramètres, et le message de repli (anglais, ou texte brut d'une bibliothèque ou du serveur distant). */
-export interface WireError {
-  code: string;
-  args: Record<string, string>;
-  message: string;
-}
-
+ *  ses paramètres, et le message de repli (anglais, ou texte brut d'une bibliothèque ou du serveur distant). Généré depuis Rust. */
 const isWire = (v: unknown): v is WireError =>
   typeof v === "object" && v !== null && typeof (v as WireError).code === "string" && typeof (v as WireError).message === "string";
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ThreadDetail } from "../api";
 import type { Draft } from "../compose";
 import type { Account } from "../api";
+import { baseAccount as account } from "../mock";
 import { applyTemplate, knownAlias, senderOptions, signatureOf, templateBody, attachmentError, draftFrom, forgotAttachment, emailHtml, emptyDraft, signatureHtml, swapSignature, formatRecipient, htmlToPlain, isNeutralColor, parseRecipients, textToHtml, toOutgoing, withPrefix } from "../compose";
 
 const msg = (over: Partial<ThreadDetail["messages"][number]>) => ({
@@ -81,7 +82,6 @@ describe("withPrefix", () => {
 
 /** Compte `email` avec sa signature et des alias d'envoi, pour `draftFrom`. */
 /** Compte de test ; `identities` : alias d'envoi (adresse seule, sans signature, ou alias complets). */
-const account = (over: Partial<Account> = {}): Account => ({ id: "a", email: "me@x.fr", displayName: "Moi", provider: "imap", authKind: "password", username: "me", imapHost: "imap.example.com", imapPort: 993, imapSecurity: "tls", smtpHost: "smtp.example.com", smtpPort: 465, smtpSecurity: "tls", syncStatus: "idle", syncError: null, lastSyncAt: null, signature: "", copySent: true, pendingCopies: 0, pendingCopyError: null, identities: [], ...over });
 const owner = (email: string, signature = "", aliases: string[] = []) => account({ email, displayName: null, signature, identities: aliases.map((a, i) => ({ id: i + 1, name: "", email: a, signature: "" })) });
 
 describe("draftFrom", () => {

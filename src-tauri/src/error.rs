@@ -90,8 +90,9 @@ pub enum AppError {
 }
 
 /// Forme envoyée au front.
-#[derive(Serialize)]
-struct Wire<'a> {
+#[derive(Serialize, ts_rs::TS)]
+#[ts(export)]
+struct WireError<'a> {
     code: &'a str,
     args: BTreeMap<&'a str, &'a str>,
     message: String,
@@ -130,8 +131,8 @@ impl AppError {
         code: &'static str,
         args: &'a [(&'static str, String)],
         message: String,
-    ) -> Wire<'a> {
-        Wire {
+    ) -> WireError<'a> {
+        WireError {
             code,
             args: args.iter().map(|(k, v)| (*k, v.as_str())).collect(),
             message,

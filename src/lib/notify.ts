@@ -1,17 +1,10 @@
 import { pref } from "./pref";
 import { t } from "./i18n";
 
-/** Aperçu d'un nouveau message, tel qu'envoyé par le démon de synchro (contenu non fiable : texte brut). */
-export interface FreshMail {
-  from: string;
-  subject: string;
-}
-export interface SyncedPayload {
-  accountId: string;
-  newMessages: number;
-  fresh: FreshMail[];
-  freshTotal: number;
-}
+import type { SyncedPayload } from "./bindings/SyncedPayload";
+
+/** Événement de synchro (aperçus de nouveaux messages : contenu non fiable, texte brut) : généré depuis Rust. */
+export type { SyncedPayload };
 
 export const notificationsEnabled = () => pref.get("notifications", "on") === "on";
 export const setNotificationsEnabled = (on: boolean) => pref.set("notifications", on ? "on" : "off");

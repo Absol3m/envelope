@@ -68,9 +68,10 @@ pub struct SyncManager {
     tasks: Mutex<HashMap<String, Task>>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, ts_rs::TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
-struct SyncedEvent {
+struct SyncedPayload {
     account_id: String,
     new_messages: usize,
     /// Nouveaux messages non lus de la boîte de réception (de quoi notifier), plafonnés.
@@ -80,7 +81,8 @@ struct SyncedEvent {
 }
 
 /// Aperçu d'un nouveau message pour la notification. Contenu de l'expéditeur : non fiable, affiché en texte brut.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, ts_rs::TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 struct FreshMail {
     from: String,
@@ -265,7 +267,7 @@ async fn session_loop(ctx: &Ctx, failures: &mut u32) -> Result<()> {
             .map_or(true, |l| l.is_locked());
         let _ = ctx.app.emit(
             "mail:synced",
-            SyncedEvent {
+            SyncedPayload {
                 account_id: ctx.account_id.clone(),
                 new_messages,
                 fresh_total: fresh.len(),

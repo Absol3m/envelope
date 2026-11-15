@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 use crate::error::{AppError, Result};
 use crate::mail::account::{self, Account, NewAccount};
-use crate::mail::actions::{self, Action, Destination};
+use crate::mail::actions::{self, Action, ServerDestination};
 use crate::mail::autoconfig;
 use crate::mail::drafts;
 use crate::mail::export;
@@ -765,7 +765,7 @@ pub async fn move_thread(
     state: State<'_, AppState>,
     thread_id: i64,
     folder_id: i64,
-    to: Destination,
+    to: ServerDestination,
 ) -> Result<()> {
     let accounts = run_action(&state, thread_id, Action::Move { folder_id, to }).await?;
     // Le message a un nouvel UID dans le dossier cible : une synchro le fait apparaître aussitôt.

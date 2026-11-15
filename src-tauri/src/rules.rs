@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 use crate::error::{AppError, Result};
-use crate::mail::actions::{self, Action, Destination};
+use crate::mail::actions::{self, Action, ServerDestination};
 
 const MAX_RULES: i64 = 100;
 const MAX_NAME: usize = 100; // caractères (le formulaire borne pareil)
@@ -42,11 +42,11 @@ impl MoveTo {
             .into_iter()
             .find(|m| m.as_str() == s)
     }
-    fn destination(self) -> Destination {
+    fn destination(self) -> ServerDestination {
         match self {
-            Self::Archive => Destination::Archive,
-            Self::Trash => Destination::Trash,
-            Self::Junk => Destination::Junk,
+            Self::Archive => ServerDestination::Archive,
+            Self::Trash => ServerDestination::Trash,
+            Self::Junk => ServerDestination::Junk,
         }
     }
 }

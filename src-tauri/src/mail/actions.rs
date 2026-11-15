@@ -21,7 +21,7 @@ pub enum Action {
     /// Déplace les messages de la conversation présents dans ce dossier.
     Move {
         folder_id: i64,
-        to: Destination,
+        to: ServerDestination,
     },
     /// Supprime définitivement les messages de la conversation présents dans ce dossier, qui doit
     /// être la corbeille ou le spam (aucune autre boîte n'est supprimable d'un geste).
@@ -32,16 +32,17 @@ pub enum Action {
 
 /// Dossier de destination d'un déplacement, désigné par son rôle (les chemins varient selon le
 /// serveur et la langue).
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
 #[serde(rename_all = "lowercase")]
-pub enum Destination {
+pub enum ServerDestination {
     Inbox,
     Archive,
     Trash,
     Junk,
 }
 
-impl Destination {
+impl ServerDestination {
     /// Rôles acceptés, par ordre de préférence ; Gmail n'a pas d'archive : « Tous les messages »
     /// en tient lieu.
     fn roles(self) -> &'static [FolderRole] {
@@ -252,7 +253,7 @@ pub(crate) async fn expunge(session: &mut ImapSession, uids: &str) -> Result<()>
 async fn destination_path(
     pool: &SqlitePool,
     account_id: &str,
-    to: Destination,
+    to: ServerDestination,
 ) -> Result<Option<String>> {
     for role in to.roles() {
         let path = sqlx::query_scalar("SELECT path FROM folders WHERE account_id = ? AND role = ?")
@@ -378,7 +379,7 @@ mod tests {
             .unwrap();
         let moved = Action::Move {
             folder_id: folder,
-            to: Destination::Archive,
+            to: ServerDestination::Archive,
         };
         let ids: Vec<i64> = targets(&pool, 1, moved)
             .await
@@ -430,7 +431,7 @@ mod tests {
                 1,
                 Action::Move {
                     folder_id: folder,
-                    to: Destination::Archive
+                    to: ServerDestination::Archive
                 }
             )
             .await
@@ -444,7 +445,7 @@ mod tests {
                 1,
                 Action::Move {
                     folder_id: 99,
-                    to: Destination::Archive
+                    to: ServerDestination::Archive
                 }
             )
             .await
@@ -478,7 +479,7 @@ mod tests {
 
         let a = Action::Move {
             folder_id: folder,
-            to: Destination::Archive,
+            to: ServerDestination::Archive,
         };
         let t = targets(&pool, 1, a).await.unwrap();
         apply_local(&pool, 1, &t, a).await.unwrap();
@@ -494,7 +495,7 @@ mod tests {
 
     #[tokio::test]
     async fn destination_is_found_by_role() {
-        use Destination::*;
+        use ServerDestination::*;
         let (pool, _) = setup().await;
         assert!(destination_path(&pool, "a", Archive)
             .await

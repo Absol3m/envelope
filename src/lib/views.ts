@@ -1,16 +1,17 @@
 import { AlarmClock, Archive, FileText, HardDrive, Inbox, Mail, Paperclip, Send, ShieldAlert, Star, Trash2 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { FolderRole, FolderRow } from "./api";
+import type { ServerDestination } from "./bindings/ServerDestination";
 import { t } from "./i18n";
 
 export const ROLES = ["inbox", "sent", "drafts", "archive", "junk", "trash"] as const satisfies readonly FolderRole[]; // un rôle renommé côté Rust casse la compilation
 export type Role = (typeof ROLES)[number];
 
-/** Dossiers où l'on peut déplacer une conversation (miroir de `Destination` côté Rust). */
-export type Destination = Extract<Role, "inbox" | "archive" | "junk" | "trash"> | "local";
+/** Destinations qui passent par le serveur (générées depuis `ServerDestination` côté Rust). */
+export type { ServerDestination };
 
-/** Destinations qui passent par le serveur (tout sauf l'archivage local). */
-export type ServerDestination = Exclude<Destination, "local">;
+/** Dossiers où l'on peut déplacer une conversation : le serveur, ou l'archivage local. */
+export type Destination = ServerDestination | "local";
 
 /** Compte spécial « Sur cet ordinateur » : dossiers locaux, sans serveur (miroir de `account::LOCAL_ID`). */
 export const LOCAL_ACCOUNT = "local";

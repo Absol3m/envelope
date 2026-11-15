@@ -10,7 +10,7 @@ export interface Recipient {
   address: string;
   name?: string | null;
 }
-/** Pièce jointe en mémoire (contenu en base64, jamais écrit sur disque ni dans le brouillon local). */
+/** Pièce jointe en mémoire (contenu en base64, jamais écrit sur disque ni dans le brouillon local). État d'interface, volontairement écrit à la main : le moteur reçoit `OutgoingMessage`, pas ce type. */
 export interface AttachmentDraft {
   id: string;
   name: string;
