@@ -1,0 +1,3 @@
+# Types TypeScript générés par ts-rs (`cargo test`), toujours écrits en LF : forcés en LF ici aussi, sinon un clone
+# Windows (core.autocrlf) les voit modifiés après chaque `cargo test` et scripts/verify.sh échoue sans écart réel.
+src/lib/bindings/*.ts text eol=lf
