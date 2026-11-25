@@ -1,17 +1,30 @@
 version: 2
+# Un seul passage par semaine (lundi), au plus une PR par groupe : mineures/correctifs d'un côté, majeures de l'autre
+# (les majeures demandent une migration : une PR à part, traitée par issue, jamais mélangée aux correctifs).
+# `cooldown` : on ne propose pas une version publiée depuis moins de 3 jours (laisse le temps aux retraits et correctifs).
 updates:
   - package-ecosystem: cargo
     directory: /src-tauri
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 3 }
     groups:
       rust-minor-patch:
         update-types: [minor, patch]
+      rust-major:
+        update-types: [major]
   - package-ecosystem: npm
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 3 }
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
+      npm-major:
+        update-types: [major]
   - package-ecosystem: github-actions
     directory: /
-    schedule: { interval: weekly }
+    schedule: { interval: weekly, day: monday }
+    cooldown: { default-days: 3 }
+    groups:
+      actions:
+        patterns: ["*"]
