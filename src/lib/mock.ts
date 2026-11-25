@@ -50,7 +50,7 @@ let nextAtt = 1;
 const me = (acct: string) => ({ name: "Alex Morel", address: ACCOUNTS.find((a) => a.id === acct)!.email });
 
 /** Textes du jeu de données : espace `demo`, sous `mail.` (les corps HTML y gardent leurs balises de mise en forme). */
-const d = (key: string, opts?: Record<string, string>) => t(`demo:mail.${key}`, opts);
+const d = (key: string, opts: Record<string, string> = {}) => t(`demo:mail.${key}`, opts);
 
 function msg(p: { from: [string | null, string]; to?: [string | null, string][]; cc?: [string | null, string][]; at: number; text?: string; html?: string; read?: boolean; subject: string; folder?: number; unsubscribe?: DetailMessage["unsubscribe"]; authFail?: DetailMessage["authFail"]; oversize?: number }): DetailMessage {
   return {
