@@ -50,7 +50,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # --- Moteur mail (utilisé à partir de l'étape 2) ---
-mail-parser = "0.11"
+mail-parser = "1.0"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "ring", "rustls-platform-verifier", "tokio1", "hostname"] }
 async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
 tokio-rustls = "0.26"
