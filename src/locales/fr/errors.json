@@ -178,7 +178,9 @@
     },
     "pgp": {
       "invalid_key": "Ce n'est pas une clé OpenPGP valide",
-      "interrupted": "Déchiffrement interrompu : {{detail}}"
+      "interrupted": "Déchiffrement interrompu : {{detail}}",
+      "address_not_in_key": "Cette clé n'a pas d'identité pour {{address}}",
+      "no_secret_key": "Cette clé n'a pas de partie privée : elle ne peut pas signer"
     }
   },
   "load": "Chargement impossible",

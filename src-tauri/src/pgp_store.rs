@@ -158,6 +158,133 @@ pub async fn delete_all_secrets(pool: &SqlitePool) -> Result<()> {
     Ok(())
 }
 
+/// Décision de confiance sur une clé, pour une adresse. Mêmes valeurs en base et vers l'interface.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, SerdeSerialize, serde::Deserialize, sqlx::Type, ts_rs::TS,
+)]
+#[ts(export, rename = "PgpAcceptance")]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "TEXT", rename_all = "lowercase")]
+pub enum Acceptance {
+    Unverified,
+    Verified,
+    Rejected,
+}
+
+fn lower(email: &str) -> String {
+    email.trim().to_lowercase()
+}
+
+/// Adresse d'une identité « Nom <adresse> » ou « adresse ».
+fn user_id_address(user_id: &str) -> String {
+    match (user_id.rfind('<'), user_id.rfind('>')) {
+        (Some(a), Some(b)) if a < b => lower(&user_id[a + 1..b]),
+        _ => lower(user_id),
+    }
+}
+
+/// Accepte ou refuse une clé pour une adresse. L'adresse doit figurer dans les identités de la clé : sinon n'importe
+/// quelle clé importée pourrait être déclarée celle d'un correspondant.
+pub async fn set_acceptance(
+    pool: &SqlitePool,
+    fingerprint: &str,
+    email: &str,
+    decision: Acceptance,
+) -> Result<()> {
+    let email = lower(email);
+    let ids: Option<String> =
+        sqlx::query_scalar("SELECT user_ids FROM pgp_keys WHERE fingerprint = ?")
+            .bind(fingerprint)
+            .fetch_optional(pool)
+            .await?;
+    let ids: Vec<String> = serde_json::from_str(&ids.ok_or_else(invalid_key)?)?;
+    if !ids.iter().any(|u| user_id_address(u) == email) {
+        return Err(AppError::Invalid(msg!(
+            "pgp.address_not_in_key",
+            "this key has no identity for {address}",
+            address = email
+        )));
+    }
+    sqlx::query(
+        "INSERT INTO pgp_acceptance (fingerprint, email, decision, decided_at) VALUES (?,?,?,?) \
+         ON CONFLICT(fingerprint, email) DO UPDATE SET decision = excluded.decision, decided_at = excluded.decided_at",
+    )
+    .bind(fingerprint)
+    .bind(&email)
+    .bind(decision)
+    .bind(crate::clock::now())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Clé à utiliser pour chiffrer à `email` : acceptée (vérifiée avant non vérifiée), non révoquée, la plus récente.
+/// `None` : pas de clé acceptée, l'interface le dit avant l'envoi.
+pub async fn recipient_key(pool: &SqlitePool, email: &str) -> Result<Option<(String, PublicKey)>> {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT k.fingerprint, k.armored FROM pgp_acceptance a JOIN pgp_keys k ON k.fingerprint = a.fingerprint \
+         WHERE a.email = ? AND a.decision IN ('verified','unverified') AND k.revoked = 0 \
+         ORDER BY (a.decision = 'verified') DESC, k.added_at DESC LIMIT 1",
+    )
+    .bind(lower(email))
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.and_then(|(fp, armored)| openpgp::parse_public(&armored).map(|k| (fp, k))))
+}
+
+/// Associe (ou, avec `None`, dissocie) la clé de signature d'une adresse d'expéditeur. La clé doit être privée.
+pub async fn set_signing_key(
+    pool: &SqlitePool,
+    account_id: &str,
+    email: &str,
+    fingerprint: Option<&str>,
+) -> Result<()> {
+    let email = lower(email);
+    let Some(fp) = fingerprint else {
+        sqlx::query("DELETE FROM pgp_signing_keys WHERE account_id = ? AND email = ?")
+            .bind(account_id)
+            .bind(&email)
+            .execute(pool)
+            .await?;
+        return Ok(());
+    };
+    let secret: Option<bool> =
+        sqlx::query_scalar("SELECT has_secret FROM pgp_keys WHERE fingerprint = ?")
+            .bind(fp)
+            .fetch_optional(pool)
+            .await?;
+    if secret != Some(true) {
+        return Err(AppError::Invalid(msg!(
+            "pgp.no_secret_key",
+            "this key has no private part: it cannot sign"
+        )));
+    }
+    sqlx::query(
+        "INSERT INTO pgp_signing_keys (account_id, email, fingerprint) VALUES (?,?,?) \
+         ON CONFLICT(account_id, email) DO UPDATE SET fingerprint = excluded.fingerprint",
+    )
+    .bind(account_id)
+    .bind(&email)
+    .bind(fp)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn signing_fingerprint(
+    pool: &SqlitePool,
+    account_id: &str,
+    email: &str,
+) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar(
+        "SELECT fingerprint FROM pgp_signing_keys WHERE account_id = ? AND email = ?",
+    )
+    .bind(account_id)
+    .bind(lower(email))
+    .fetch_optional(pool)
+    .await?)
+}
+
 async fn public_keys(pool: &SqlitePool) -> Result<Vec<PublicKey>> {
     let rows: Vec<String> = sqlx::query_scalar("SELECT armored FROM pgp_keys WHERE revoked = 0")
         .fetch_all(pool)
@@ -394,5 +521,77 @@ mod tests {
         assert!(inspect(&pool, &dir, id, None).await.unwrap().is_none());
         assert!(import_key(&pool, b"pas une cl\xc3\xa9").await.is_err());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn acceptation_par_adresse_et_cle_de_signature() {
+        let pool = crate::db::init_memory().await.unwrap();
+        let key = keygen("Bob <Bob@x.fr>", None);
+        let armored = openpgp::armor_public(&public_of(&key)).unwrap();
+        let fp = import_key(&pool, armored.as_bytes())
+            .await
+            .unwrap()
+            .fingerprint;
+
+        // Sans décision : pas de clé pour chiffrer.
+        assert!(recipient_key(&pool, "bob@x.fr").await.unwrap().is_none());
+        // Une adresse absente des identités de la clé est refusée.
+        assert!(set_acceptance(&pool, &fp, "eve@x.fr", Acceptance::Verified)
+            .await
+            .is_err());
+
+        set_acceptance(&pool, &fp, "BOB@x.fr", Acceptance::Unverified)
+            .await
+            .unwrap();
+        assert_eq!(
+            recipient_key(&pool, "bob@X.fr").await.unwrap().unwrap().0,
+            fp
+        );
+        // Refusée : plus utilisée pour chiffrer.
+        set_acceptance(&pool, &fp, "bob@x.fr", Acceptance::Rejected)
+            .await
+            .unwrap();
+        assert!(recipient_key(&pool, "bob@x.fr").await.unwrap().is_none());
+        // Acceptée mais révoquée : jamais utilisée.
+        set_acceptance(&pool, &fp, "bob@x.fr", Acceptance::Verified)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE pgp_keys SET revoked = 1")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(recipient_key(&pool, "bob@x.fr").await.unwrap().is_none());
+
+        // Signer exige une clé privée.
+        sqlx::query("INSERT INTO accounts (id,email,username,imap_host,smtp_host) VALUES ('a','a','a','i','s')")
+            .execute(&pool).await.unwrap();
+        assert!(set_signing_key(&pool, "a", "me@x.fr", Some(&fp))
+            .await
+            .is_err());
+        sqlx::query("UPDATE pgp_keys SET has_secret = 1")
+            .execute(&pool)
+            .await
+            .unwrap();
+        set_signing_key(&pool, "a", "Me@x.fr", Some(&fp))
+            .await
+            .unwrap();
+        assert_eq!(
+            signing_fingerprint(&pool, "a", "me@x.fr").await.unwrap(),
+            Some(fp.clone())
+        );
+        // Supprimer la clé retire l'association et les décisions.
+        sqlx::query("DELETE FROM pgp_keys")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(signing_fingerprint(&pool, "a", "me@x.fr")
+            .await
+            .unwrap()
+            .is_none());
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pgp_acceptance")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(n, 0);
     }
 }

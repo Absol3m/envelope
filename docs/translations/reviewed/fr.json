@@ -335,6 +335,8 @@
  "errors:rust.lib.json": "fba88ce4",
  "errors:rust.pgp.invalid_key": "32c3ddf1",
  "errors:rust.pgp.interrupted": "26ec56d1",
+ "errors:rust.pgp.address_not_in_key": "db41e34d",
+ "errors:rust.pgp.no_secret_key": "2d3d48e9",
  "errors:load": "8b7b6ba8",
  "errors:action": "57af9495",
  "errors:start": "1aff50b2",

@@ -178,7 +178,9 @@
     },
     "pgp": {
       "invalid_key": "This is not a valid OpenPGP key",
-      "interrupted": "Decryption interrupted: {{detail}}"
+      "interrupted": "Decryption interrupted: {{detail}}",
+      "address_not_in_key": "This key has no identity for {{address}}",
+      "no_secret_key": "This key has no private part: it cannot sign"
     }
   },
   "load": "Couldn't load",
