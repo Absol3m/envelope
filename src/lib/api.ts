@@ -132,7 +132,8 @@ export interface Backend {
   setOAuthClient(provider: OAuthProviderId, clientId: string, clientSecret?: string): Promise<void>;
   clearOAuthClient(provider: OAuthProviderId): Promise<void>;
   /** `queued` : serveur injoignable, le message est en boîte d'envoi et partira dès le retour de la connexion. */
-  sendEmail(accountId: string, message: OutgoingMessage): Promise<"sent" | "queued">;
+  /** `passphrase` : phrase de la clé de signature OpenPGP, saisie pour cet envoi (jamais conservée avec le message). */
+  sendEmail(accountId: string, message: OutgoingMessage, passphrase?: string): Promise<"sent" | "queued">;
   /** Enregistre le brouillon sur le serveur (nouvelle version, puis suppression des précédentes). */
   saveDraft(accountId: string, message: OutgoingMessage): Promise<void>;
   deleteDraft(accountId: string, draftId: string): Promise<void>;
@@ -143,7 +144,7 @@ export interface Backend {
   setAccountSignature(accountId: string, signature: string): Promise<void>;
   setAccountCopySent(accountId: string, on: boolean): Promise<void>;
   /** Met le message en file pour `sendAt` (secondes Unix) ; renvoie l'identifiant de l'envoi programmé. */
-  scheduleSend(accountId: string, message: OutgoingMessage, sendAt: number): Promise<number>;
+  scheduleSend(accountId: string, message: OutgoingMessage, sendAt: number, passphrase?: string): Promise<number>;
   /** Pose ou remplace le rappel de la conversation ; `dueAt` en secondes Unix. */
   setReminder(threadId: number, kind: ReminderKind, dueAt: number): Promise<void>;
   clearReminder(threadId: number): Promise<void>;
@@ -262,7 +263,7 @@ export const tauriBackend: Backend = {
   oauthStatus: () => invoke("oauth_status"),
   setOAuthClient: (provider, clientId, clientSecret) => invoke("set_oauth_client", { provider, clientId, clientSecret }),
   clearOAuthClient: (provider) => invoke("clear_oauth_client", { provider }),
-  sendEmail: (accountId, message) => invoke("send_email", { accountId, message }),
+  sendEmail: (accountId, message, passphrase) => invoke("send_email", { accountId, message, passphrase: passphrase ?? null }),
   saveDraft: (accountId, message) => invoke("save_draft", { accountId, message }),
   deleteDraft: (accountId, draftId) => invoke("delete_draft", { accountId, draftId }),
   openDraft: (threadId) => invoke("open_draft", { threadId }),
@@ -271,7 +272,7 @@ export const tauriBackend: Backend = {
   unsubscribe: (messageId) => invoke("unsubscribe", { messageId }),
   setAccountSignature: (accountId, signature) => invoke("set_account_signature", { accountId, signature }),
   setAccountCopySent: (accountId, on) => invoke("set_account_copy_sent", { accountId, on }),
-  scheduleSend: (accountId, message, sendAt) => invoke("schedule_send", { accountId, message, sendAt }),
+  scheduleSend: (accountId, message, sendAt, passphrase) => invoke("schedule_send", { accountId, message, sendAt, passphrase: passphrase ?? null }),
   setReminder: (threadId, kind, dueAt) => invoke("set_reminder", { threadId, kind, dueAt }),
   clearReminder: (threadId) => invoke("clear_reminder", { threadId }),
   listScheduled: () => invoke("list_scheduled"),

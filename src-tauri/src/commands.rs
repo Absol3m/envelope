@@ -511,21 +511,47 @@ pub enum SendOutcome {
     Queued,
 }
 
+/// `passphrase` : phrase secrète de la clé de signature OpenPGP, saisie à l'instant (jamais conservée avec le message).
 #[tauri::command]
 pub async fn send_email(
     app: AppHandle,
     state: State<'_, AppState>,
     account_id: String,
     message: OutgoingMessage,
+    passphrase: Option<String>,
 ) -> Result<SendOutcome> {
-    match deliver(&app, &state, &account_id, &message).await {
+    let sealed = seal(&state, &account_id, &message, passphrase.as_deref()).await?;
+    match deliver(&app, &state, &account_id, &message, sealed.as_ref()).await {
         Ok(()) => Ok(SendOutcome::Sent),
         Err(e @ AppError::Unreachable(_)) => {
-            scheduled::add_outbox(&state.db, &account_id, &message, &e.to_wire()).await?;
+            scheduled::add_outbox(
+                &state.db,
+                &account_id,
+                &message,
+                sealed.as_ref(),
+                &e.to_wire(),
+            )
+            .await?;
             Ok(SendOutcome::Queued)
         }
         Err(e) => Err(e),
     }
+}
+
+/// Signe et chiffre le message s'il le demande (OpenPGP) ; `None` : message ordinaire. Un échec (clé manquante,
+/// phrase secrète) arrête tout : un message demandé chiffré ou signé ne part jamais en clair.
+async fn seal(
+    state: &AppState,
+    account_id: &str,
+    message: &OutgoingMessage,
+    passphrase: Option<&str>,
+) -> Result<Option<smtp::Sealed>> {
+    if !message.wants_pgp() {
+        return Ok(None);
+    }
+    let acct = account::get(&state.db, account_id).await?;
+    let built = crate::pgp_send::prepare(&state.db, &acct, message, passphrase).await?;
+    Ok(Some(smtp::Sealed::of(&built)))
 }
 
 /// Envoi proprement dit (aussi utilisé par les envois programmés) : SMTP, mise en file de la copie dans « Envoyés »
@@ -535,10 +561,14 @@ pub(crate) async fn deliver(
     state: &AppState,
     account_id: &str,
     message: &OutgoingMessage,
+    sealed: Option<&smtp::Sealed>,
 ) -> Result<()> {
     let acct = account::get(&state.db, account_id).await?;
     let cred = account::resolve_credential(&acct).await?;
-    let raw = smtp::send(&acct, &cred, message).await?;
+    let raw = match sealed {
+        Some(sealed) => smtp::send_sealed(&acct, &cred, sealed).await?,
+        None => smtp::send(&acct, &cred, message).await?,
+    };
     // Copie dans « Envoyés » : mise en file dès maintenant (avant le retrait du brouillon, voir `sentcopy::enqueue`),
     // affichée une fois le reste fait ; sauf si le serveur la range lui-même (Gmail).
     let queued = if acct.keeps_sent_copy() {
@@ -589,17 +619,21 @@ async fn queue_sent_copy(
 }
 
 /// Met un message en file pour l'envoyer à `send_at` (secondes Unix). L'application doit être ouverte à cette heure.
+/// Un message OpenPGP est signé et chiffré tout de suite (avec `passphrase`), pas à l'heure prévue : à l'envoi, ni clé
+/// ni phrase secrète ne sont nécessaires.
 #[tauri::command]
 pub async fn schedule_send(
     state: State<'_, AppState>,
     account_id: String,
     message: OutgoingMessage,
     send_at: i64,
+    passphrase: Option<String>,
 ) -> Result<i64> {
     // Mêmes contrôles qu'un envoi immédiat : expéditeur autorisé, au moins un destinataire.
     let acct = account::get(&state.db, &account_id).await?;
     smtp::check_sendable(&acct, &message)?;
-    scheduled::add(&state.db, &account_id, send_at, &message).await
+    let sealed = seal(&state, &account_id, &message, passphrase.as_deref()).await?;
+    scheduled::add(&state.db, &account_id, send_at, &message, sealed.as_ref()).await
 }
 
 #[tauri::command]

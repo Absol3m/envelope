@@ -18,6 +18,19 @@ const QUEUE: { id: number; accountId: string; message: OutgoingMessage; sendAt: 
 const PGP_KEYS: PgpKeyInfo[] = [];
 const PGP_ACCEPT: PgpAcceptanceInfo[] = [];
 const PGP_SIGNING: PgpSigningInfo[] = [];
+
+/** Contrôles du moteur avant d'envoyer un message OpenPGP : clé de l'expéditeur, clé acceptée de chaque destinataire. */
+async function demoSeal(accountId: string, message: OutgoingMessage): Promise<void> {
+  if (!message.pgpSign && !message.pgpEncrypt) return;
+  const account = ACCOUNTS.find((a) => a.id === accountId);
+  const from = (message.fromEmail ?? account?.email ?? "").toLowerCase();
+  if (!PGP_SIGNING.some((s) => s.accountId === accountId && s.email === from)) throw new Error(t("errors:rust.pgp.no_signing_key", { address: from }));
+  if (!message.pgpEncrypt) return;
+  for (const raw of [...message.to, ...message.cc, ...message.bcc]) {
+    const address = (/<([^<>]+)>\s*$/.exec(raw)?.[1] ?? raw).trim().toLowerCase();
+    if (!PGP_ACCEPT.some((a) => a.email === address && a.decision !== "rejected")) throw new Error(t("errors:rust.pgp.no_recipient_key", { address }));
+  }
+}
 const TEMPLATES: Template[] = []; // rempli par `seed`, dans la langue active
 
 /** Compte IMAP type (champs communs aux comptes de la démo et des essais) : `over` précise ce qui change. */
@@ -337,7 +350,8 @@ export const demoBackend: Backend = {
       150,
     );
   },
-  sendEmail: () => delay("sent" as const, 400),
+  // Comme le moteur : un message demandé signé ou chiffré ne part jamais en clair si une clé manque.
+  sendEmail: (accountId, message) => demoSeal(accountId, message).then(() => delay("sent" as const, 400)),
   saveDraft: () => delay(undefined, 150),
   deleteDraft: () => delay(undefined, 100),
   openDraft: () => Promise.reject(new Error(t("demo:unavailable"))),
@@ -370,7 +384,8 @@ export const demoBackend: Backend = {
     if (a) a.copySent = on;
     return delay(undefined, 60);
   },
-  scheduleSend: (accountId, message, sendAt) => {
+  scheduleSend: async (accountId, message, sendAt) => {
+    await demoSeal(accountId, message);
     const id = Math.max(0, ...QUEUE.map((q) => q.id)) + 1;
     QUEUE.push({ id, accountId, message, sendAt });
     return delay(id, 60);

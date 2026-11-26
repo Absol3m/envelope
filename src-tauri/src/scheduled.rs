@@ -18,7 +18,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::clock::now;
 use crate::error::{AppError, Result};
-use crate::mail::smtp::OutgoingMessage;
+use crate::mail::smtp::{OutgoingMessage, Sealed};
 use crate::AppState;
 
 /// Attente maximale entre deux vérifications (voir `wait_until`).
@@ -72,6 +72,7 @@ pub async fn add(
     account_id: &str,
     send_at: i64,
     message: &OutgoingMessage,
+    sealed: Option<&Sealed>,
 ) -> Result<i64> {
     if send_at <= now() {
         return Err(AppError::Invalid(msg!(
@@ -79,7 +80,7 @@ pub async fn add(
             "the send time must be in the future"
         )));
     }
-    insert(pool, account_id, send_at, None, message).await
+    insert(pool, account_id, send_at, None, message, sealed).await
 }
 
 /// Met en boîte d'envoi un message que le serveur n'a pas pu recevoir (`error` : erreur codée, `AppError::to_wire`).
@@ -87,11 +88,12 @@ pub async fn add_outbox(
     pool: &SqlitePool,
     account_id: &str,
     message: &OutgoingMessage,
+    sealed: Option<&Sealed>,
     error: &str,
 ) -> Result<i64> {
     let at = now();
     let retry = Some((at + retry_delay(0), error));
-    insert(pool, account_id, at, retry, message).await
+    insert(pool, account_id, at, retry, message, sealed).await
 }
 
 async fn insert(
@@ -101,6 +103,7 @@ async fn insert(
     // Boîte d'envoi : (prochain essai, dernière erreur) ; `None` pour un envoi programmé.
     retry: Option<(i64, &str)>,
     message: &OutgoingMessage,
+    sealed: Option<&Sealed>,
 ) -> Result<i64> {
     let json =
         serde_json::to_string(message).map_err(|e| AppError::Invalid((e.to_string()).into()))?;
@@ -111,16 +114,21 @@ async fn insert(
         )));
     }
     let (next_try_at, last_error) = retry.unzip();
+    let envelope = sealed
+        .map(|s| serde_json::to_string(&serde_json::json!({ "from": s.from, "to": s.to })))
+        .transpose()?;
     // Plafond contrôlé dans l'insertion même : deux ajouts simultanés ne le dépassent pas.
     let done = sqlx::query(
-        "INSERT INTO scheduled (account_id, send_at, message, next_try_at, error) \
-         SELECT ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM scheduled) < ?",
+        "INSERT INTO scheduled (account_id, send_at, message, next_try_at, error, sealed, envelope) \
+         SELECT ?, ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM scheduled) < ?",
     )
     .bind(account_id)
     .bind(send_at)
     .bind(json)
     .bind(next_try_at)
     .bind(last_error)
+    .bind(sealed.map(|s| s.raw.as_slice()))
+    .bind(envelope)
     .bind(MAX_ROWS)
     .execute(pool)
     .await?;
@@ -205,24 +213,52 @@ pub async fn cancel(pool: &SqlitePool, id: i64) -> Result<OutgoingMessage> {
 pub struct Claimed {
     pub account_id: String,
     pub message: OutgoingMessage,
+    /// Message OpenPGP déjà signé/chiffré : c'est lui qui part, tel quel.
+    pub sealed: Option<Sealed>,
     pub outbox: bool,
     /// Échecs réseau déjà essuyés (boîte d'envoi).
     pub attempts: i64,
 }
 
+/// Message signé/chiffré d'une ligne : absent pour un message ordinaire.
+fn sealed_of(raw: Option<Vec<u8>>, envelope: Option<&str>) -> Option<Sealed> {
+    #[derive(serde::Deserialize)]
+    struct Envelope {
+        from: Option<String>,
+        to: Vec<String>,
+    }
+    let e: Envelope = serde_json::from_str(envelope?).ok()?;
+    Some(Sealed {
+        raw: raw?,
+        from: e.from,
+        to: e.to,
+    })
+}
+
 /// Prend un message pour l'envoyer ; faux s'il a déjà été pris ou retiré (jamais deux envois du même message).
 pub async fn claim(pool: &SqlitePool, id: i64) -> Result<Option<Claimed>> {
-    let row: Option<(String, String, bool, i64)> = sqlx::query_as(
-        "UPDATE scheduled SET status = ?1, error = NULL WHERE id = ?2 AND status <> ?1 RETURNING account_id, message, next_try_at IS NOT NULL, attempts",
+    type Row = (String, String, bool, i64, Option<Vec<u8>>, Option<String>);
+    let row: Option<Row> = sqlx::query_as(
+        "UPDATE scheduled SET status = ?1, error = NULL WHERE id = ?2 AND status <> ?1 RETURNING account_id, message, next_try_at IS NOT NULL, attempts, sealed, envelope",
     )
     .bind(Status::Sending)
     .bind(id)
     .fetch_optional(pool)
     .await?;
-    row.map(|(account_id, json, outbox, attempts)| {
+    row.map(|(account_id, json, outbox, attempts, raw, envelope)| {
+        let message = parse(&json)?;
+        let sealed = sealed_of(raw, envelope.as_deref());
+        // Un message demandé signé ou chiffré ne repart jamais par le chemin en clair, même si ses colonnes sont illisibles.
+        if message.wants_pgp() && sealed.is_none() {
+            return Err(AppError::Invalid(msg!(
+                "scheduled.sealed_missing",
+                "the signed or encrypted message is unreadable: write it again"
+            )));
+        }
         Ok(Claimed {
             account_id,
-            message: parse(&json)?,
+            message,
+            sealed,
             outbox,
             attempts,
         })
@@ -310,13 +346,14 @@ pub async fn deliver_now(app: &AppHandle, state: &AppState, id: i64) -> Result<(
     let Some(Claimed {
         account_id,
         message,
+        sealed,
         outbox,
         attempts,
     }) = claim(&state.db, id).await?
     else {
         return Ok(()); // déjà pris ou retiré
     };
-    let result = crate::commands::deliver(app, state, &account_id, &message).await;
+    let result = crate::commands::deliver(app, state, &account_id, &message, sealed.as_ref()).await;
     // Ce que l'interface doit savoir : un envoi réussi ou en échec (toast), ou rien (le message reste en boîte d'envoi).
     let outcome = |error| Outcome {
         subject: message.subject.clone(),
@@ -442,11 +479,13 @@ mod tests {
     #[tokio::test]
     async fn file_liste_annule_et_refuse_le_passe() {
         let pool = pool().await;
-        assert!(add(&pool, "a", now() - 5, &message("passé")).await.is_err());
-        let later = add(&pool, "a", now() + 7200, &message("plus tard"))
+        assert!(add(&pool, "a", now() - 5, &message("passé"), None)
+            .await
+            .is_err());
+        let later = add(&pool, "a", now() + 7200, &message("plus tard"), None)
             .await
             .unwrap();
-        let soon = add(&pool, "a", now() + 60, &message("bientôt"))
+        let soon = add(&pool, "a", now() + 60, &message("bientôt"), None)
             .await
             .unwrap();
         let l = list(&pool).await.unwrap();
@@ -507,7 +546,7 @@ mod tests {
     #[tokio::test]
     async fn boite_d_envoi_repart_seule_et_n_est_jamais_en_retard() {
         let pool = pool().await;
-        let id = add_outbox(&pool, "a", &message("hors ligne"), "boum")
+        let id = add_outbox(&pool, "a", &message("hors ligne"), None, "boum")
             .await
             .unwrap();
         let l = list(&pool).await.unwrap();
@@ -534,7 +573,7 @@ mod tests {
         assert!((next - now() - 60).abs() <= 2, "deuxième délai : 60 s");
         assert!(due(&pool, now() + 30).await.unwrap().is_empty());
         // Un envoi programmé qui perd le réseau à son heure passe aussi en boîte d'envoi.
-        let at = add(&pool, "a", now() + 60, &message("programmé"))
+        let at = add(&pool, "a", now() + 60, &message("programmé"), None)
             .await
             .unwrap();
         let c = claim(&pool, at).await.unwrap().unwrap();
@@ -547,11 +586,49 @@ mod tests {
     #[tokio::test]
     async fn supprimer_le_compte_vide_sa_file() {
         let pool = pool().await;
-        add(&pool, "a", now() + 60, &message("m")).await.unwrap();
+        add(&pool, "a", now() + 60, &message("m"), None)
+            .await
+            .unwrap();
         sqlx::query("DELETE FROM accounts WHERE id = 'a'")
             .execute(&pool)
             .await
             .unwrap();
         assert!(list(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn message_signe_garde_son_mime_et_son_enveloppe() {
+        let pool = pool().await;
+        let sealed = Sealed {
+            raw: b"Subject: x\r\n\r\nchiffr\xc3\xa9\r\n".to_vec(),
+            from: Some("me@x.fr".into()),
+            to: vec!["bob@x.fr".into(), "cache@x.fr".into()],
+        };
+        let id = add(&pool, "a", now() + 60, &message("secret"), Some(&sealed))
+            .await
+            .unwrap();
+        let ordinary = add(&pool, "a", now() + 60, &message("ordinaire"), None)
+            .await
+            .unwrap();
+        // Ce qui part est le MIME déjà scellé, avec l'enveloppe (le Bcc n'est que là) ; un message ordinaire n'en a pas.
+        assert_eq!(
+            claim(&pool, id).await.unwrap().unwrap().sealed,
+            Some(sealed)
+        );
+        assert_eq!(claim(&pool, ordinary).await.unwrap().unwrap().sealed, None);
+        // Annuler rend toujours le message d'origine pour le rouvrir.
+        let again = add(&pool, "a", now() + 60, &message("secret"), None)
+            .await
+            .unwrap();
+        assert_eq!(cancel(&pool, again).await.unwrap().subject, "secret");
+    }
+
+    #[tokio::test]
+    async fn message_pgp_sans_scelle_n_est_pas_envoye_en_clair() {
+        let pool = pool().await;
+        let mut m = message("secret");
+        m.pgp_encrypt = true;
+        let id = add(&pool, "a", now() + 60, &m, None).await.unwrap();
+        assert!(claim(&pool, id).await.is_err());
     }
 }

@@ -40,6 +40,13 @@ export interface Draft {
   lostAttachments?: string[];
   inReplyTo?: string;
   references: string[];
+  /** OpenPGP : signer avec la clé de l'adresse d'expéditeur, chiffrer pour tous les destinataires. */
+  pgpSign?: boolean;
+  pgpEncrypt?: boolean;
+  /** Phrase secrète de la clé de signature, saisie pour cet envoi : en mémoire seulement, jamais enregistrée. */
+  pgpPassphrase?: string;
+  /** Le moteur a refusé la phrase (absente ou fausse) : le champ s'affiche. */
+  pgpAskPassphrase?: boolean;
 }
 
 export { isEmail, sameAddr };
@@ -87,6 +94,8 @@ export function toOutgoing(d: Draft): OutgoingMessage {
     attachments: d.attachments.map((a) => ({ filename: a.name, mimeType: a.mimeType, dataBase64: a.dataBase64 })),
     draftId: d.id,
     fromEmail: d.fromEmail,
+    pgpSign: !!d.pgpSign,
+    pgpEncrypt: !!d.pgpEncrypt,
   };
 }
 

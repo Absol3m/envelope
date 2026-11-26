@@ -154,7 +154,8 @@
       "unreadable": "Message programmé illisible : {{detail}}",
       "not_found": "Envoi introuvable, ou déjà en cours",
       "missed": "L'application n'était pas ouverte à l'heure prévue : envoyez-le maintenant ou modifiez-le.",
-      "interrupted": "Envoi interrompu : vérifiez le dossier Envoyés avant de le renvoyer."
+      "interrupted": "Envoi interrompu : vérifiez le dossier Envoyés avant de le renvoyer.",
+      "sealed_missing": "Le message signé ou chiffré est illisible : rédigez-le à nouveau"
     },
     "templates": {
       "name_length": "Nom de modèle : 1 à {{max}} caractères",
@@ -180,7 +181,12 @@
       "invalid_key": "Ce n'est pas une clé OpenPGP valide",
       "interrupted": "Déchiffrement interrompu : {{detail}}",
       "address_not_in_key": "Cette clé n'a pas d'identité pour {{address}}",
-      "no_secret_key": "Cette clé n'a pas de partie privée : elle ne peut pas signer"
+      "no_secret_key": "Cette clé n'a pas de partie privée : elle ne peut pas signer",
+      "passphrase_required": "La clé de signature est verrouillée : phrase secrète absente ou fausse",
+      "no_encryption_subkey": "La clé d'un destinataire n'a pas de sous-clé de chiffrement",
+      "seal_failed": "Impossible de signer ou de chiffrer le message",
+      "no_signing_key": "Aucune clé OpenPGP n'est définie pour {{address}} : choisissez-en une dans les réglages",
+      "no_recipient_key": "Aucune clé OpenPGP acceptée pour {{address}}"
     }
   },
   "load": "Chargement impossible",

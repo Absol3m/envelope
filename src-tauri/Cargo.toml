@@ -70,6 +70,8 @@ argon2 = "0.6"        # empreinte du mot de passe de verrouillage (Argon2id)
 hex = "0.4"           # empreinte du message brut en hexadécimal
 dunce = "1"             # chemins Windows sans préfixe \\?\ (ouverture des pièces jointes)
 pgp = "0.21"
+# Générateur de nombres aléatoires de rpgp (rand_core 0.6) : même version majeure que lui, sinon les traits ne correspondent pas.
+rand = "0.8"
 
 [profile.release]
 lto = true
@@ -104,7 +106,6 @@ keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 tauri = { version = "2", features = ["test"] }  # application factice : test de la barrière de verrouillage
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }  # certificat de test (STARTTLS)
 tokio = { version = "1", features = ["test-util"] }  # horloge simulée (expiration des sessions IMAP gardées)
-rand = "0.8"
 
 # Authentification native de l'utilisateur : Touch ID / mot de passe du Mac, Windows Hello. (Linux : pas de
 # dispositif commun sans règle polkit installée en administrateur → mot de passe d'application.)

@@ -3,6 +3,7 @@ import { attachmentError, draftFrom, forgotAttachment, draftFromQueued, draftFro
 import { scheduledAt } from "./format";
 import { pref } from "./pref";
 import { useMail } from "./store";
+import { BackendError } from "./backendError";
 import { t } from "./i18n";
 
 /** Fenêtre d'annulation de l'envoi : rien ne part tant qu'elle n'est pas écoulée (comme l'archivage). */
@@ -15,7 +16,7 @@ export const serverDraftsEnabled = () => pref.get("serverDrafts", "on") === "on"
 export const setServerDrafts = (on: boolean) => pref.set("serverDrafts", on ? "on" : "off");
 
 /** Forme écrite dans le stockage local : les pièces jointes (volumineuses) n'y sont pas, seuls leurs noms sont gardés. */
-const toSaved = (d: Draft): Draft => ({ ...d, attachments: [], lostAttachments: d.attachments.map((a) => a.name) });
+const toSaved = (d: Draft): Draft => ({ ...d, attachments: [], lostAttachments: d.attachments.map((a) => a.name), pgpPassphrase: undefined, pgpAskPassphrase: undefined });
 
 const readSaved = (): Draft | null => {
   try {
@@ -61,6 +62,11 @@ interface ComposerState {
   /** Annule l'envoi en cours ; faux s'il n'y en a pas. */
   undoSend(): boolean;
 }
+
+/** Le moteur a refusé la phrase secrète de la clé de signature (absente ou fausse) : on rouvre le brouillon avec le champ. */
+const passphraseRefused = (e: unknown) => e instanceof BackendError && e.wire.code === "pgp.passphrase_required";
+/** Le même brouillon, avec le champ de la phrase secrète affiché et vide. */
+const askingPassphrase = (d: Draft): Draft => ({ ...d, pgpAskPassphrase: true, pgpPassphrase: undefined });
 
 /** Annule l'envoi en attente (sa minuterie) et rouvre le brouillon. */
 let pendingSend: { cancel: () => void } | null = null;
@@ -243,7 +249,7 @@ export const useComposer = create<ComposerState>((set, get) => {
       const timer = setTimeout(async () => {
         pendingSend = null;
         try {
-          const outcome = await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft));
+          const outcome = await useMail.getState().backend.sendEmail(draft.accountId, outgoing(draft), draft.pgpPassphrase);
           onServer.delete(draft.id); // le serveur retire le brouillon de lui-même après un envoi réussi
           lastSig.delete(draft.id);
           if (outcome === "queued") {
@@ -251,7 +257,8 @@ export const useComposer = create<ComposerState>((set, get) => {
             toast(t("composer:queued"), "default", 6000);
           } else toast(t("composer:sent")); // la copie dans « Envoyés » se fait en arrière-plan : elle est mise en file côté moteur (reprise automatique) ; seuls `sent-copy:failed` et `sent-copy:local` arrivent ici
         } catch (e) {
-          open(draft); // rien n'est perdu : le message revient dans le panneau
+          // Rien n'est perdu : le message revient dans le panneau (avec le champ de la phrase secrète si c'est elle).
+          open(passphraseRefused(e) ? askingPassphrase(draft) : draft);
           toast(t("composer:sendFailed", { error: String(e) }), "error", 7000);
         }
       }, UNDO_MS);
@@ -265,8 +272,9 @@ export const useComposer = create<ComposerState>((set, get) => {
       if (!checkBeforeSend(draft, force, () => void get().schedule(at, true))) return;
       let id: number;
       try {
-        id = await useMail.getState().backend.scheduleSend(draft.accountId, outgoing(draft), Math.floor(at / 1000));
+        id = await useMail.getState().backend.scheduleSend(draft.accountId, outgoing(draft), Math.floor(at / 1000), draft.pgpPassphrase);
       } catch (e) {
+        if (passphraseRefused(e)) set({ draft: askingPassphrase(draft) });
         return toast(t("composer:scheduleFailed", { error: String(e) }), "error", 7000);
       }
       clearTimeout(saveTimer);

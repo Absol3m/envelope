@@ -1,5 +1,5 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, FileText, Paperclip, Send, Trash2, X } from "lucide-react";
+import { ChevronDown, FileSignature, FileText, Lock, Paperclip, Send, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { serverDraftsEnabled, useComposer } from "@/lib/composer";
@@ -9,6 +9,7 @@ import { fileSize } from "@/lib/format";
 import { useMail } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { btnPrimary, IconButton, Kbd } from "./ui/primitives";
+import { PgpNotice } from "./ComposerPgp";
 import { RecipientField } from "./RecipientField";
 import { RichEditor } from "./RichEditor";
 import { shortcut } from "@/lib/platform";
@@ -152,6 +153,7 @@ export function Composer() {
           <IconButton label={tr("common:cancel")} onClick={() => setPicking(null)}><X size={14} /></IconButton>
         </form>
       )}
+      <PgpNotice draft={draft} update={update} />
       <footer className="flex h-14 shrink-0 items-center gap-2 border-t border-border px-3">
         <button type="button" className={`${btnPrimary} h-9 gap-2 px-4`} onClick={() => send()}>
           <Send size={14} /> {tr("composer:send")} <Kbd className="border-white/30 bg-transparent text-white/80">{shortcut("mod+enter")}</Kbd>
@@ -196,6 +198,8 @@ export function Composer() {
             </Dropdown.Content>
           </Dropdown.Portal>
         </Dropdown.Root>
+        <IconButton label={tr("composer:pgp.sign")} active={!!draft.pgpSign} aria-pressed={!!draft.pgpSign} onClick={() => update({ pgpSign: !draft.pgpSign })}><FileSignature size={16} /></IconButton>
+        <IconButton label={tr("composer:pgp.encrypt")} active={!!draft.pgpEncrypt} aria-pressed={!!draft.pgpEncrypt} onClick={() => update({ pgpEncrypt: !draft.pgpEncrypt, pgpSign: draft.pgpEncrypt ? draft.pgpSign : true })}><Lock size={16} /></IconButton>
         <span className="flex-1" />
         <IconButton label={tr("composer:discard")} onClick={discard}><Trash2 size={16} /></IconButton>
       </footer>

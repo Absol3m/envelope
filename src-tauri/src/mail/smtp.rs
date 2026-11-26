@@ -34,6 +34,19 @@ pub struct OutgoingMessage {
     /// Adresse d'expéditeur : celle du compte (défaut) ou l'un de ses alias.
     #[serde(default)]
     pub from_email: Option<String>,
+    /// Signer (OpenPGP) avec la clé associée à l'adresse d'expéditeur.
+    #[serde(default)]
+    pub pgp_sign: bool,
+    /// Chiffrer (OpenPGP) pour tous les destinataires et pour l'expéditeur.
+    #[serde(default)]
+    pub pgp_encrypt: bool,
+}
+
+impl OutgoingMessage {
+    /// Le message doit-il être signé ou chiffré ?
+    pub fn wants_pgp(&self) -> bool {
+        self.pgp_sign || self.pgp_encrypt
+    }
 }
 
 /// Pièce jointe fournie par l'interface (contenu en base64).
@@ -224,27 +237,120 @@ fn headers(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Mess
     Ok(b)
 }
 
-fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Message> {
-    let b = headers(account, out, draft)?;
+/// Corps du message (texte, HTML, pièces jointes) : une partie simple ou un multipart.
+enum Body {
+    Single(SinglePart),
+    Multi(MultiPart),
+}
+
+impl Body {
+    fn formatted(&self) -> Vec<u8> {
+        match self {
+            Body::Single(p) => p.formatted(),
+            Body::Multi(p) => p.formatted(),
+        }
+    }
+    fn into_message(self, b: MessageBuilder) -> Result<Message> {
+        match self {
+            Body::Single(p) => b.singlepart(p),
+            Body::Multi(p) => b.multipart(p),
+        }
+        .map_err(smtp_err)
+    }
+    fn add_to(self, b: lettre::message::MultiPartBuilder) -> lettre::message::MultiPart {
+        match self {
+            Body::Single(p) => b.singlepart(p),
+            Body::Multi(p) => b.multipart(p),
+        }
+    }
+}
+
+fn body(out: &OutgoingMessage) -> Result<Body> {
     let attachments = attachment_parts(&out.attachments)?;
     let text = SinglePart::builder()
         .header(header::ContentType::TEXT_PLAIN)
         .body(out.body_text.clone());
     let alternative =
         |html: &str| MultiPart::alternative_plain_html(out.body_text.clone(), html.to_owned());
-    let msg = if attachments.is_empty() {
+    Ok(if attachments.is_empty() {
         match &out.body_html {
-            Some(html) => b.multipart(alternative(html)),
-            None => b.singlepart(text),
+            Some(html) => Body::Multi(alternative(html)),
+            None => Body::Single(text),
         }
     } else {
         let body = match &out.body_html {
             Some(html) => MultiPart::mixed().multipart(alternative(html)),
             None => MultiPart::mixed().singlepart(text),
         };
-        b.multipart(attachments.into_iter().fold(body, MultiPart::singlepart))
-    };
-    msg.map_err(smtp_err)
+        Body::Multi(attachments.into_iter().fold(body, MultiPart::singlepart))
+    })
+}
+
+fn build(account: &Account, out: &OutgoingMessage, draft: bool) -> Result<Message> {
+    headers(account, out, draft).and_then(|b| body(out)?.into_message(b))
+}
+
+/// Ce qu'il faut pour signer et chiffrer un message (voir `pgp_send`).
+pub struct Seal {
+    /// Clé de signature et sa phrase secrète, si on signe.
+    pub signer: Option<(pgp::composed::SignedSecretKey, Option<String>)>,
+    /// Destinataires du chiffrement (vide : on ne chiffre pas).
+    pub recipients: Vec<crate::openpgp::PublicKey>,
+}
+
+fn seal_err(e: crate::openpgp::SealError) -> AppError {
+    use crate::openpgp::SealError;
+    match e {
+        SealError::Passphrase => AppError::Invalid(msg!(
+            "pgp.passphrase_required",
+            "the signing key is locked: its passphrase is missing or wrong"
+        )),
+        SealError::NoEncryptionKey => AppError::Invalid(msg!(
+            "pgp.no_encryption_subkey",
+            "a recipient's key has no encryption subkey"
+        )),
+        SealError::Failed => AppError::Invalid(msg!(
+            "pgp.seal_failed",
+            "could not sign or encrypt the message"
+        )),
+    }
+}
+
+fn pgp_part(content_type: &str, body: String) -> Result<SinglePart> {
+    let ct = header::ContentType::parse(content_type).map_err(smtp_err)?;
+    Ok(SinglePart::builder().header(ct).body(body))
+}
+
+/// Message PGP/MIME (RFC 3156) : signé (`multipart/signed`), puis chiffré (`multipart/encrypted`) si demandé. La
+/// signature porte sur le corps tel qu'il sera écrit, sans le CRLF qui précède la frontière (il lui appartient).
+pub fn build_sealed(account: &Account, out: &OutgoingMessage, seal: &Seal) -> Result<Message> {
+    let b = headers(account, out, false)?;
+    let mut inner = body(out)?;
+    let encrypt = !seal.recipients.is_empty();
+    if let (Some((key, passphrase)), false) = (&seal.signer, encrypt) {
+        // Signé seulement : `multipart/signed`, signature détachée.
+        let formatted = inner.formatted();
+        let content = formatted.strip_suffix(b"\r\n").unwrap_or(&formatted);
+        let signature =
+            crate::openpgp::sign_detached(content, key, passphrase.as_deref()).map_err(seal_err)?;
+        let signed = inner.add_to(MultiPart::signed(
+            "application/pgp-signature".into(),
+            "pgp-sha256".into(),
+        ));
+        inner = Body::Multi(signed.singlepart(pgp_part("application/pgp-signature", signature)?));
+    }
+    if encrypt {
+        // Chiffré (et signé) : la signature voyage dans le message chiffré, une seule enveloppe OpenPGP.
+        let recipients: Vec<_> = seal.recipients.iter().collect();
+        let signer = seal.signer.as_ref().map(|(k, p)| (k, p.as_deref()));
+        let armored = crate::openpgp::encrypt_to(&inner.formatted(), &recipients, signer)
+            .map_err(seal_err)?;
+        let encrypted = MultiPart::encrypted("application/pgp-encrypted".into())
+            .singlepart(pgp_part("application/pgp-encrypted", "Version: 1".into())?)
+            .singlepart(pgp_part("application/octet-stream", armored)?);
+        inner = Body::Multi(encrypted);
+    }
+    inner.into_message(b)
 }
 
 fn transport(account: &Account, cred: &Credential) -> Result<AsyncSmtpTransport<Tokio1Executor>> {
@@ -277,13 +383,61 @@ fn transport(account: &Account, cred: &Credential) -> Result<AsyncSmtpTransport<
 
 /// Envoie le message et renvoie sa forme brute (pour en garder une copie dans « Envoyés »).
 pub async fn send(account: &Account, cred: &Credential, out: &OutgoingMessage) -> Result<Vec<u8>> {
-    let msg = build_message(account, out)?;
+    send_message(account, cred, build_message(account, out)?).await
+}
+
+/// Envoie un message construit par `build_message`.
+async fn send_message(account: &Account, cred: &Credential, msg: Message) -> Result<Vec<u8>> {
     let raw = msg.formatted();
     transport(account, cred)?
         .send(msg)
         .await
         .map_err(send_err)?;
     Ok(raw)
+}
+
+/// Message déjà construit (signé, chiffré) prêt à partir : MIME brut et enveloppe SMTP (qui garde le Bcc, absent du MIME).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sealed {
+    pub raw: Vec<u8>,
+    pub from: Option<String>,
+    pub to: Vec<String>,
+}
+
+impl Sealed {
+    pub fn of(message: &Message) -> Self {
+        let envelope = message.envelope();
+        Self {
+            raw: message.formatted(),
+            from: envelope.from().map(ToString::to_string),
+            to: envelope.to().iter().map(ToString::to_string).collect(),
+        }
+    }
+
+    fn envelope(&self) -> Result<lettre::address::Envelope> {
+        let from = self
+            .from
+            .as_deref()
+            .map(str::parse)
+            .transpose()
+            .map_err(smtp_err)?;
+        let to = self
+            .to
+            .iter()
+            .map(|a| a.parse())
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(smtp_err)?;
+        lettre::address::Envelope::new(from, to).map_err(smtp_err)
+    }
+}
+
+/// Envoie un message déjà construit, tel quel ; rend sa forme brute (copie dans « Envoyés »).
+pub async fn send_sealed(account: &Account, cred: &Credential, sealed: &Sealed) -> Result<Vec<u8>> {
+    transport(account, cred)?
+        .send_raw(&sealed.envelope()?, &sealed.raw)
+        .await
+        .map_err(send_err)?;
+    Ok(sealed.raw.clone())
 }
 
 /// Vérifie la connexion + l'authentification SMTP sans envoyer de message.
@@ -326,6 +480,8 @@ mod tests {
             attachments,
             draft_id: None,
             from_email: None,
+            pgp_sign: false,
+            pgp_encrypt: false,
         }
     }
 
@@ -436,5 +592,119 @@ mod tests {
             data_base64: "!!!".into(),
         };
         assert!(build_message(&account(), &outgoing(vec![bad], None)).is_err());
+    }
+
+    /// Relit ce que `build_sealed` écrit avec le code de lecture (`openpgp`) : signature valide, déchiffrement, texte intact.
+    mod sealed {
+        use super::*;
+        use crate::openpgp::tests::keygen;
+        use crate::openpgp::{
+            decrypt, public_of, shape, verify_detached, SecretKey, Shape, SigState,
+        };
+
+        fn attachment() -> OutgoingAttachment {
+            OutgoingAttachment {
+                filename: "a.txt".into(),
+                mime_type: "text/plain".into(),
+                data_base64: STANDARD.encode("pièce jointe\nsur deux lignes"),
+            }
+        }
+
+        fn signed_valid(raw: &[u8], key: &pgp::composed::SignedSecretKey) -> bool {
+            let Some(Shape::Signed { content, signature }) = shape(raw) else {
+                return false;
+            };
+            verify_detached(&signature, &content, &[public_of(key)])
+                .is_some_and(|v| v.state == SigState::Valid)
+        }
+
+        #[test]
+        fn signe_un_texte_simple_un_html_et_des_pieces_jointes() {
+            let key = keygen("Moi <me@x.fr>", None);
+            let seal = Seal {
+                signer: Some((key.clone(), None)),
+                recipients: vec![],
+            };
+            for (html, attachments) in [
+                (None, vec![]),
+                (Some("<p>Bonjour <b>Bob</b></p>"), vec![]),
+                (None, vec![attachment()]),
+                (Some("<p>Salut é</p>"), vec![attachment()]),
+            ] {
+                let out = outgoing(attachments, html);
+                let raw = build_sealed(&account(), &out, &seal).unwrap().formatted();
+                assert!(signed_valid(&raw, &key), "html={html:?}");
+            }
+        }
+
+        #[test]
+        fn chiffre_pour_tous_et_pour_soi_puis_se_relit() {
+            let me = keygen("Moi <me@x.fr>", None);
+            let bob = keygen("Bob <bob@x.fr>", Some("sésame"));
+            let eve = keygen("Eve <eve@x.fr>", None);
+            let seal = Seal {
+                signer: Some((me.clone(), None)),
+                recipients: vec![public_of(&bob), public_of(&me)],
+            };
+            let mut out = outgoing(vec![attachment()], Some("<p>Secret</p>"));
+            out.bcc = vec!["caché@x.fr".into()];
+            let raw = build_sealed(&account(), &out, &seal).unwrap().formatted();
+            let text = String::from_utf8_lossy(&raw);
+            // Rien de lisible dans le message, et le Bcc n'apparaît pas dans les en-têtes.
+            assert!(!text.contains("Bonjour") && !text.contains("Secret"));
+            assert!(!text.contains("caché@x.fr"));
+            assert!(text.contains("multipart/encrypted"));
+
+            let Some(Shape::Encrypted { armored, mime }) = shape(&raw) else {
+                panic!("forme chiffrée attendue")
+            };
+            assert!(mime);
+            let read = |k: &pgp::composed::SignedSecretKey, pw: Option<&str>| {
+                decrypt(
+                    &armored,
+                    &[SecretKey {
+                        key: k.clone(),
+                        fingerprint: String::new(),
+                        passphrase: pw.map(str::to_string),
+                    }],
+                    &[public_of(&me)],
+                )
+            };
+            // Bob (clé verrouillée) et nous-mêmes relisons ; Eve non.
+            let for_bob = read(&bob, Some("sésame")).unwrap();
+            let mine = read(&me, None).unwrap();
+            assert!(read(&eve, None).is_err());
+            assert!(read(&bob, None).is_err(), "sans la phrase secrète de Bob");
+            for d in [&for_bob, &mine] {
+                // Une seule enveloppe : la signature est dans le message chiffré, le texte y est.
+                let plain = String::from_utf8_lossy(&d.data);
+                assert!(plain.contains("Secret") && !plain.contains("multipart/signed"));
+            }
+            assert!(for_bob
+                .signature
+                .is_some_and(|s| s.state == SigState::Valid));
+        }
+
+        #[test]
+        fn une_phrase_fausse_ou_absente_est_signalee() {
+            let key = keygen("Moi <me@x.fr>", Some("bonne"));
+            for pw in [None, Some("mauvaise".to_string())] {
+                let seal = Seal {
+                    signer: Some((key.clone(), pw)),
+                    recipients: vec![],
+                };
+                let err = build_sealed(&account(), &outgoing(vec![], None), &seal).unwrap_err();
+                assert!(
+                    err.to_wire().contains("pgp.passphrase_required"),
+                    "{}",
+                    err.to_wire()
+                );
+            }
+            let seal = Seal {
+                signer: Some((key, Some("bonne".into()))),
+                recipients: vec![],
+            };
+            assert!(build_sealed(&account(), &outgoing(vec![], None), &seal).is_ok());
+        }
     }
 }

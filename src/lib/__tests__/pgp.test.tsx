@@ -6,6 +6,11 @@ import { PgpBanner } from "@/components/PgpStatus";
 import type { DetailMessage, PgpInspection } from "@/lib/api";
 import { i18next } from "@/lib/i18n";
 import { demoBackend } from "@/lib/mock";
+import { BackendError } from "@/lib/backendError";
+import { emptyDraft, toOutgoing } from "@/lib/compose";
+import { useComposer } from "@/lib/composer";
+import { useMail } from "@/lib/store";
+import { FULL_CAPABILITIES, type Backend } from "@/lib/api";
 
 beforeAll(async () => {
   await i18next.changeLanguage("en");
@@ -58,5 +63,27 @@ describe("PGP", () => {
     expect(await demoBackend.pgpRecipientKey("demo@example.com")).toBeNull();
     await expect(demoBackend.pgpSetSigningKey("pro", "alex@atelier-nord.fr", pub.fingerprint)).rejects.toThrow();
     await demoBackend.pgpDeleteKey(pub.fingerprint);
+  });
+
+  it("l'envoi OpenPGP transmet la phrase, et un refus rouvre le brouillon avec le champ sans la garder", async () => {
+    vi.useFakeTimers();
+    try {
+      const refused = new BackendError({ code: "pgp.passphrase_required", args: {}, message: "locked" });
+      const sendEmail = vi.fn(() => Promise.reject(refused));
+      useMail.setState({ backend: { ...demoBackend, demo: false, can: FULL_CAPABILITIES, sendEmail } as Backend, toasts: [] });
+      const draft = { ...emptyDraft("a"), to: [{ address: "bob@x.fr", name: null }], subject: "S", html: "<p>x</p>", pgpSign: true, pgpEncrypt: true, pgpPassphrase: "sésame" };
+      expect(toOutgoing(draft)).toMatchObject({ pgpSign: true, pgpEncrypt: true });
+      expect(JSON.stringify(toOutgoing(draft))).not.toContain("sésame");
+      useComposer.setState({ draft });
+      useComposer.getState().send(true);
+      await vi.advanceTimersByTimeAsync(5100);
+      expect(sendEmail).toHaveBeenCalledWith("a", expect.objectContaining({ pgpSign: true }), "sésame");
+      const reopened = useComposer.getState().draft;
+      expect(reopened).toMatchObject({ pgpAskPassphrase: true, pgpSign: true });
+      expect(reopened?.pgpPassphrase).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+      useComposer.setState({ draft: null });
+    }
   });
 });

@@ -73,5 +73,13 @@
   "scheduleFailed": "Couldn't schedule — {{error}}",
   "editFailed": "Couldn't edit — {{error}}",
   "sendCancelled": "Send cancelled",
-  "scheduledAt": "Scheduled — {{when}}"
+  "scheduledAt": "Scheduled — {{when}}",
+  "pgp": {
+    "sign": "Sign with OpenPGP",
+    "encrypt": "Encrypt with OpenPGP",
+    "noOwnKey": "No OpenPGP key is set for {{email}}. Choose one in Settings › Security.",
+    "missing_one": "No accepted OpenPGP key for {{list}}: the message can't be encrypted.",
+    "missing_other": "No accepted OpenPGP key for {{list}}: the message can't be encrypted.",
+    "passphrase": "Key passphrase"
+  }
 }

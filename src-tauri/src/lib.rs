@@ -21,6 +21,7 @@ mod mail;
 mod mcp;
 mod native_text;
 mod openpgp;
+mod pgp_send;
 mod pgp_store;
 mod picks;
 mod private;

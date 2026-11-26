@@ -349,6 +349,8 @@ mod tests {
             }],
             draft_id: Some(draft_id.into()),
             from_email: None,
+            pgp_sign: false,
+            pgp_encrypt: false,
         }
     }
 

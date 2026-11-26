@@ -8,7 +8,7 @@ import { useMail } from "../store";
 
 let scheduleSend: ReturnType<typeof vi.fn>;
 let cancelScheduled: ReturnType<typeof vi.fn>;
-const queued: OutgoingMessage = { to: ["Bob <bob@x.fr>"], cc: [], bcc: [], subject: "Devis", bodyText: "Bonjour", bodyHtml: "<p>Bonjour</p>", references: [], attachments: [], draftId: "d-1" };
+const queued: OutgoingMessage = { to: ["Bob <bob@x.fr>"], cc: [], bcc: [], subject: "Devis", bodyText: "Bonjour", bodyHtml: "<p>Bonjour</p>", references: [], attachments: [], draftId: "d-1", pgpSign: false, pgpEncrypt: false };
 
 beforeEach(() => {
   scheduleSend = vi.fn(() => Promise.resolve(42));
@@ -31,7 +31,7 @@ describe("heures proposées", () => {
 describe("envoi programmé", () => {
   it("met le message en file avec l'heure en secondes, ferme le panneau et propose d'annuler", async () => {
     await useComposer.getState().schedule(1_800_000_123_456);
-    expect(scheduleSend).toHaveBeenCalledWith("a", expect.objectContaining({ subject: "Devis" }), 1_800_000_123);
+    expect(scheduleSend).toHaveBeenCalledWith("a", expect.objectContaining({ subject: "Devis" }), 1_800_000_123, undefined);
     expect(useComposer.getState().draft).toBeNull();
     expect(useMail.getState().toasts.at(-1)).toMatchObject({ actionLabel: "Annuler" });
   });

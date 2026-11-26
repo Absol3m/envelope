@@ -5,10 +5,13 @@
 
 use mail_parser::{MessageParser, MimeHeaders};
 use pgp::composed::{
-    CleartextSignedMessage, Deserializable, DetachedSignature, Message, SignedPublicKey,
-    SignedSecretKey,
+    CleartextSignedMessage, Deserializable, DetachedSignature, Message, MessageBuilder,
+    SignedPublicKey, SignedSecretKey,
 };
+use pgp::crypto::hash::HashAlgorithm;
+use pgp::crypto::sym::SymmetricKeyAlgorithm;
 use pgp::types::{KeyDetails, Password, VerifyingKey};
+use rand::thread_rng;
 use serde::Serialize;
 
 /// Taille maximale d'un élément PGP lu (clé, message, signature) : borne contre un message forgé.
@@ -383,6 +386,98 @@ fn inner_signature(plain: &Message<'_>, publics: &[PublicKey]) -> PgpSignature {
     valid.map_or_else(PgpSignature::unknown, |k| {
         PgpSignature::of(SigState::Valid, k)
     })
+}
+
+/// Échec d'une signature ou d'un chiffrement à l'envoi.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SealError {
+    /// La clé de signature est verrouillée : phrase secrète absente ou fausse.
+    Passphrase,
+    /// Un destinataire n'a pas de sous-clé de chiffrement utilisable.
+    NoEncryptionKey,
+    Failed,
+}
+
+/// Sous-clé de signature de la clé, s'il y en a une (sinon la clé principale signe).
+fn signing_subkey(key: &SignedSecretKey) -> Option<&pgp::composed::SignedSecretSubKey> {
+    key.secret_subkeys
+        .iter()
+        .find(|s| s.signatures.iter().any(|g| g.key_flags().sign()))
+}
+
+/// Clé qui signe, pour un message OpenPGP (`MessageBuilder::sign`).
+fn signing_key(key: &SignedSecretKey) -> &dyn pgp::types::SigningKey {
+    match signing_subkey(key) {
+        Some(s) => &s.key,
+        None => &key.primary_key,
+    }
+}
+
+/// Signature détachée (armurée) de `content`, avec la sous-clé de signature si la clé en a une, sinon la clé principale.
+pub fn sign_detached(
+    content: &[u8],
+    key: &SignedSecretKey,
+    passphrase: Option<&str>,
+) -> std::result::Result<String, SealError> {
+    let password = passphrase.map_or_else(Password::empty, Password::from);
+    let hash = HashAlgorithm::Sha256;
+    // `sign_binary_data` veut un type concret (pas `dyn`) : deux appels, une seule règle de choix de clé.
+    let signed = match signing_subkey(key) {
+        Some(s) => {
+            DetachedSignature::sign_binary_data(thread_rng(), &s.key, &password, hash, content)
+        }
+        None => DetachedSignature::sign_binary_data(
+            thread_rng(),
+            &key.primary_key,
+            &password,
+            hash,
+            content,
+        ),
+    };
+    match signed {
+        Ok(sig) => sig
+            .to_armored_string(Default::default())
+            .map_err(|_| SealError::Failed),
+        Err(_) if locked(key) => Err(SealError::Passphrase),
+        Err(_) => Err(SealError::Failed),
+    }
+}
+
+/// Message chiffré (armuré) pour tous les `recipients`, avec la sous-clé de chiffrement de chacun. Avec `signer`, la
+/// signature est portée **dans** le message chiffré (une seule enveloppe OpenPGP, comme GnuPG et Thunderbird : le
+/// destinataire ne voit la signature qu'après avoir déchiffré).
+pub fn encrypt_to(
+    data: &[u8],
+    recipients: &[&PublicKey],
+    signer: Option<(&SignedSecretKey, Option<&str>)>,
+) -> std::result::Result<String, SealError> {
+    let mut builder = MessageBuilder::from_bytes("", data.to_vec())
+        .seipd_v1(thread_rng(), SymmetricKeyAlgorithm::AES256);
+    for r in recipients {
+        let sub = r
+            .cert
+            .public_subkeys
+            .iter()
+            .find(|s| {
+                s.signatures.iter().any(|g| {
+                    let f = g.key_flags();
+                    f.encrypt_comms() || f.encrypt_storage()
+                })
+            })
+            .ok_or(SealError::NoEncryptionKey)?;
+        builder
+            .encrypt_to_key(thread_rng(), sub)
+            .map_err(|_| SealError::Failed)?;
+    }
+    if let Some((key, passphrase)) = signer {
+        let password = passphrase.map_or_else(Password::empty, Password::from);
+        builder.sign(signing_key(key), password, HashAlgorithm::Sha256);
+    }
+    match builder.to_armored_string(thread_rng(), Default::default()) {
+        Ok(armored) => Ok(armored),
+        Err(_) if signer.is_some_and(|(k, _)| locked(k)) => Err(SealError::Passphrase),
+        Err(_) => Err(SealError::Failed),
+    }
 }
 
 #[cfg(test)]

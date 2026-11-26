@@ -154,7 +154,8 @@
       "unreadable": "Unreadable scheduled message: {{detail}}",
       "not_found": "Send not found, or already in progress",
       "missed": "The app wasn't open at the scheduled time: send it now or edit it",
-      "interrupted": "Send interrupted: check the Sent folder before sending it again"
+      "interrupted": "Send interrupted: check the Sent folder before sending it again",
+      "sealed_missing": "The signed or encrypted message is unreadable: write it again"
     },
     "templates": {
       "name_length": "Template name: 1 to {{max}} characters",
@@ -180,7 +181,12 @@
       "invalid_key": "This is not a valid OpenPGP key",
       "interrupted": "Decryption interrupted: {{detail}}",
       "address_not_in_key": "This key has no identity for {{address}}",
-      "no_secret_key": "This key has no private part: it cannot sign"
+      "no_secret_key": "This key has no private part: it cannot sign",
+      "passphrase_required": "The signing key is locked: its passphrase is missing or wrong",
+      "no_encryption_subkey": "A recipient's key has no encryption subkey",
+      "seal_failed": "Couldn't sign or encrypt the message",
+      "no_signing_key": "No OpenPGP key is set for {{address}}: choose one in Settings",
+      "no_recipient_key": "No accepted OpenPGP key for {{address}}"
     }
   },
   "load": "Couldn't load",

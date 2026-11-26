@@ -73,5 +73,13 @@
   "scheduleFailed": "Programmation impossible — {{error}}",
   "editFailed": "Modification impossible — {{error}}",
   "sendCancelled": "Envoi annulé",
-  "scheduledAt": "Envoi programmé — {{when}}"
+  "scheduledAt": "Envoi programmé — {{when}}",
+  "pgp": {
+    "sign": "Signer avec OpenPGP",
+    "encrypt": "Chiffrer avec OpenPGP",
+    "noOwnKey": "Aucune clé OpenPGP n'est définie pour {{email}}. Choisissez-en une dans Réglages › Sécurité.",
+    "missing_one": "Aucune clé OpenPGP acceptée pour {{list}} : le message ne peut pas être chiffré.",
+    "missing_other": "Aucune clé OpenPGP acceptée pour {{list}} : le message ne peut pas être chiffré.",
+    "passphrase": "Phrase secrète de la clé"
+  }
 }

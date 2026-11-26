@@ -73,7 +73,7 @@ fn cached_passphrase(fp: &str) -> Option<String> {
     }
 }
 
-fn remember_passphrase(fp: &str, pass: &str) {
+pub(crate) fn remember_passphrase(fp: &str, pass: &str) {
     if let Ok(mut c) = passphrases().lock() {
         c.insert(
             fp.to_string(),
@@ -331,29 +331,43 @@ async fn public_keys(pool: &SqlitePool) -> Result<Vec<PublicKey>> {
         .collect())
 }
 
-/// Clés privées, avec la phrase secrète connue (saisie à l'instant, sinon gardée en mémoire). Les lectures du
-/// trousseau sont les plus lentes : on ne les fait que pour un message réellement chiffré.
+/// Clé privée d'une empreinte, avec la phrase secrète connue (saisie à l'instant, sinon gardée en mémoire).
+pub async fn secret_key(fingerprint: &str, typed: Option<&str>) -> Result<Option<SecretKey>> {
+    let Some(armored) = secrets::load_pgp_secret(fingerprint).await? else {
+        return Ok(None);
+    };
+    if armored.len() > MAX_ARMORED {
+        return Ok(None);
+    }
+    Ok(SignedSecretKey::from_string(&armored)
+        .ok()
+        .map(|(key, _)| SecretKey {
+            key,
+            fingerprint: fingerprint.to_string(),
+            passphrase: typed
+                .map(str::to_string)
+                .or_else(|| cached_passphrase(fingerprint)),
+        }))
+}
+
+/// Clés privées, avec la phrase secrète connue. Les lectures du trousseau sont les plus lentes : on ne les fait que
+/// pour un message réellement chiffré.
 async fn secret_keys(pool: &SqlitePool, typed: Option<&str>) -> Result<Vec<SecretKey>> {
     let mut out = Vec::new();
     for fingerprint in secret_fingerprints(pool).await? {
-        let Some(armored) = secrets::load_pgp_secret(&fingerprint).await? else {
-            continue;
-        };
-        if armored.len() > MAX_ARMORED {
-            continue;
-        }
-        if let Ok((key, _)) = SignedSecretKey::from_string(&armored) {
-            let passphrase = typed
-                .map(str::to_string)
-                .or_else(|| cached_passphrase(&fingerprint));
-            out.push(SecretKey {
-                key,
-                fingerprint,
-                passphrase,
-            });
-        }
+        out.extend(secret_key(&fingerprint, typed).await?);
     }
     Ok(out)
+}
+
+/// Certificat public d'une empreinte de l'annuaire.
+pub async fn public_key(pool: &SqlitePool, fingerprint: &str) -> Result<Option<PublicKey>> {
+    let armored: Option<String> =
+        sqlx::query_scalar("SELECT armored FROM pgp_keys WHERE fingerprint = ?")
+            .bind(fingerprint)
+            .fetch_optional(pool)
+            .await?;
+    Ok(armored.and_then(|a| openpgp::parse_public(&a)))
 }
 
 fn text_of(data: &[u8], mime: bool) -> (Option<String>, Option<String>) {

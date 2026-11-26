@@ -351,10 +351,10 @@ function DraftsSection() {
 const systemLockLabel = () => tr(isMac ? "settings:lock.systemMac" : isWindows ? "settings:lock.systemWindows" : "settings:lock.systemOther");
 const AUTO_LOCK = [0, 60, 300, 900, 1800, 3600];
 
-/** Clés OpenPGP : annuaire des clés publiques, clés privées (trousseau du système). */
 /** Adresse d'une identité OpenPGP « Nom <adresse> » (ou « adresse »), en minuscules. */
 const userIdEmail = (id: string) => (/<([^<>]+)>\s*$/.exec(id)?.[1] ?? id).trim().toLowerCase();
 
+/** Clés OpenPGP : annuaire des clés publiques, clés privées (trousseau du système). */
 function PgpSection() {
   const { accounts, backend, toast } = useMail(useShallow((s) => ({ accounts: s.accounts, backend: s.backend, toast: s.toast })));
   const [keys, setKeys] = useState<PgpKeyInfo[]>([]);

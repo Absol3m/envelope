@@ -13,4 +13,12 @@ draftId?: string,
 /**
  * Adresse d'expéditeur : celle du compte (défaut) ou l'un de ses alias.
  */
-fromEmail?: string, };
+fromEmail?: string, 
+/**
+ * Signer (OpenPGP) avec la clé associée à l'adresse d'expéditeur.
+ */
+pgpSign: boolean, 
+/**
+ * Chiffrer (OpenPGP) pour tous les destinataires et pour l'expéditeur.
+ */
+pgpEncrypt: boolean, };
