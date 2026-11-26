@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState, type ComponentType } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { LANGUAGES, parseLangPref, setLanguage, type LangPref } from "@/lib/i18n";
 import { pref } from "@/lib/pref";
-import { isTauri, type Account, type LockMethod, type McpInfo, type PgpKeyInfo } from "@/lib/api";
-import { senderLabel } from "@/lib/compose";
+import { isTauri, type Account, type LockMethod, type McpInfo, type PgpAcceptance, type PgpAcceptanceInfo, type PgpKeyInfo, type PgpSigningInfo } from "@/lib/api";
+import { senderLabel, senderOptions } from "@/lib/compose";
 import { relativeTime } from "@/lib/format";
 import { serverDraftsEnabled, setServerDrafts } from "@/lib/composer";
 import { customName, FREE_FONTS, type FontPref } from "@/lib/font";
@@ -352,13 +352,26 @@ const systemLockLabel = () => tr(isMac ? "settings:lock.systemMac" : isWindows ?
 const AUTO_LOCK = [0, 60, 300, 900, 1800, 3600];
 
 /** Clés OpenPGP : annuaire des clés publiques, clés privées (trousseau du système). */
+/** Adresse d'une identité OpenPGP « Nom <adresse> » (ou « adresse »), en minuscules. */
+const userIdEmail = (id: string) => (/<([^<>]+)>\s*$/.exec(id)?.[1] ?? id).trim().toLowerCase();
+
 function PgpSection() {
-  const { backend, toast } = useMail(useShallow((s) => ({ backend: s.backend, toast: s.toast })));
+  const { accounts, backend, toast } = useMail(useShallow((s) => ({ accounts: s.accounts, backend: s.backend, toast: s.toast })));
   const [keys, setKeys] = useState<PgpKeyInfo[]>([]);
+  const [accepted, setAccepted] = useState<PgpAcceptanceInfo[]>([]);
+  const [signing, setSigning] = useState<PgpSigningInfo[]>([]);
   const [pasted, setPasted] = useState("");
   const [busy, setBusy] = useState(false);
-  const reload = useCallback(() => backend.pgpListKeys().then(setKeys, () => setKeys([])), [backend]);
+  const reload = useCallback(() => Promise.all([
+    backend.pgpListKeys().then(setKeys, () => setKeys([])),
+    backend.pgpListAcceptances().then(setAccepted, () => setAccepted([])),
+    backend.pgpListSigningKeys().then(setSigning, () => setSigning([])),
+  ]).then(() => undefined), [backend]);
   useEffect(() => { void reload(); }, [reload]);
+  const fail = (e: unknown) => toast({ message: tr("settings:pgp.saveFailed", { error: errText(e) }), tone: "error", duration: 6000 });
+  const decide = (fingerprint: string, email: string, decision: PgpAcceptance) => backend.pgpSetAcceptance(fingerprint, email, decision).then(reload, fail);
+  const sign = (accountId: string, email: string, fingerprint: string) => backend.pgpSetSigningKey(accountId, email, fingerprint || null).then(reload, fail);
+  const privateKeys = keys.filter((k) => k.hasSecret && !k.revoked);
 
   const imported = (k: PgpKeyInfo | null) => { if (k) toast({ message: tr("settings:pgp.imported", { name: k.userIds[0] ?? k.fingerprint }) }); void reload(); };
   const run = async (job: () => Promise<void>) => {
@@ -375,7 +388,7 @@ function PgpSection() {
       {keys.length === 0 ? <p className="text-[13px] text-muted">{tr("settings:pgp.empty")}</p> : (
         <ul className="flex max-w-[560px] flex-col gap-1.5">
           {keys.map((k) => (
-            <li key={k.fingerprint} className="flex items-center gap-2.5 rounded-lg bg-bg-subtle px-3 py-2 text-[13px]">
+            <li key={k.fingerprint} className="flex flex-wrap items-center gap-2.5 rounded-lg bg-bg-subtle px-3 py-2 text-[13px]">
               <KeyRound size={15} className="shrink-0 text-muted" />
               <div className="min-w-0 flex-1">
                 <div className="selectable truncate font-medium">{k.userIds[0] ?? k.fingerprint}</div>
@@ -383,6 +396,21 @@ function PgpSection() {
               </div>
               <span className="shrink-0 text-[12px] text-muted">{k.revoked ? tr("settings:pgp.revoked") : k.hasSecret ? tr("settings:pgp.private") : tr("settings:pgp.public")}</span>
               <button type="button" onClick={() => void remove(k)} className={btnGhost}>{tr("settings:pgp.delete")}</button>
+              {!k.hasSecret && !k.revoked && (
+                <div className="flex basis-full flex-col gap-1">
+                  {[...new Set(k.userIds.map(userIdEmail))].map((email) => (
+                    <label key={email} className="flex items-center gap-2 text-[12px]">
+                      <span className="selectable min-w-0 flex-1 truncate text-muted">{tr("settings:pgp.trustFor", { email })}</span>
+                      <select aria-label={tr("settings:pgp.trustFor", { email })} value={accepted.find((a) => a.fingerprint === k.fingerprint && a.email === email)?.decision ?? ""} onChange={(e) => void decide(k.fingerprint, email, e.target.value as PgpAcceptance)} className={cn(inputCls, "h-7 w-44 px-2 text-[12px]")}>
+                        <option value="" disabled>{tr("settings:pgp.trust.none")}</option>
+                        <option value="unverified">{tr("settings:pgp.trust.unverified")}</option>
+                        <option value="verified">{tr("settings:pgp.trust.verified")}</option>
+                        <option value="rejected">{tr("settings:pgp.trust.rejected")}</option>
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -396,6 +424,24 @@ function PgpSection() {
           <button type="button" disabled={busy || !pasted.trim()} onClick={() => void run(async () => { imported(await backend.pgpImportKey(pasted)); setPasted(""); })} className={btnPrimary}>{tr("settings:pgp.add")}</button>
         </div>
       </div>
+      {privateKeys.length > 0 && (
+        <div className="mt-4 flex max-w-[560px] flex-col gap-1.5">
+          <h4 className="text-[13px] font-medium">{tr("settings:pgp.signingTitle")}</h4>
+          <p className="text-[12px] text-muted">{tr("settings:pgp.signingHint")}</p>
+          {senderOptions(accounts).map((o) => {
+            const email = (o.alias || accounts.find((a) => a.id === o.accountId)?.email || "").toLowerCase();
+            return (
+              <label key={o.key} className="flex items-center gap-2 text-[12px]">
+                <span className="selectable min-w-0 flex-1 truncate">{o.label}</span>
+                <select aria-label={tr("settings:pgp.signingFor", { email })} value={signing.find((x) => x.accountId === o.accountId && x.email === email)?.fingerprint ?? ""} onChange={(e) => void sign(o.accountId, email, e.target.value)} className={cn(inputCls, "h-7 w-56 px-2 text-[12px]")}>
+                  <option value="">{tr("settings:pgp.noSigning")}</option>
+                  {privateKeys.map((k) => <option key={k.fingerprint} value={k.fingerprint}>{k.userIds[0] ?? k.fingerprint}</option>)}
+                </select>
+              </label>
+            );
+          })}
+        </div>
+      )}
     </Section>
   );
 }

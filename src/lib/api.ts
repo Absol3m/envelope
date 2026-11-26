@@ -31,9 +31,12 @@ export type { LockStatus } from "./bindings/LockStatus";
 export type { McpInfo } from "./bindings/McpInfo";
 export type { NewAccount } from "./bindings/NewAccount";
 export type { DecryptError } from "./bindings/DecryptError";
+export type { PgpAcceptance } from "./bindings/PgpAcceptance";
+export type { PgpAcceptanceInfo } from "./bindings/PgpAcceptanceInfo";
 export type { PgpInspection } from "./bindings/PgpInspection";
 export type { PgpKeyInfo } from "./bindings/PgpKeyInfo";
 export type { PgpSignature } from "./bindings/PgpSignature";
+export type { PgpSigningInfo } from "./bindings/PgpSigningInfo";
 export type { SigState } from "./bindings/SigState";
 export type { OAuthProviderId } from "./bindings/OAuthProviderId";
 export type { OAuthStatus } from "./bindings/OAuthStatus";
@@ -50,8 +53,11 @@ export type { ThreadDetail } from "./bindings/ThreadDetail";
 export type { ThreadSummary } from "./bindings/ThreadSummary";
 export type { Unsubscribe } from "./bindings/Unsubscribe";
 import type { Account } from "./bindings/Account";
+import type { PgpAcceptance } from "./bindings/PgpAcceptance";
+import type { PgpAcceptanceInfo } from "./bindings/PgpAcceptanceInfo";
 import type { PgpInspection } from "./bindings/PgpInspection";
 import type { PgpKeyInfo } from "./bindings/PgpKeyInfo";
+import type { PgpSigningInfo } from "./bindings/PgpSigningInfo";
 import type { Addr } from "./bindings/Addr";
 import type { Detected } from "./bindings/Detected";
 import type { DiskEncryption } from "./bindings/DiskEncryption";
@@ -175,6 +181,14 @@ export interface Backend {
   /** Sélecteur natif de fichier puis import ; `null` si annulé. */
   pgpImportPick(): Promise<PgpKeyInfo | null>;
   pgpDeleteKey(fingerprint: string): Promise<void>;
+  /** Décisions de confiance (clé, adresse). */
+  pgpListAcceptances(): Promise<PgpAcceptanceInfo[]>;
+  pgpSetAcceptance(fingerprint: string, email: string, decision: PgpAcceptance): Promise<void>;
+  /** Clés de signature par adresse d'expéditeur. */
+  pgpListSigningKeys(): Promise<PgpSigningInfo[]>;
+  pgpSetSigningKey(accountId: string, email: string, fingerprint: string | null): Promise<void>;
+  /** Empreinte de la clé qui servira à chiffrer à cette adresse, ou null : aucune clé acceptée. */
+  pgpRecipientKey(email: string): Promise<string | null>;
   /** Signature et contenu déchiffré d'un message PGP ; `null` : le message n'est pas du PGP. `passphrase` : phrase secrète de la clé privée. */
   pgpInspect(messageId: number, passphrase?: string): Promise<PgpInspection | null>;
   lockStatus(): Promise<LockStatus>;
@@ -281,6 +295,11 @@ export const tauriBackend: Backend = {
   pgpImportKey: (armored) => invoke("pgp_import_key", { armored }),
   pgpImportPick: () => invoke("pgp_import_pick"),
   pgpDeleteKey: (fingerprint) => invoke("pgp_delete_key", { fingerprint }),
+  pgpListAcceptances: () => invoke("pgp_list_acceptances"),
+  pgpSetAcceptance: (fingerprint, email, decision) => invoke("pgp_set_acceptance", { fingerprint, email, decision }),
+  pgpListSigningKeys: () => invoke("pgp_list_signing_keys"),
+  pgpSetSigningKey: (accountId, email, fingerprint) => invoke("pgp_set_signing_key", { accountId, email, fingerprint }),
+  pgpRecipientKey: (email) => invoke("pgp_recipient_key", { email }),
   pgpInspect: (messageId, passphrase) => invoke("pgp_inspect", { messageId, passphrase: passphrase ?? null }),
   inlineImages: async (messageId) => {
     const ids = await invoke<Record<string, number>>("inline_images", { messageId });

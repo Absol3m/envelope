@@ -764,6 +764,51 @@ pub async fn pgp_import_pick(
 }
 
 #[tauri::command]
+pub async fn pgp_list_acceptances(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::pgp_store::PgpAcceptanceInfo>> {
+    crate::pgp_store::list_acceptances(&state.db).await
+}
+
+#[tauri::command]
+pub async fn pgp_set_acceptance(
+    state: State<'_, AppState>,
+    fingerprint: String,
+    email: String,
+    decision: crate::pgp_store::Acceptance,
+) -> Result<()> {
+    crate::pgp_store::set_acceptance(&state.db, &fingerprint, &email, decision).await
+}
+
+#[tauri::command]
+pub async fn pgp_list_signing_keys(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::pgp_store::PgpSigningInfo>> {
+    crate::pgp_store::list_signing_keys(&state.db).await
+}
+
+#[tauri::command]
+pub async fn pgp_set_signing_key(
+    state: State<'_, AppState>,
+    account_id: String,
+    email: String,
+    fingerprint: Option<String>,
+) -> Result<()> {
+    crate::pgp_store::set_signing_key(&state.db, &account_id, &email, fingerprint.as_deref()).await
+}
+
+/// Clé à utiliser pour chiffrer à une adresse (empreinte), ou `None` : l'interface prévient avant l'envoi.
+#[tauri::command]
+pub async fn pgp_recipient_key(
+    state: State<'_, AppState>,
+    email: String,
+) -> Result<Option<String>> {
+    Ok(crate::pgp_store::recipient_key(&state.db, &email)
+        .await?
+        .map(|(fingerprint, _)| fingerprint))
+}
+
+#[tauri::command]
 pub async fn pgp_delete_key(state: State<'_, AppState>, fingerprint: String) -> Result<()> {
     crate::pgp_store::delete_key(&state.db, &fingerprint).await
 }

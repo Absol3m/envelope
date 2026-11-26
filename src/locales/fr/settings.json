@@ -177,6 +177,18 @@
     "delete": "Supprimer",
     "deleteConfirm": "Supprimer cette clé ? Une clé privée est irrécupérable sans sauvegarde.",
     "deleted": "Clé supprimée",
-    "deleteFailed": "Impossible de supprimer la clé — {{error}}"
+    "deleteFailed": "Impossible de supprimer la clé — {{error}}",
+    "trustFor": "Confiance pour {{email}}",
+    "trust": {
+      "none": "Non acceptée",
+      "unverified": "Acceptée, non vérifiée",
+      "verified": "Vérifiée",
+      "rejected": "Refusée"
+    },
+    "saveFailed": "Enregistrement impossible — {{error}}",
+    "signingTitle": "Clé de signature",
+    "signingHint": "La clé qui signe les messages envoyés depuis chaque adresse. Un message n'est signé que si vous activez la signature en le rédigeant.",
+    "signingFor": "Clé de signature pour {{email}}",
+    "noSigning": "Aucune clé de signature"
   }
 }

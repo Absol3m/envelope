@@ -177,6 +177,18 @@
     "delete": "Delete",
     "deleteConfirm": "Delete this key? A private key can't be recovered unless you have a backup.",
     "deleted": "Key deleted",
-    "deleteFailed": "Couldn't delete the key — {{error}}"
+    "deleteFailed": "Couldn't delete the key — {{error}}",
+    "trustFor": "Trust for {{email}}",
+    "trust": {
+      "none": "Not accepted",
+      "unverified": "Accepted, unverified",
+      "verified": "Verified",
+      "rejected": "Rejected"
+    },
+    "saveFailed": "Couldn't save — {{error}}",
+    "signingTitle": "Signing key",
+    "signingHint": "The key that signs messages sent from each address. Sent messages are only signed when you turn signing on while writing.",
+    "signingFor": "Signing key for {{email}}",
+    "noSigning": "No signing key"
   }
 }

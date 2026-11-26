@@ -2,7 +2,7 @@ import { i18next, t } from "./i18n";
 import { isEmail, sameAddr } from "./utils";
 import { compileSpec, parseSearch, type SearchableMessage } from "./searchSpec";
 import type { FolderRole } from "./bindings/FolderRole";
-import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, PgpKeyInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
+import type { Account, Backend, ReminderKind, Rule, Detected, DiskEncryption, LockStatus, OutgoingMessage, Template, DetailAttachment, DetailMessage, FolderRow, McpInfo, PgpAcceptanceInfo, PgpKeyInfo, PgpSigningInfo, ThreadDetail, ThreadQuery, ThreadSummary } from "./api";
 
 /* Boîte de démonstration : données crédibles, en mémoire. Sert à présenter l'interface sans
    compte (et en navigateur, hors Tauri). Les actions (lire, suivre, archiver) y sont réelles. */
@@ -16,6 +16,8 @@ const LOCK: LockStatus = { method: "off", locked: false, timeoutSecs: 0, systemA
 const QUEUE: { id: number; accountId: string; message: OutgoingMessage; sendAt: number }[] = [];
 
 const PGP_KEYS: PgpKeyInfo[] = [];
+const PGP_ACCEPT: PgpAcceptanceInfo[] = [];
+const PGP_SIGNING: PgpSigningInfo[] = [];
 const TEMPLATES: Template[] = []; // rempli par `seed`, dans la langue active
 
 /** Compte IMAP type (champs communs aux comptes de la démo et des essais) : `over` précise ce qui change. */
@@ -449,8 +451,30 @@ export const demoBackend: Backend = {
   pgpDeleteKey: (fingerprint) => {
     const i = PGP_KEYS.findIndex((k) => k.fingerprint === fingerprint);
     if (i >= 0) PGP_KEYS.splice(i, 1);
+    // Comme le moteur (suppression en cascade) : plus de décision ni de clé de signature pour cette clé.
+    for (const list of [PGP_ACCEPT, PGP_SIGNING]) for (let j = list.length - 1; j >= 0; j--) if (list[j].fingerprint === fingerprint) list.splice(j, 1);
     return delay(undefined, 30);
   },
+  pgpListAcceptances: () => delay(PGP_ACCEPT.map((a) => ({ ...a })), 20),
+  pgpSetAcceptance: (fingerprint, email, decision) => {
+    const key = PGP_KEYS.find((k) => k.fingerprint === fingerprint);
+    if (!key || !key.userIds.some((u) => u.toLowerCase().includes(`<${email.toLowerCase()}>`) || u.toLowerCase() === email.toLowerCase())) return Promise.reject(new Error(t("errors:rust.pgp.address_not_in_key", { address: email })));
+    const hit = PGP_ACCEPT.find((a) => a.fingerprint === fingerprint && a.email === email.toLowerCase());
+    if (hit) hit.decision = decision;
+    else PGP_ACCEPT.push({ fingerprint, email: email.toLowerCase(), decision });
+    return delay(undefined, 30);
+  },
+  pgpListSigningKeys: () => delay(PGP_SIGNING.map((s) => ({ ...s })), 20),
+  pgpSetSigningKey: (accountId, email, fingerprint) => {
+    const i = PGP_SIGNING.findIndex((s) => s.accountId === accountId && s.email === email.toLowerCase());
+    if (i >= 0) PGP_SIGNING.splice(i, 1);
+    if (fingerprint) {
+      if (!PGP_KEYS.some((k) => k.fingerprint === fingerprint && k.hasSecret)) return Promise.reject(new Error(t("errors:rust.pgp.no_secret_key")));
+      PGP_SIGNING.push({ accountId, email: email.toLowerCase(), fingerprint });
+    }
+    return delay(undefined, 30);
+  },
+  pgpRecipientKey: (email) => delay(PGP_ACCEPT.find((a) => a.email === email.toLowerCase() && a.decision !== "rejected")?.fingerprint ?? null, 20),
   pgpInspect: () => delay(null, 10),
   lockStatus: () => delay({ ...LOCK }, 20),
   unlockPassword: (password) => (password === "demo1234" ? ((LOCK.locked = false), delay(undefined, 200)) : Promise.reject(new Error(t("demo:wrongPassword")))),

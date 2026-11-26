@@ -271,6 +271,42 @@ pub async fn set_signing_key(
     Ok(())
 }
 
+/// Une décision de confiance, telle que l'interface la liste.
+#[derive(Debug, Clone, SerdeSerialize, sqlx::FromRow, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct PgpAcceptanceInfo {
+    pub fingerprint: String,
+    pub email: String,
+    pub decision: Acceptance,
+}
+
+pub async fn list_acceptances(pool: &SqlitePool) -> Result<Vec<PgpAcceptanceInfo>> {
+    Ok(sqlx::query_as(
+        "SELECT fingerprint, email, decision FROM pgp_acceptance ORDER BY email, fingerprint",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Clé de signature d'une adresse d'expéditeur, telle que l'interface la liste.
+#[derive(Debug, Clone, SerdeSerialize, sqlx::FromRow, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct PgpSigningInfo {
+    pub account_id: String,
+    pub email: String,
+    pub fingerprint: String,
+}
+
+pub async fn list_signing_keys(pool: &SqlitePool) -> Result<Vec<PgpSigningInfo>> {
+    Ok(sqlx::query_as(
+        "SELECT account_id, email, fingerprint FROM pgp_signing_keys ORDER BY account_id, email",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
 pub async fn signing_fingerprint(
     pool: &SqlitePool,
     account_id: &str,
