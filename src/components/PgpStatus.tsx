@@ -45,7 +45,7 @@ const TONES = {
   locked: { icon: Lock, cls: "bg-warn/10", iconCls: "text-warn" },
 } as const;
 
-function Row({ tone, children }: { tone: keyof typeof TONES; children: ReactNode }) {
+export function Row({ tone, children }: { tone: keyof typeof TONES; children: ReactNode }) {
   const { icon: Icon, cls, iconCls } = TONES[tone];
   return (
     <div className={cn("anim-fade-in mt-3 flex items-start gap-2.5 rounded-lg px-3 py-2 text-[12.5px] text-fg", cls)}>

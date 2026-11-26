@@ -70,5 +70,15 @@
     "passphraseWrong": "The passphrase is missing or wrong. Try again.",
     "passphraseLabel": "Key passphrase",
     "decrypt": "Decrypt"
+  },
+  "smime": {
+    "valid": "S/MIME signature verified: signed by {{signer}}, a certificate your system trusts.",
+    "invalid": "Invalid S/MIME signature ({{signer}}): this message was altered after it was signed, or the signature is unreadable.",
+    "untrusted": "Signed by {{signer}}, but the certificate doesn't lead to an authority your system trusts (or isn't valid for email). Don't rely on this signature.",
+    "addressMismatch": "The certificate belongs to {{signer}}, not to the sender shown in From: this signature doesn't prove who sent the message.",
+    "noAddress": "The signing certificate contains no email address: it can't be tied to the sender.",
+    "timeMismatch": "Signature by {{signer}} is valid, but it was made more than an hour away from the message date: it may have been replayed.",
+    "unsupported": "Signed with an algorithm that isn't supported yet: the signature can't be verified.",
+    "encrypted": "Encrypted S/MIME message: opening these isn't supported yet."
   }
 }

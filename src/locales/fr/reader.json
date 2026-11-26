@@ -70,5 +70,15 @@
     "passphraseWrong": "La phrase secrète manque ou est fausse. Réessaie.",
     "passphraseLabel": "Phrase secrète de la clé",
     "decrypt": "Déchiffrer"
+  },
+  "smime": {
+    "valid": "Signature S/MIME vérifiée : signé par {{signer}}, un certificat reconnu par ton système.",
+    "invalid": "Signature S/MIME invalide ({{signer}}) : ce message a été modifié après sa signature, ou la signature est illisible.",
+    "untrusted": "Signé par {{signer}}, mais le certificat ne remonte pas à une autorité reconnue par ton système (ou n'est pas valable pour l'e-mail). Ne te fie pas à cette signature.",
+    "addressMismatch": "Le certificat appartient à {{signer}}, pas à l'expéditeur affiché dans From : cette signature ne prouve pas qui a envoyé le message.",
+    "noAddress": "Le certificat de signature ne contient aucune adresse e-mail : on ne peut pas le rattacher à l'expéditeur.",
+    "timeMismatch": "La signature de {{signer}} est valide, mais elle a été faite à plus d'une heure de la date du message : elle a peut-être été rejouée.",
+    "unsupported": "Signé avec un algorithme pas encore pris en charge : la signature ne peut pas être vérifiée.",
+    "encrypted": "Message S/MIME chiffré : l'ouverture de ces messages n'est pas encore prise en charge."
   }
 }

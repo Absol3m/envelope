@@ -66,20 +66,6 @@ pub enum Shape {
     Cleartext { armored: String },
 }
 
-/// Mêmes octets avec des fins de ligne CRLF, comme les signe un client (RFC 3156 §5) : le transport peut les avoir normalisées.
-fn crlf(data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len() + data.len() / 40);
-    let mut prev = 0u8;
-    for &b in data {
-        if b == b'\n' && prev != b'\r' {
-            out.push(b'\r');
-        }
-        out.push(b);
-        prev = b;
-    }
-    out
-}
-
 /// Reconnaît la forme PGP d'un message brut. `None` : pas de PGP.
 pub fn shape(raw: &[u8]) -> Option<Shape> {
     let msg = MessageParser::default().parse(raw)?;
@@ -96,7 +82,7 @@ pub fn shape(raw: &[u8]) -> Option<Shape> {
             let end = first.raw_end_offset() as usize;
             let content = raw.get(start..end)?;
             return Some(Shape::Signed {
-                content: crlf(content),
+                content: crate::mail::mime_util::crlf(content),
                 signature: sig.contents().to_vec(),
             });
         }

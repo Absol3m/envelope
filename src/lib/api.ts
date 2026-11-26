@@ -36,6 +36,9 @@ export type { PgpAcceptanceInfo } from "./bindings/PgpAcceptanceInfo";
 export type { PgpInspection } from "./bindings/PgpInspection";
 export type { PgpKeyInfo } from "./bindings/PgpKeyInfo";
 export type { PgpSignature } from "./bindings/PgpSignature";
+export type { SmimeInspection } from "./bindings/SmimeInspection";
+export type { SmimeSignature } from "./bindings/SmimeSignature";
+export type { SmimeState } from "./bindings/SmimeState";
 export type { PgpSigningInfo } from "./bindings/PgpSigningInfo";
 export type { SigState } from "./bindings/SigState";
 export type { OAuthProviderId } from "./bindings/OAuthProviderId";
@@ -56,6 +59,7 @@ import type { Account } from "./bindings/Account";
 import type { PgpAcceptance } from "./bindings/PgpAcceptance";
 import type { PgpAcceptanceInfo } from "./bindings/PgpAcceptanceInfo";
 import type { PgpInspection } from "./bindings/PgpInspection";
+import type { SmimeInspection } from "./bindings/SmimeInspection";
 import type { PgpKeyInfo } from "./bindings/PgpKeyInfo";
 import type { PgpSigningInfo } from "./bindings/PgpSigningInfo";
 import type { Addr } from "./bindings/Addr";
@@ -192,6 +196,8 @@ export interface Backend {
   pgpRecipientKey(email: string): Promise<string | null>;
   /** Signature et contenu déchiffré d'un message PGP ; `null` : le message n'est pas du PGP. `passphrase` : phrase secrète de la clé privée. */
   pgpInspect(messageId: number, passphrase?: string): Promise<PgpInspection | null>;
+  /** Signature S/MIME d'un message (`null` : pas du S/MIME). */
+  smimeInspect(messageId: number): Promise<SmimeInspection | null>;
   lockStatus(): Promise<LockStatus>;
   unlockPassword(password: string): Promise<void>;
   /** Ouvre l'invite d'authentification du système (Touch ID, Windows Hello) ; se termine quand elle est close. */
@@ -302,6 +308,7 @@ export const tauriBackend: Backend = {
   pgpSetSigningKey: (accountId, email, fingerprint) => invoke("pgp_set_signing_key", { accountId, email, fingerprint }),
   pgpRecipientKey: (email) => invoke("pgp_recipient_key", { email }),
   pgpInspect: (messageId, passphrase) => invoke("pgp_inspect", { messageId, passphrase: passphrase ?? null }),
+  smimeInspect: (messageId) => invoke("smime_inspect", { messageId }),
   inlineImages: async (messageId) => {
     const ids = await invoke<Record<string, number>>("inline_images", { messageId });
     return Object.fromEntries(Object.entries(ids).map(([cid, id]) => [cid, tauriBackend.attachmentSrc(id)]));

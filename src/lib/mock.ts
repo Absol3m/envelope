@@ -491,6 +491,7 @@ export const demoBackend: Backend = {
   },
   pgpRecipientKey: (email) => delay(PGP_ACCEPT.find((a) => a.email === email.toLowerCase() && a.decision !== "rejected")?.fingerprint ?? null, 20),
   pgpInspect: () => delay(null, 10),
+  smimeInspect: () => delay(null, 10),
   lockStatus: () => delay({ ...LOCK }, 20),
   unlockPassword: (password) => (password === "demo1234" ? ((LOCK.locked = false), delay(undefined, 200)) : Promise.reject(new Error(t("demo:wrongPassword")))),
   unlockSystem: () => ((LOCK.locked = false), delay(undefined, 300)),

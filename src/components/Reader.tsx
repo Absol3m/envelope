@@ -15,6 +15,7 @@ import { isLinux, shortcut, suppressWebviewContextMenu } from "@/lib/platform";
 import { t as tr } from "@/lib/i18n";
 import { AttachmentPreview, InlineImage } from "./AttachmentPreview";
 import { PgpBanner, usePgp } from "./PgpStatus";
+import { SmimeBanner, useSmime } from "./SmimeStatus";
 
 // ───────────── Corps du message ─────────────
 
@@ -241,6 +242,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
   const preview = (m.bodyText ?? "").split(/\n/).find((l) => l.trim() && !l.startsWith(">"))?.trim() ?? "";
   const files = atts.filter((a) => !a.isInline || a.filename);
   const pgp = usePgp(m, expanded);
+  const smime = useSmime(pgp.shown, expanded);
 
   if (!expanded) {
     return (
@@ -278,6 +280,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
       )}
 
       <PgpBanner pgp={pgp} />
+      <SmimeBanner smime={smime} />
 
       {details && (
         <dl className="selectable anim-fade-in mt-3 grid grid-cols-[52px_1fr] gap-x-3 gap-y-1 rounded-lg bg-bg-subtle px-3 py-2 text-[12px]">
@@ -288,7 +291,7 @@ function MessageCard({ m, atts, me, expanded, onToggle }: { m: DetailMessage; at
         </dl>
       )}
 
-      <div className="mt-3 border-t border-border pt-3"><NearViewport><MessageBody m={pgp.shown} /></NearViewport></div>
+      <div className="mt-3 border-t border-border pt-3"><NearViewport><MessageBody m={smime.shown} /></NearViewport></div>
       <Attachments items={files} />
     </article>
   );

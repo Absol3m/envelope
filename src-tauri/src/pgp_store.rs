@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use mail_parser::MessageParser;
 use pgp::composed::{Deserializable, SignedSecretKey};
 use serde::Serialize as SerdeSerialize;
 use sqlx::SqlitePool;
@@ -370,18 +369,6 @@ pub async fn public_key(pool: &SqlitePool, fingerprint: &str) -> Result<Option<P
     Ok(armored.and_then(|a| openpgp::parse_public(&a)))
 }
 
-fn text_of(data: &[u8], mime: bool) -> (Option<String>, Option<String>) {
-    if mime {
-        if let Some(m) = MessageParser::default().parse(data) {
-            return (
-                m.body_text(0).map(|c| c.into_owned()),
-                m.body_html(0).map(|c| c.into_owned()),
-            );
-        }
-    }
-    (Some(String::from_utf8_lossy(data).into_owned()), None)
-}
-
 /// Ce que l'analyse du message brut (calcul) laisse à faire : rien, un verdict, ou un déchiffrement.
 enum Step {
     NotPgp,
@@ -419,7 +406,7 @@ fn open_encrypted(
 ) -> (PgpInspection, Option<String>) {
     match openpgp::decrypt(armored, secrets, publics) {
         Ok(d) => {
-            let (body_text, body_html) = text_of(&d.data, mime);
+            let (body_text, body_html) = crate::mail::mime_util::text_of(&d.data, mime);
             // Message signé puis chiffré : la signature est dans le contenu déchiffré (OpenPGP) ou dans l'entité MIME.
             let signature = d.signature.or_else(|| match openpgp::shape(&d.data) {
                 Some(Shape::Signed { content, signature }) if mime => {
@@ -465,15 +452,9 @@ pub async fn inspect(
     message_id: i64,
     passphrase: Option<&str>,
 ) -> Result<Option<PgpInspection>> {
-    let hash: Option<String> = sqlx::query_scalar("SELECT raw_hash FROM messages WHERE id = ?")
-        .bind(message_id)
-        .fetch_optional(pool)
-        .await?
-        .flatten();
-    let Some(hash) = rawstore::usable(hash.as_deref()) else {
+    let Some(raw) = rawstore::of_message(pool, raw_dir, message_id).await? else {
         return Ok(None);
     };
-    let raw = rawstore::get(raw_dir, hash).await?;
     let publics = Arc::new(public_keys(pool).await?);
     let for_task = publics.clone();
     let step = tokio::task::spawn_blocking(move || analyse(&raw, &for_task))

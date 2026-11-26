@@ -28,6 +28,7 @@ mod private;
 mod reminders;
 mod rules;
 mod scheduled;
+mod smime;
 mod templates;
 mod tls;
 #[cfg(desktop)]
@@ -260,6 +261,7 @@ pub fn run() {
             commands::pgp_set_signing_key,
             commands::pgp_recipient_key,
             commands::pgp_inspect,
+            commands::smime_inspect,
             commands::set_thread_read,
             commands::set_thread_starred,
             commands::move_thread,

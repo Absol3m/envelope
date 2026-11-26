@@ -41,6 +41,7 @@ pub mod ingest;
 mod list_contract;
 pub mod local;
 pub mod mbox;
+pub mod mime_util;
 pub mod oauth;
 pub mod rawstore;
 pub mod secrets;

@@ -63,6 +63,23 @@ pub async fn get(dir: &Path, hash: &str) -> Result<Vec<u8>> {
     Ok(tokio::fs::read(path_of(dir, hash)?).await?)
 }
 
+/// Message brut d'un message de la base (`None` : pas de brut gardé, ou message introuvable).
+pub async fn of_message(
+    pool: &sqlx::SqlitePool,
+    dir: &Path,
+    message_id: i64,
+) -> Result<Option<Vec<u8>>> {
+    let hash: Option<String> = sqlx::query_scalar("SELECT raw_hash FROM messages WHERE id = ?")
+        .bind(message_id)
+        .fetch_optional(pool)
+        .await?
+        .flatten();
+    match usable(hash.as_deref()) {
+        Some(h) => Ok(Some(get(dir, h).await?)),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

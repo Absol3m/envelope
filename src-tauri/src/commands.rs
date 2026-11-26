@@ -858,6 +858,15 @@ pub async fn pgp_inspect(
     crate::pgp_store::inspect(&state.db, &state.raw_dir, message_id, passphrase.as_deref()).await
 }
 
+/// Signature S/MIME d'un message (`None` : pas du S/MIME) : signature, chaîne de confiance du système, adresse, date.
+#[tauri::command]
+pub async fn smime_inspect(
+    state: State<'_, AppState>,
+    message_id: i64,
+) -> Result<Option<crate::smime::SmimeInspection>> {
+    crate::smime::inspect(&state.db, &state.raw_dir, message_id).await
+}
+
 #[tauri::command]
 pub async fn get_thread_detail(state: State<'_, AppState>, thread_id: i64) -> Result<ThreadDetail> {
     thread::get_thread_detail(&state.db, thread_id)
