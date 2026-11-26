@@ -327,6 +327,7 @@
  "errors:rust.scheduled.not_found": "5f21a02b",
  "errors:rust.scheduled.missed": "41864640",
  "errors:rust.scheduled.interrupted": "a3e8153b",
+ "errors:rust.scheduled.sealed_missing": "734f34c0",
  "errors:rust.templates.name_length": "54758cf5",
  "errors:rust.templates.too_long": "56809169",
  "errors:rust.tls.verifier_unavailable": "aeecdd0d",
