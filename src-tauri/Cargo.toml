@@ -71,7 +71,7 @@ hex = "0.4"           # empreinte du message brut en hexadécimal
 dunce = "1"             # chemins Windows sans préfixe \\?\ (ouverture des pièces jointes)
 pgp = "0.21"
 # Générateur de nombres aléatoires de rpgp (rand_core 0.6) : même version majeure que lui, sinon les traits ne correspondent pas.
-rand = "0.8"
+rand = "0.10"
 
 [profile.release]
 lto = true
