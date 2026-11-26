@@ -1167,7 +1167,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 2.0.119",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -1796,7 +1796,7 @@ dependencies = [
  "percent-encoding",
  "pgp",
  "psl",
- "rand 0.8.8",
+ "rand 0.10.3",
  "rcgen",
  "reqwest 0.12.28",
  "robius-authentication",
